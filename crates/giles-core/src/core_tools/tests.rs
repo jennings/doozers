@@ -1429,6 +1429,8 @@ fn schedule_input_is_parsed_strictly() {
             at: Some(at.parse().unwrap()),
             prompt: prompt.to_owned(),
             session: JobSession::Isolated,
+            disabled: false,
+            changed_at: None,
         }))
     };
     assert_eq!(
@@ -1454,6 +1456,8 @@ fn schedule_input_is_parsed_strictly() {
             at: None,
             prompt: "Notes?".into(),
             session: JobSession::Dm,
+            disabled: false,
+            changed_at: None,
         }))
     );
     assert_eq!(parse(json!({"action": "list"})), Ok(Request::List));
@@ -1583,13 +1587,24 @@ async fn schedule_creates_lists_and_cancels_only_the_requesters_jobs() {
         )
         .await
         .unwrap();
+    // Switched off on the web page.
+    s.store
+        .job_create(
+            jeeves.clone(),
+            owner(),
+            json!({"cron": "0 7 * * *", "prompt": "Paused.", "disabled": true}),
+            schedule_now(),
+        )
+        .await
+        .unwrap();
 
     let listed = call(&tool, json!({"action": "list"}), Some(owner()), dm()).await;
     assert_eq!(
         ok(&listed),
         "Jobs scheduled for this user (cancel by number):\n\
          - #1: once, Thu 2026-10-22 18:00 BST (on its own): Call the dentist.\n\
-         - #2: every `0 9 * * 1-5`, next Fri 2026-10-23 09:00 BST (in the DM): Stand-up notes?\n\n\
+         - #2: every `0 9 * * 1-5`, next Fri 2026-10-23 09:00 BST (in the DM): Stand-up notes?\n\
+         - #5: disabled: every `0 7 * * *` (on its own): Paused.\n\n\
          Configured jobs (read-only):\n\
          - `check-in`: every `0 9 * * *`, next Fri 2026-10-23 09:00 BST (in the DM): Anything to \
          tell me?"

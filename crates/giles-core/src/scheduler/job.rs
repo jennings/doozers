@@ -18,8 +18,11 @@ pub struct JobDef {
     /// A runtime job's creator: the turn's requester, and the user it delivers to. `None` for a
     /// config job, which has no requester and delivers to the owner.
     pub creator: Option<UserId>,
-    /// When a runtime job was created; `None` for a config job.
-    pub created_at: Option<Timestamp>,
+    /// Times before this are never made up as missed: when a runtime job was created, or last
+    /// edited or switched back on. `None` for a config job.
+    pub since: Option<Timestamp>,
+    /// A runtime job that is switched off: it stays stored but doesn't run.
+    pub disabled: bool,
     /// When it fires.
     pub when: When,
     /// Which session it runs in.
@@ -45,7 +48,8 @@ impl JobDef {
             key: JobKey::Config(job.id.clone()),
             agent: agent.clone(),
             creator: None,
-            created_at: None,
+            since: None,
+            disabled: false,
             when: When::Cron(Box::new(job.cron.clone())),
             session: job.session,
             idle_only: job.idle_only,
@@ -69,7 +73,11 @@ impl JobDef {
             key: JobKey::Runtime(job.id),
             agent: job.agent.clone(),
             creator: Some(job.creator.clone()),
-            created_at: Some(job.created_at),
+            since: Some(
+                spec.changed_at
+                    .map_or(job.created_at, |at| at.max(job.created_at)),
+            ),
+            disabled: spec.disabled,
             when: spec.when()?,
             session: spec.session,
             idle_only: false,
@@ -112,6 +120,13 @@ pub struct RuntimeSpec {
     /// Which session it runs in.
     #[serde(default)]
     pub session: JobSession,
+    /// Switched off: the job keeps its row but doesn't run.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
+    /// When the job was last edited or switched back on: the scheduler doesn't make up the times
+    /// before it, as it does for times missed while Giles was stopped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_at: Option<Timestamp>,
 }
 
 impl RuntimeSpec {
@@ -190,6 +205,8 @@ mod tests {
             at: Some("2026-10-22T17:00:00Z".parse().unwrap()),
             prompt: "Tea.".into(),
             session: JobSession::Isolated,
+            disabled: false,
+            changed_at: None,
         };
         let value = serde_json::to_value(&spec).unwrap();
         assert_eq!(
@@ -197,5 +214,23 @@ mod tests {
             json!({"at": "2026-10-22T17:00:00Z", "prompt": "Tea.", "session": "isolated"})
         );
         assert_eq!(serde_json::from_value::<RuntimeSpec>(value).unwrap(), spec);
+    }
+
+    #[test]
+    fn a_change_moves_the_time_missed_runs_are_made_up_from() {
+        let job = JobDef::from_runtime(&runtime(json!({
+            "cron": "0 9 * * *",
+            "prompt": "p",
+            "disabled": true,
+            "changed_at": "2026-10-23T10:00:00Z",
+        })))
+        .unwrap();
+        assert!(job.disabled);
+        assert_eq!(job.since, "2026-10-23T10:00:00Z".parse().ok());
+
+        let created =
+            JobDef::from_runtime(&runtime(json!({"cron": "0 9 * * *", "prompt": "p"}))).unwrap();
+        assert!(!created.disabled);
+        assert_eq!(created.since, "2026-10-22T16:00:00Z".parse().ok());
     }
 }

@@ -138,7 +138,7 @@ impl Default for JobChanges {
 }
 
 impl JobChanges {
-    /// Runtime jobs were created or deleted: the scheduler reads them again.
+    /// Runtime jobs were created, changed, or deleted: the scheduler reads them again.
     pub fn notify(&self) {
         self.0
             .send_modify(|version| *version = version.wrapping_add(1));
@@ -374,20 +374,24 @@ async fn config_jobs(
     }
 }
 
-/// Keeps a task running for each runtime job in the store: reads them at startup and again at
-/// each change, starting tasks for new jobs and stopping the tasks of deleted ones.
+/// Keeps a task running for each enabled runtime job in the store: reads them at startup and
+/// again at each change, starting tasks for new jobs, stopping the tasks of deleted and disabled
+/// ones, and restarting the task of a job whose spec changed (an edit), so it runs on its new
+/// schedule.
 async fn runtime_jobs(
     context: Arc<Context>,
     mut changes: watch::Receiver<u64>,
     tasks: TaskTracker,
 ) {
-    let mut running: HashMap<RuntimeJobId, CancellationToken> = HashMap::new();
+    // Each task with the spec it was started from.
+    let mut running: HashMap<RuntimeJobId, (serde_json::Value, CancellationToken)> = HashMap::new();
     loop {
         changes.borrow_and_update();
         let retry = match context.store.jobs(None, None).await {
             Ok(jobs) => {
-                running.retain(|id, stop| {
-                    let keep = jobs.iter().any(|job| job.id == *id) && !stop.is_cancelled();
+                running.retain(|id, (spec, stop)| {
+                    let keep = jobs.iter().any(|job| job.id == *id && job.spec == *spec)
+                        && !stop.is_cancelled();
                     if !keep {
                         stop.cancel();
                     }
@@ -398,10 +402,13 @@ async fn runtime_jobs(
                         continue;
                     }
                     match JobDef::from_runtime(&job) {
+                        Ok(def) if def.disabled => {
+                            debug!(job = %def.label(), agent = %def.agent, "runtime job disabled");
+                        }
                         Ok(def) => {
                             debug!(job = %def.label(), agent = %def.agent, "runtime job scheduled");
                             let stop = context.shutdown.child_token();
-                            running.insert(job.id, stop.clone());
+                            running.insert(job.id, (job.spec.clone(), stop.clone()));
                             tasks.spawn(job_task(context.clone(), def, stop));
                         }
                         Err(reason) => {
@@ -461,7 +468,7 @@ async fn job_task(context: Arc<Context>, job: JobDef, stop: CancellationToken) {
     };
     let mut next = job
         .when
-        .first_fire(&tz, last.or(job.created_at), context.clock.now());
+        .first_fire(&tz, last.max(job.since), context.clock.now());
     loop {
         let Some(at) = next else {
             debug!(job = %label, "the job has no future run");

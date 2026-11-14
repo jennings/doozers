@@ -9,9 +9,9 @@
 | `SchedulerOptions`         | Store, `Registry`, `Sessions`, `TurnRunner`, `JobDelivery`, `JobChanges`, `Clock` |
 | `JobDelivery`              | Where output goes (the outbox): `enqueue(Delivery) -> OutboxId`, `remove(id)` |
 | `Delivery`, `DeliveryKind` | A send to a user's default identity: `JobReply` or `ApprovalPrompt`, optional expiry |
-| `JobChanges`               | `notify()` after creating or deleting runtime jobs; `Runtime::jobs` holds one |
+| `JobChanges`               | `notify()` after creating, changing, or deleting runtime jobs; `Runtime::jobs` holds one |
 | `JobDef`                   | A config or runtime job in one shape; `label()` is `` `id` `` or `#3` |
-| `RuntimeSpec`              | A runtime job's stored `spec`: `cron` or `at`, `prompt`, `session`    |
+| `RuntimeSpec`              | A runtime job's stored `spec`: `cron` or `at`, `prompt`, `session`, `disabled`, `changed_at` |
 | `When`                     | `Cron` or one-shot `At`; `next_after`, `first_fire`                   |
 | `job_reply`, `JobReply`    | What a run said: `NoReply`, `Empty`, or the text                      |
 
@@ -27,13 +27,15 @@ expiry; `remove` withdraws a prompt. At shutdown `serve` waits for `Scheduler::c
 ## Timing
 
 Each job has a task. Its time zone is the owner's, else the agent's, else the system's (the job's
-user is the owner in v1). At start, `first_fire(since, now)` with `since` the job's `job_runs` time,
-else a runtime job's creation time: if a time fell between `since` and `now` (the core was down),
-the missed times are coalesced into one run now; otherwise the next match after `now`. The task
-sleeps in steps of at most `MAX_SLEEP` (60 s), reading the clock again, so a jumping wall clock
-delays a job by at most that. After each run the next time is the first match after the clock, so
-times that pass during a long run are skipped. A time outside `active_hours` is skipped (not
-recorded). A one-shot runtime job is deleted after its time, run or not.
+user is the owner in v1). At start, `first_fire(since, now)` with `since` the later of the job's
+`job_runs` time and `JobDef::since` (a runtime job's creation time, or its spec's `changed_at`, the
+last edit or switch back on): if a time fell between `since` and `now` (the core was down), the
+missed times are coalesced into one run now; otherwise the next match after `now`. So an edited or
+re-enabled job never makes up the times before its change. The task sleeps in steps of at most
+`MAX_SLEEP` (60 s), reading the clock again, so a jumping wall clock delays a job by at most that.
+After each run the next time is the first match after the clock, so times that pass during a long
+run are skipped. A time outside `active_hours` is skipped (not recorded). A one-shot runtime job is
+deleted after its time, run or not.
 
 Config jobs follow the running configuration ([Registry](registry.md#the-running-configuration)). At
 start, and whenever `LiveConfig` changes, `reconcile_config_jobs` compares each agent's `[[jobs]]`
@@ -46,11 +48,13 @@ created later under the same id runs only the jobs its own `agent.toml` has. A t
 from `first_fire` follows the rule above, so a restarted one can run once for times it missed.
 
 Runtime jobs: a task reads `jobs` at start and on every `JobChanges::notify`, starting tasks for new
-rows and stopping the tasks of deleted ones. Stopping a job's task (deleting the job, or shutdown)
-ends its run's waits before the turn (for an idle DM, for the DM's hold); a turn already started
-runs to its end and its reply is delivered, so a job that cancels itself in its last run still
-reports. Only `/stop` in the DM (a `dm` run) and shutdown cut a started turn off. A spec it can't
-parse is logged and skipped.
+rows and stopping the tasks of deleted ones. It keeps the spec each task started from: a row whose
+spec changed (an edit) has its task stopped and a new one started from the new spec, and a spec with
+`disabled = true` gets no task, so a disabled job keeps its row and never runs. Stopping a job's
+task (deleting, editing, or disabling the job, or shutdown) ends its run's waits before the turn
+(for an idle DM, for the DM's hold); a turn already started runs to its end and its reply is
+delivered, so a job that cancels itself in its last run still reports. Only `/stop` in the DM (a
+`dm` run) and shutdown cut a started turn off. A spec it can't parse is logged and skipped.
 
 ## One run
 
@@ -103,7 +107,8 @@ action refuses the keys of the others): `action` = `create` | `list` | `cancel`.
   `JobChanges::notify()`, and answers e.g. "Scheduled job #2: every `0 9 * * 1-5`, next Fri
   2026-10-23 09:00 BST."
 - `list`: the requester's jobs with this agent (number, schedule and next run, session, prompt cut
-  to 100 characters), then the agent's config jobs as read-only.
+  to 100 characters; a disabled job is marked `disabled:` and has no next run), then the agent's
+  config jobs as read-only.
 - `cancel`: `id`; deletes the job only if it's this agent's and the requester created it, then
   notifies the scheduler, whose task for it stops: a run waiting for the DM is dropped, but a run
   whose turn has started (the job cancelling itself) finishes and delivers its reply.
@@ -123,4 +128,5 @@ runner and delivery: firing in the owner's zone, active hours, coalescing at sta
 both session kinds, delivery with DM append and excerpt, model override and prompt files read per
 run, `dm` jobs queued behind a running turn and falling back without a DM, `idle_only`, `ask_to`
 targets and prompt withdrawal, runtime jobs (creator as requester, cancel, one-shot deletion, a
-missed one-shot at startup).
+missed one-shot at startup, an edit moving a job, a disabled job not running and making up nothing
+when switched back on).
