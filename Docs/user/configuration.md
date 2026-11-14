@@ -574,7 +574,8 @@ The agent can list your jobs, including the ones in `agent.toml`, which it can't
 cancel the jobs it scheduled. You can have up to 20 such jobs with each agent, and a scheduled job
 can't schedule more jobs.
 
-[Scheduled jobs](web.md#scheduled-jobs) in the web chat lists your jobs with every agent.
+[Scheduled jobs](web.md#scheduled-jobs) in the web chat lists your jobs with every agent. You can
+also schedule, edit, disable, and delete jobs there, except the ones in `agent.toml`.
 
 ## Full example
 

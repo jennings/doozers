@@ -1,40 +1,77 @@
 //! The scheduled jobs page: every job that delivers to the signed-in user, across all agents, in
-//! one table with the agent as a column. Read-only: runtime jobs are changed through the agent's
-//! `schedule` tool and config jobs in `agent.toml`.
+//! one table with the agent as a column, and the forms that schedule, edit, disable, re-enable,
+//! and delete the user's runtime jobs. Config jobs (`[[jobs]]` in `agent.toml`) are shown but not
+//! changed here.
 //!
 //! # Whose jobs
 //!
-//! A runtime job delivers to its creator, so the page lists the runtime jobs the user created.
-//! Config jobs deliver to the owner, so only the owner sees them. Like the memory page, it is
-//! open to every signed-in user, not only the owner.
+//! A runtime job delivers to its creator, so the page lists the runtime jobs the user created,
+//! and only those can be changed: every handler that takes a job id answers 404 for anyone else's
+//! ([`own_job`]). Config jobs deliver to the owner, so only the owner sees them. Like the memory
+//! page, it is open to every signed-in user, not only the owner; a new job may be for any agent
+//! the user may start a chat with ([`agent_choices`]).
+//!
+//! # Changes
+//!
+//! A job is a row in `jobs` with a [`RuntimeSpec`], the same as the `schedule` tool makes, with
+//! the same cap per user and agent ([`MAX_RUNTIME_JOBS_PER_USER`]). Every change notifies the
+//! scheduler ([`JobChanges`](crate::scheduler::JobChanges)), which restarts the job's task. An
+//! edit or a switch back on sets `changed_at`, so the scheduler doesn't make up the times the job
+//! missed before it. An edit keeps the job's agent and whether it is disabled.
+//!
+//! Every post is CSRF-checked; one that succeeds answers 303 to the list. A form the page can't
+//! accept is shown again with why (400; 409 at the cap). Every answer is `no-store`.
 //!
 //! # Times
 //!
-//! Times are shown in the zone the job runs in ([`message_timezone`]). The next run is the next
-//! time of the job's schedule inside its active hours ([`next_run`]), as the scheduler would
-//! fire it; a one-shot job still in the table hasn't finished, so its time is shown even when it
-//! has passed. The last run is the job's `job_runs` row.
+//! Times are shown, and read from the form, in the zone the job runs in ([`message_timezone`]).
+//! The next run is the next time of the job's schedule inside its active hours ([`next_run`]), as
+//! the scheduler would fire it; a one-shot job still in the table hasn't finished, so its time is
+//! shown even when it has passed. The last run is the job's `job_runs` row.
 
 use askama::Template;
-use axum::extract::State;
-use axum::response::Response;
-use giles_store::{JobKey, RuntimeJob};
+use axum::Router;
+use axum::extract::{Form, Path, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::map_response;
+use axum::response::{IntoResponse, Redirect, Response};
+use axum::routing::{get, post};
+use giles_store::{JobKey, RuntimeJob, RuntimeJobId};
 use giles_types::{AgentId, Timestamp};
 use jiff::tz::TimeZone;
+use serde::Deserialize;
 
 use super::admin::may_administer;
-use super::auth::WebUser;
-use super::pages::{WebApp, agent_label, internal_error, no_store};
+use super::auth::{WebUser, check_csrf};
+use super::pages::{
+    AgentChoice, WebApp, agent_choices, agent_label, error_page, internal_error, no_store,
+};
 use crate::agent_loop::history::message_timezone;
-use crate::config::{ActiveHours, Config, JobPrompt, JobSession};
-use crate::core_tools::schedule::{short, show_time};
+use crate::config::{ActiveHours, Config, JobPrompt, JobSession, parse_cron};
+use crate::core_tools::MAX_RUNTIME_JOBS_PER_USER;
+use crate::core_tools::schedule::{parse_at, short, show_time};
 use crate::http;
-use crate::scheduler::{JobDef, When, in_active_hours};
+use crate::scheduler::{JobDef, RuntimeSpec, When, in_active_hours};
 
 /// How many times of a job's schedule [`next_run`] tries against its active hours before it
 /// decides the job never runs inside them: a week of every-minute times, so any pattern with a
 /// time inside a daily window is found.
 const ACTIVE_HOURS_SEARCH: usize = 7 * 24 * 60;
+
+/// How the form's time field writes a time: what `<input type="datetime-local">` sends.
+const FORM_TIME_FORMAT: &str = "%Y-%m-%dT%H:%M";
+
+/// The jobs page's routes, all `no-store`.
+pub(super) fn routes() -> Router<WebApp> {
+    Router::new()
+        .route("/jobs", get(jobs_page).post(create))
+        .route("/jobs/new", get(new_page))
+        .route("/jobs/{id}/edit", get(edit_page).post(edit))
+        .route("/jobs/{id}/disable", post(disable))
+        .route("/jobs/{id}/enable", post(enable))
+        .route("/jobs/{id}/delete", post(delete))
+        .route_layer(map_response(async |response: Response| no_store(response)))
+}
 
 /// A time on the page: in the job's zone, with the RFC 3339 form for `<time datetime>`.
 struct TimeView {
@@ -57,8 +94,12 @@ struct JobRow {
     agent: String,
     /// The config job's id, or `#<n>` for a runtime job.
     job: String,
-    /// Set in `agent.toml` (as opposed to made by the agent with the `schedule` tool).
+    /// A runtime job's number: the user's own job, which the row's buttons change.
+    id: Option<i64>,
+    /// Set in `agent.toml` (as opposed to a runtime job).
     from_config: bool,
+    /// Switched off: it doesn't run until switched back on.
+    disabled: bool,
     /// The cron pattern; `None` for a one-shot job.
     cron: Option<String>,
     /// `HH:MM-HH:MM`, for a job that runs only inside those hours.
@@ -84,6 +125,9 @@ struct JobsPage {
     jobs: Vec<JobRow>,
     /// Whether the user is the owner: the page shows the admin menu.
     admin: bool,
+    /// Whether there's an agent the user may schedule a job with.
+    can_create: bool,
+    csrf: String,
 }
 
 /// The job's next run after `now`: the next time of its schedule inside its active hours, or a
@@ -131,11 +175,19 @@ fn zone(config: &Config, agent: &AgentId) -> TimeZone {
     }
 }
 
+/// How the form names a time zone.
+fn zone_name(tz: &TimeZone) -> String {
+    tz.iana_name()
+        .map_or_else(|| "the system's time zone".to_owned(), str::to_owned)
+}
+
 /// The row of a job the scheduler can run, with its last run.
 fn row(config: &Config, job: &JobDef, last: Option<Timestamp>, now: Timestamp) -> JobRow {
     let tz = zone(config, &job.agent);
     let configured = config.agents.contains_key(&job.agent);
-    let next_at = configured.then(|| next_run(job, &tz, now)).flatten();
+    let next_at = (configured && !job.disabled)
+        .then(|| next_run(job, &tz, now))
+        .flatten();
     let (prompt, prompt_file) = match &job.prompt {
         JobPrompt::Inline(text) => (short(text), None),
         JobPrompt::File(path) => (
@@ -148,13 +200,16 @@ fn row(config: &Config, job: &JobDef, last: Option<Timestamp>, now: Timestamp) -
             ),
         ),
     };
+    let (job_name, id) = match &job.key {
+        JobKey::Config(id) => (id.clone(), None),
+        JobKey::Runtime(id) => (format!("#{id}"), Some(id.get())),
+    };
     JobRow {
         agent: agent_label(config, &job.agent),
-        job: match &job.key {
-            JobKey::Config(id) => id.clone(),
-            JobKey::Runtime(id) => format!("#{id}"),
-        },
+        job: job_name,
+        id,
         from_config: matches!(job.key, JobKey::Config(_)),
+        disabled: job.disabled,
         cron: match &job.when {
             When::Cron(cron) => Some(cron.pattern.as_str().to_owned()),
             When::At(_) => None,
@@ -176,7 +231,9 @@ fn unusable_row(config: &Config, job: &RuntimeJob, error: String) -> JobRow {
     JobRow {
         agent: agent_label(config, &job.agent),
         job: format!("#{}", job.id),
+        id: Some(job.id.get()),
         from_config: false,
+        disabled: false,
         cron: None,
         active_hours: None,
         next: None,
@@ -191,11 +248,11 @@ fn unusable_row(config: &Config, job: &RuntimeJob, error: String) -> JobRow {
 }
 
 /// `GET /jobs`: the user's scheduled jobs with every agent, soonest next run first.
-pub(super) async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Response {
+async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Response {
     let store = &app.inner.store;
     let runtime = match store.jobs(None, Some(user.user.clone())).await {
         Ok(jobs) => jobs,
-        Err(err) => return no_store(internal_error("cannot list the scheduled jobs", &err)),
+        Err(err) => return internal_error("cannot list the scheduled jobs", &err),
     };
     let config = app.inner.agents.get();
     let now = app.inner.clock.now();
@@ -221,7 +278,7 @@ pub(super) async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Respo
     for def in &defs {
         let last = match store.job_last_run(def.agent.clone(), def.key.clone()).await {
             Ok(last) => last,
-            Err(err) => return no_store(internal_error("cannot read a job's last run", &err)),
+            Err(err) => return internal_error("cannot read a job's last run", &err),
         };
         rows.push(row(&config, def, last, now));
     }
@@ -232,7 +289,471 @@ pub(super) async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Respo
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (None, None) => a.agent_id.cmp(&b.agent_id),
     });
-    no_store(http::render(&JobsPage { jobs: rows, admin }))
+    http::render(&JobsPage {
+        jobs: rows,
+        admin,
+        can_create: !agent_choices(&config, &user).is_empty(),
+        csrf: user.csrf.clone(),
+    })
+}
+
+/// The job form's fields, as posted and as shown (again after an error).
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct JobForm {
+    csrf: Option<String>,
+    /// The agent of a new job; an edit keeps the job's.
+    agent: String,
+    /// `cron` (repeats) or `once`.
+    repeat: String,
+    cron: String,
+    /// `YYYY-MM-DDTHH:MM` in the job's zone.
+    at: String,
+    prompt: String,
+    /// `isolated` or `dm`.
+    session: String,
+}
+
+impl JobForm {
+    /// The empty form for a new job.
+    fn blank() -> Self {
+        Self {
+            repeat: "cron".to_owned(),
+            session: "isolated".to_owned(),
+            ..Self::default()
+        }
+    }
+
+    /// The form for editing a job with `spec`, its time in `tz`.
+    fn of(spec: &RuntimeSpec, tz: &TimeZone) -> Self {
+        Self {
+            csrf: None,
+            agent: String::new(),
+            repeat: if spec.at.is_some() { "once" } else { "cron" }.to_owned(),
+            cron: spec.cron.clone().unwrap_or_default(),
+            at: spec
+                .at
+                .map(|at| {
+                    at.to_zoned(tz.clone())
+                        .strftime(FORM_TIME_FORMAT)
+                        .to_string()
+                })
+                .unwrap_or_default(),
+            prompt: spec.prompt.clone(),
+            session: match spec.session {
+                JobSession::Dm => "dm",
+                _ => "isolated",
+            }
+            .to_owned(),
+        }
+    }
+
+    /// The spec the form asks for, its time read in `tz`; it must run after `now`.
+    fn spec(&self, tz: &TimeZone, now: Timestamp) -> Result<RuntimeSpec, String> {
+        let prompt = self.prompt.trim().replace("\r\n", "\n");
+        if prompt.is_empty() {
+            return Err("Write a prompt: what the agent does when the job runs.".to_owned());
+        }
+        let session = match self.session.as_str() {
+            "isolated" => JobSession::Isolated,
+            "dm" => JobSession::Dm,
+            _ => return Err("Choose where the job runs.".to_owned()),
+        };
+        let (cron, at) = match self.repeat.as_str() {
+            "cron" => {
+                let pattern = self.cron.trim();
+                if pattern.is_empty() {
+                    return Err("Write a cron schedule, such as 0 9 * * 1-5.".to_owned());
+                }
+                let parsed = parse_cron(pattern)?;
+                if When::Cron(Box::new(parsed)).next_after(tz, now).is_none() {
+                    return Err(format!("The cron schedule {pattern} never matches again."));
+                }
+                (Some(pattern.to_owned()), None)
+            }
+            "once" => {
+                let text = self.at.trim();
+                if text.is_empty() {
+                    return Err("Pick the time the job runs.".to_owned());
+                }
+                let at = parse_at(text, tz)?;
+                if at <= now {
+                    return Err("That time has passed. Pick a time in the future.".to_owned());
+                }
+                (None, Some(at))
+            }
+            _ => return Err("Choose whether the job repeats or runs once.".to_owned()),
+        };
+        Ok(RuntimeSpec {
+            cron,
+            at,
+            prompt,
+            session,
+            disabled: false,
+            changed_at: None,
+        })
+    }
+}
+
+#[derive(Template)]
+#[template(path = "web/job_form.html")]
+struct JobFormPage<'a> {
+    title: String,
+    action: String,
+    submit: &'static str,
+    csrf: &'a str,
+    admin: bool,
+    /// The agents a new job may be for; empty when editing.
+    agents: Vec<AgentChoice>,
+    /// The agent of the job being edited.
+    agent: Option<String>,
+    form: &'a JobForm,
+    /// The zone the form's times are read in.
+    zone: String,
+    error: Option<String>,
+}
+
+/// Which form: a new job, or an edit of the user's job.
+enum Target<'a> {
+    New,
+    Edit(&'a RuntimeJob),
+}
+
+/// The form for `target` with `form`'s values, and `error` (with `status`) if a post was refused.
+fn render_form(
+    app: &WebApp,
+    user: &WebUser,
+    target: &Target<'_>,
+    form: &JobForm,
+    error: Option<(StatusCode, String)>,
+) -> Response {
+    let config = app.inner.agents.get();
+    let (title, action, submit, agents, agent, zone) = match target {
+        Target::New => {
+            let agents = agent_choices(&config, user);
+            // The zone of the chosen agent: say which when they all agree.
+            let mut zones = agents.iter().filter_map(|choice| {
+                AgentId::new(&choice.id)
+                    .ok()
+                    .map(|id| zone_name(&zone(&config, &id)))
+            });
+            let zone = match zones.next() {
+                Some(first) if zones.all(|other| other == first) => first,
+                Some(_) => "the time zone of the job's agent".to_owned(),
+                None => "the system's time zone".to_owned(),
+            };
+            (
+                "New job".to_owned(),
+                "/jobs".to_owned(),
+                "Schedule",
+                agents,
+                None,
+                zone,
+            )
+        }
+        Target::Edit(job) => (
+            format!("Edit job #{}", job.id),
+            format!("/jobs/{}/edit", job.id),
+            "Save",
+            Vec::new(),
+            Some(agent_label(&config, &job.agent)),
+            zone_name(&zone(&config, &job.agent)),
+        ),
+    };
+    let (status, error) = match error {
+        Some((status, error)) => (status, Some(error)),
+        None => (StatusCode::OK, None),
+    };
+    let mut response = http::render(&JobFormPage {
+        title,
+        action,
+        submit,
+        csrf: &user.csrf,
+        admin: may_administer(user),
+        agents,
+        agent,
+        form,
+        zone,
+        error,
+    });
+    if response.status().is_success() {
+        *response.status_mut() = status;
+    }
+    response
+}
+
+/// 303 to the list.
+fn to_list() -> Response {
+    Redirect::to("/jobs").into_response()
+}
+
+/// The user's runtime job with the number in the path; `Err` the answer if there's no such job,
+/// or it's someone else's (404 either way, so the page doesn't tell which).
+async fn own_job(app: &WebApp, user: &WebUser, id: &str) -> Result<RuntimeJob, Box<Response>> {
+    let not_found = || {
+        error_page(
+            StatusCode::NOT_FOUND,
+            "No such job",
+            "You have no scheduled job with this number. It may have run once already, or been \
+             deleted.",
+        )
+    };
+    let Ok(id) = id.parse::<i64>() else {
+        return Err(Box::new(not_found()));
+    };
+    match app.inner.store.job(RuntimeJobId::new(id)).await {
+        Ok(Some(job)) if job.creator == user.user => Ok(job),
+        Ok(_) => Err(Box::new(not_found())),
+        Err(err) => Err(Box::new(internal_error(
+            "cannot read a scheduled job",
+            &err,
+        ))),
+    }
+}
+
+/// The spec of the user's `job`; `Err` a 409 page if it can't be read (only deleting is left).
+fn stored_spec(job: &RuntimeJob) -> Result<RuntimeSpec, Box<Response>> {
+    serde_json::from_value(job.spec.clone()).map_err(|error| {
+        Box::new(error_page(
+            StatusCode::CONFLICT,
+            "Job can't be read",
+            &format!(
+                "Job #{} can't be read ({error}). Delete it instead.",
+                job.id
+            ),
+        ))
+    })
+}
+
+/// Stores `spec` as `job`'s, tells the scheduler, and answers 303 to the list (404 if the job
+/// went in the meantime, such as a one-shot job that ran).
+async fn save(app: &WebApp, job: &RuntimeJob, spec: &RuntimeSpec) -> Response {
+    let value = match serde_json::to_value(spec) {
+        Ok(value) => value,
+        Err(err) => return internal_error("cannot write a job's spec", &err),
+    };
+    match app.inner.store.job_update_spec(job.id, value).await {
+        Ok(true) => {
+            app.inner.jobs.notify();
+            to_list()
+        }
+        Ok(false) => error_page(
+            StatusCode::NOT_FOUND,
+            "No such job",
+            "The job has run once already, or been deleted.",
+        ),
+        Err(err) => internal_error("cannot change a scheduled job", &err),
+    }
+}
+
+/// `GET /jobs/new`: the form for a new job.
+async fn new_page(State(app): State<WebApp>, user: WebUser) -> Response {
+    render_form(&app, &user, &Target::New, &JobForm::blank(), None)
+}
+
+/// `POST /jobs` (CSRF-checked): schedules the job, then 303 to the list.
+async fn create(
+    State(app): State<WebApp>,
+    user: WebUser,
+    headers: HeaderMap,
+    Form(form): Form<JobForm>,
+) -> Response {
+    if let Err(rejected) = check_csrf(&user, &headers, form.csrf.as_deref()) {
+        return rejected.into_response();
+    }
+    let refuse = |status, error: String| {
+        render_form(&app, &user, &Target::New, &form, Some((status, error)))
+    };
+    let config = app.inner.agents.get();
+    let agent = match agent_choices(&config, &user)
+        .iter()
+        .find(|choice| choice.id == form.agent)
+        .and_then(|choice| AgentId::new(&choice.id).ok())
+    {
+        Some(agent) => agent,
+        None => return refuse(StatusCode::BAD_REQUEST, "Pick an agent.".to_owned()),
+    };
+    let now = app.inner.clock.now();
+    let spec = match form.spec(&zone(&config, &agent), now) {
+        Ok(spec) => spec,
+        Err(error) => return refuse(StatusCode::BAD_REQUEST, error),
+    };
+    let store = &app.inner.store;
+    match store
+        .jobs(Some(agent.clone()), Some(user.user.clone()))
+        .await
+    {
+        Ok(jobs) if jobs.len() >= MAX_RUNTIME_JOBS_PER_USER => {
+            return refuse(
+                StatusCode::CONFLICT,
+                format!(
+                    "You have {MAX_RUNTIME_JOBS_PER_USER} jobs with this agent, the most allowed. \
+                     Delete one first."
+                ),
+            );
+        }
+        Ok(_) => {}
+        Err(err) => return internal_error("cannot count the scheduled jobs", &err),
+    }
+    let value = match serde_json::to_value(&spec) {
+        Ok(value) => value,
+        Err(err) => return internal_error("cannot write a job's spec", &err),
+    };
+    match store.job_create(agent, user.user.clone(), value, now).await {
+        Ok(_) => {
+            app.inner.jobs.notify();
+            to_list()
+        }
+        Err(err) => internal_error("cannot create a scheduled job", &err),
+    }
+}
+
+/// `GET /jobs/<id>/edit`: the form, filled in from the user's job. A spec that can't be read
+/// gives a blank form, which replaces it.
+async fn edit_page(State(app): State<WebApp>, user: WebUser, Path(id): Path<String>) -> Response {
+    let job = match own_job(&app, &user, &id).await {
+        Ok(job) => job,
+        Err(response) => return *response,
+    };
+    let config = app.inner.agents.get();
+    let form = match serde_json::from_value::<RuntimeSpec>(job.spec.clone()) {
+        Ok(spec) => JobForm::of(&spec, &zone(&config, &job.agent)),
+        Err(_) => JobForm::blank(),
+    };
+    render_form(&app, &user, &Target::Edit(&job), &form, None)
+}
+
+/// `POST /jobs/<id>/edit` (CSRF-checked): saves the edit, then 303 to the list. The job keeps its
+/// agent and whether it is disabled.
+async fn edit(
+    State(app): State<WebApp>,
+    user: WebUser,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<JobForm>,
+) -> Response {
+    if let Err(rejected) = check_csrf(&user, &headers, form.csrf.as_deref()) {
+        return rejected.into_response();
+    }
+    let job = match own_job(&app, &user, &id).await {
+        Ok(job) => job,
+        Err(response) => return *response,
+    };
+    let config = app.inner.agents.get();
+    let now = app.inner.clock.now();
+    let mut spec = match form.spec(&zone(&config, &job.agent), now) {
+        Ok(spec) => spec,
+        Err(error) => {
+            return render_form(
+                &app,
+                &user,
+                &Target::Edit(&job),
+                &form,
+                Some((StatusCode::BAD_REQUEST, error)),
+            );
+        }
+    };
+    spec.disabled =
+        serde_json::from_value::<RuntimeSpec>(job.spec.clone()).is_ok_and(|old| old.disabled);
+    spec.changed_at = Some(now);
+    save(&app, &job, &spec).await
+}
+
+/// A form with nothing but the CSRF token: the row buttons.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct CsrfForm {
+    csrf: Option<String>,
+}
+
+/// `POST /jobs/<id>/disable` (CSRF-checked): switches the user's job off, then 303 to the list.
+async fn disable(
+    State(app): State<WebApp>,
+    user: WebUser,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<CsrfForm>,
+) -> Response {
+    if let Err(rejected) = check_csrf(&user, &headers, form.csrf.as_deref()) {
+        return rejected.into_response();
+    }
+    let job = match own_job(&app, &user, &id).await {
+        Ok(job) => job,
+        Err(response) => return *response,
+    };
+    let mut spec = match stored_spec(&job) {
+        Ok(spec) => spec,
+        Err(response) => return *response,
+    };
+    if spec.disabled {
+        return to_list();
+    }
+    spec.disabled = true;
+    save(&app, &job, &spec).await
+}
+
+/// `POST /jobs/<id>/enable` (CSRF-checked): switches the user's job back on, then 303 to the
+/// list. A one-shot job whose time passed while it was off is refused (409): edit it first.
+async fn enable(
+    State(app): State<WebApp>,
+    user: WebUser,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<CsrfForm>,
+) -> Response {
+    if let Err(rejected) = check_csrf(&user, &headers, form.csrf.as_deref()) {
+        return rejected.into_response();
+    }
+    let job = match own_job(&app, &user, &id).await {
+        Ok(job) => job,
+        Err(response) => return *response,
+    };
+    let mut spec = match stored_spec(&job) {
+        Ok(spec) => spec,
+        Err(response) => return *response,
+    };
+    if !spec.disabled {
+        return to_list();
+    }
+    let now = app.inner.clock.now();
+    if spec.at.is_some_and(|at| at <= now) {
+        return error_page(
+            StatusCode::CONFLICT,
+            "Job's time has passed",
+            &format!(
+                "Job #{} was to run once, at a time that passed while it was disabled. Edit it to \
+                 pick a new time, or delete it.",
+                job.id
+            ),
+        );
+    }
+    spec.disabled = false;
+    spec.changed_at = Some(now);
+    save(&app, &job, &spec).await
+}
+
+/// `POST /jobs/<id>/delete` (CSRF-checked): deletes the user's job, then 303 to the list.
+async fn delete(
+    State(app): State<WebApp>,
+    user: WebUser,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<CsrfForm>,
+) -> Response {
+    if let Err(rejected) = check_csrf(&user, &headers, form.csrf.as_deref()) {
+        return rejected.into_response();
+    }
+    let job = match own_job(&app, &user, &id).await {
+        Ok(job) => job,
+        Err(response) => return *response,
+    };
+    match app.inner.store.job_delete(job.id).await {
+        Ok(_) => {
+            app.inner.jobs.notify();
+            to_list()
+        }
+        Err(err) => internal_error("cannot delete a scheduled job", &err),
+    }
 }
 
 #[cfg(test)]

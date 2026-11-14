@@ -128,6 +128,7 @@ impl Env {
             self.store.clone(),
             self.blobs.clone(),
             registry.live_config().clone(),
+            crate::scheduler::JobChanges::default(),
             self.shutdown.clone(),
         );
         let host = Arc::new(

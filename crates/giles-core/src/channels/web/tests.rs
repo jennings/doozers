@@ -67,7 +67,7 @@ struct Env {
     routes: tokio::sync::OnceCell<Arc<crate::routes::Routes>>,
     /// What the agent manager is told about agents being busy.
     activity: Arc<crate::agents::remove::FakeActivity>,
-    /// What the agent manager tells the scheduler about runtime jobs.
+    /// What the agent manager and the jobs page tell the scheduler about runtime jobs.
     jobs: crate::scheduler::JobChanges,
     app: WebApp,
     shutdown: CancellationToken,
@@ -163,11 +163,13 @@ async fn env_with_toml(config: WebConfig, identities: &[&str], extra: &str) -> E
     let root = crate::paths::DataRoot::new(dir.path(), &dir.path().join("tmp")).unwrap();
     let config = Arc::new(load_config(dir.path(), identities, extra));
     let registry = Arc::new(crate::registry::Registry::new(root, config));
+    let jobs = crate::scheduler::JobChanges::default();
     let app = WebApp::new(
         channel.clone(),
         store.clone(),
         blobs.clone(),
         registry.live_config().clone(),
+        jobs.clone(),
         shutdown.clone(),
     );
     Env {
@@ -182,7 +184,7 @@ async fn env_with_toml(config: WebConfig, identities: &[&str], extra: &str) -> E
         registry,
         routes: tokio::sync::OnceCell::new(),
         activity: Arc::default(),
-        jobs: crate::scheduler::JobChanges::default(),
+        jobs,
         app,
         shutdown,
     }

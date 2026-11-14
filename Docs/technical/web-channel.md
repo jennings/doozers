@@ -34,6 +34,13 @@ the live-output hook.
 | `GET /chats/<id>/events`       | Server-sent events for the page.                                 |
 | `GET /blobs/<sha256>`          | An attachment.                                                   |
 | `GET /jobs`                    | The user's scheduled jobs with every agent ([Jobs page](#jobs-page)). |
+| `GET /jobs/new`                | The form that schedules a job.                                   |
+| `POST /jobs`                   | Schedules the job (CSRF-checked), 303 to the list.               |
+| `GET /jobs/<id>/edit`          | The form, filled in from the user's job.                         |
+| `POST /jobs/<id>/edit`         | Saves the edit (CSRF-checked), 303 to the list.                  |
+| `POST /jobs/<id>/disable`      | Switches the user's job off (CSRF-checked), 303 to the list.     |
+| `POST /jobs/<id>/enable`       | Switches it back on (CSRF-checked), 303; 409 for a one-shot whose time passed. |
+| `POST /jobs/<id>/delete`       | Deletes the user's job (CSRF-checked), 303 to the list.          |
 | `GET /login/<token>`           | A login link: a page with a button that posts the token.         |
 | `POST /login`                  | Uses up the link (`token`), sets the session cookie, 303 to `/`. |
 | `POST /logout`                 | Ends a cookie login (CSRF-checked), 303 to `/`.                  |
@@ -385,10 +392,11 @@ opaque origin.
 
 ## Jobs page
 
-In `jobs.rs`, routed with the chat pages (`WebApp::routes`), so it's behind the authentication
-middleware but not `may_administer`-gated. It lists, in one table, every job that delivers to the
-signed-in user, across all agents, with the agent as a column. It's read-only: runtime jobs change
-through the `schedule` tool and config jobs in `agent.toml` ([Scheduler](scheduler.md)).
+In `jobs.rs` (`jobs::routes`, merged into the chat pages' `WebApp::routes`), so it's behind the
+authentication middleware but not `may_administer`-gated. It lists, in one table, every job that
+delivers to the signed-in user, across all agents, with the agent as a column, and has the forms
+that schedule, edit, disable, re-enable, and delete the user's runtime jobs. Config jobs are shown
+but change only in `agent.toml` ([Scheduler](scheduler.md)).
 
 - **Whose jobs**: the runtime jobs the user created (`Store::jobs(None, Some(user))`, every agent),
   and for the owner every agent's config jobs, which deliver to the owner. Both become a `JobDef`
@@ -401,8 +409,27 @@ through the `schedule` tool and config jobs in `agent.toml` ([Scheduler](schedul
   has passed), or the next cron time inside the job's active hours, trying at most a week of
   every-minute times (`ACTIVE_HOURS_SEARCH`) before it says there is none. The last run is the job's
   `job_runs` row (`Store::job_last_run`, one read per job).
-- **Order**: soonest next run first, then by agent id; jobs without a next run come last.
-- Every answer is `no-store`. A store error is a logged 500.
+- **Order**: soonest next run first, then by agent id; jobs without a next run (disabled ones too)
+  come last.
+- **Creating**: `POST /jobs` takes `agent` (one of `agent_choices`, the agents the user may chat
+  with), `repeat` (`cron` or `once`), `cron` or `at` (`YYYY-MM-DDTHH:MM` from
+  `<input type="datetime-local">`, read in the agent's zone by the `schedule` tool's `parse_at`; RFC
+  3339 with an offset works too), `prompt` (trimmed, CRLF made LF), and `session` (`isolated` or
+  `dm`). `JobForm::spec` refuses a blank prompt, an invalid cron pattern or one that never matches
+  again, and a time that isn't in the future; past `MAX_RUNTIME_JOBS_PER_USER` (20) jobs with the
+  agent it's a 409. The row is a `RuntimeSpec` created by the user, as the `schedule` tool writes
+  it.
+- **Changing**: every route with a job id loads it with `own_job`, which answers 404 unless the user
+  created it, so another user's job is never shown or changed. An edit writes a new spec
+  (`Store::job_update_spec`) that keeps the job's agent and `disabled`, with `changed_at` now.
+  Disable sets `disabled`; enable clears it and sets `changed_at`, and refuses (409) a one-shot job
+  whose time has passed, which the scheduler would otherwise delete at once without running. A spec
+  that can't be read can be replaced by an edit or deleted; disable and enable answer 409 for it.
+  After each change `WebApp` calls `JobChanges::notify` (`runtime.jobs`, passed to `WebApp::new`),
+  so the scheduler restarts the job's task ([Scheduler](scheduler.md#timing)).
+- Every answer is `no-store` (a `map_response` route layer). A post without the CSRF token is a
+  403. A form the page can't accept is shown again with why and what was typed. A store error is a
+  logged 500.
 
 ## Admin pages
 
@@ -916,13 +943,13 @@ Templates are in `crates/giles-core/templates/web/`: pages `chats.html`, `chat.h
 `login_required.html`, `login.html`, `admin_status.html`, `admin_plugins.html`, `admin_agents.html`,
 `admin_agent.html`, `admin_agent_new.html`, `admin_routes.html`, `admin_route_form.html`,
 `admin_toolsets.html`, `admin_toolset.html`, `admin_toolset_form.html`, `admin_toolset_remove.html`,
-`admin_toolset_rename.html`, `jobs.html` (extending `layout.html`; `admin_nav.html` is included by
-the admin pages), and fragments `message.html`, `approval.html`, `compose.html`, `attachments.html`
-(rendered by `render.rs`). Nothing inline: no scripts, styles, or `hx-on` handlers (the CSP and
-`allowEval: false` forbid them). The chat page is `hx-ext="sse"` with `sse-connect`; `#messages` has
-`sse-swap="message"` and `hx-swap="beforeend"`. The compose form replaces itself
-(`hx-target="this"`, `hx-swap="outerHTML"`); approval forms use `hx-swap="none"`. Every form also
-works as a plain form post. Styles are classes in `assets/giles.css`.
+`admin_toolset_rename.html`, `jobs.html`, `job_form.html` (extending `layout.html`; `admin_nav.html`
+is included by the admin pages), and fragments `message.html`, `approval.html`, `compose.html`,
+`attachments.html` (rendered by `render.rs`). Nothing inline: no scripts, styles, or `hx-on`
+handlers (the CSP and `allowEval: false` forbid them). The chat page is `hx-ext="sse"` with
+`sse-connect`; `#messages` has `sse-swap="message"` and `hx-swap="beforeend"`. The compose form
+replaces itself (`hx-target="this"`, `hx-swap="outerHTML"`); approval forms use `hx-swap="none"`.
+Every form also works as a plain form post. Styles are classes in `assets/giles.css`.
 
 ## Tests
 
@@ -947,7 +974,11 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   replacement, `resolve_approval` outcomes (and `false` for unknown prompts and chats), plain-post
   redirect.
 - Jobs page (`tests/jobs.rs`): one list across agents, soonest first, with config jobs for the owner
-  only, a "Doesn't run" note for a job of an unconfigured agent, and no other user's jobs; `jobs.rs`
+  only, a "Doesn't run" note for a job of an unconfigured agent, and no other user's jobs. The form
+  stores the spec the `schedule` tool would and notifies the scheduler; it refuses a blank prompt, a
+  bad cron pattern, a past time, an agent the user may not use, a missing CSRF token, and a job past
+  the cap, keeping what was typed. Edit, disable, enable, and delete change only the user's own jobs
+  (404 for another's), an edit keeps `disabled`, and a passed one-shot can't be enabled. `jobs.rs`
   unit tests cover the next run inside active hours.
 - History: the time prefix is cut from user messages and chat titles; a post shows once on reload
   while unacked, queued, started, and stored (`render::waiting` unit tests cover replayed and

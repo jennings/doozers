@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ title }} - Scheduled jobs - Giles{% endblock %}
+
+{% block content %}
+{%- if admin %}
+{% include "web/admin_nav.html" %}
+{%- else %}
+<nav class="admin-nav"><a href="/">Chats</a> <a href="/jobs">Jobs</a></nav>
+{%- endif %}
+<h1>{{ title }}</h1>
+{%- if let Some(error) = error %}
+<p class="error" role="alert">{{ error }}</p>
+{%- endif %}
+<form class="agent-form" method="post" action="{{ action }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+{%- if let Some(agent) = agent %}
+<span class="label">Agent</span>
+<span>{{ agent }}</span>
+{%- else %}
+<label for="agent">Agent</label>
+<select id="agent" name="agent" required>
+{%- for choice in agents %}
+<option value="{{ choice.id }}"{% if choice.id == form.agent %} selected{% endif %}>{{ choice.label }}</option>
+{%- endfor %}
+</select>
+{%- endif %}
+<label for="repeat">Runs</label>
+<select id="repeat" name="repeat">
+<option value="cron"{% if form.repeat != "once" %} selected{% endif %}>On a cron schedule</option>
+<option value="once"{% if form.repeat == "once" %} selected{% endif %}>Once</option>
+</select>
+<label for="cron">Cron schedule</label>
+<input id="cron" name="cron" value="{{ form.cron }}" placeholder="0 9 * * 1-5">
+<p class="detail">For a job that repeats: minute, hour, day of month, month, and day of week, such as <code>0 9 * * 1-5</code> for 09:00 on weekdays.</p>
+<label for="at">Time</label>
+<input id="at" name="at" type="datetime-local" value="{{ form.at }}">
+<p class="detail">For a job that runs once. Times are in {{ zone }}.</p>
+<label for="prompt">Prompt</label>
+<textarea id="prompt" name="prompt" rows="6" required>{{ form.prompt }}</textarea>
+<p class="detail">What the agent does when the job runs. Its reply is sent to you.</p>
+<label for="session">Runs in</label>
+<select id="session" name="session">
+<option value="isolated"{% if form.session != "dm" %} selected{% endif %}>Its own session</option>
+<option value="dm"{% if form.session == "dm" %} selected{% endif %}>Your DM with the agent</option>
+</select>
+<button type="submit">{{ submit }}</button>
+</form>
+{% endblock %}
