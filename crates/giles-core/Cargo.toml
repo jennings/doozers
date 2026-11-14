@@ -21,6 +21,8 @@ provider-openai = []
 [dependencies]
 askama = "0.16.1"
 async-trait.workspace = true
+# AES-256-GCM for the local secret store (`secrets`); rustls already builds it.
+aws-lc-rs = { version = "1.18.2", default-features = false, features = ["aws-lc-sys"] }
 axum = "0.8.9"
 # Media in provider requests and in MCP tool results.
 base64.workspace = true
@@ -67,6 +69,8 @@ tower.workspace = true
 tracing.workspace = true
 url = "2.5.8"
 webpki-root-certs = "1.0.10"
+# Wipes key material of the local secret store (`secrets`) from memory.
+zeroize = "1.9.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = "0.4.7"

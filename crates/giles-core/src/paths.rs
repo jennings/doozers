@@ -240,6 +240,12 @@ impl DataRoot {
         self.root.join("secrets.toml")
     }
 
+    /// `secret.key`, mode 0600: the default key file of the local secret store, which unlocks the
+    /// secrets in `giles.db`.
+    pub fn secret_key_file(&self) -> PathBuf {
+        self.root.join("secret.key")
+    }
+
     /// `agents/`: one directory per agent (section 11.3).
     pub fn agents_dir(&self) -> PathBuf {
         self.root.join("agents")
@@ -687,6 +693,7 @@ mod tests {
         assert_eq!(r.skills_dir(), Path::new("/g/skills"));
         assert_eq!(r.plugins_dir(), Path::new("/g/plugins"));
         assert_eq!(r.database_file(), Path::new("/g/data/giles.db"));
+        assert_eq!(r.secret_key_file(), Path::new("/g/secret.key"));
         assert_eq!(r.blobs_dir(), Path::new("/g/data/blobs"));
         assert_eq!(
             r.plugin_data_dir(Kind::Channel, "irc").unwrap(),

@@ -38,7 +38,8 @@ Both files are readable only by you, but they aren't encrypted.
 
 A backup leaves out:
 
-- `secrets.toml`. Keep your own copy of it.
+- `secrets.toml` and `secret.key`. Keep your own copies of them. `secret.key` unlocks the secrets
+  stored in the database, and they can't be read without it.
 - The plugin binaries in `plugins/`. Install them again.
 - The state plugins keep in `data/channel/` and `data/toolset/`, such as a WhatsApp session. A
   plugin that loses it asks you to link or log in again.
@@ -75,7 +76,8 @@ tar -xf /mnt/backups/giles/giles-20261023T140312Z.tar
 giles serve
 ```
 
-On a new machine, add `secrets.toml` (mode 0600) and the plugin binaries before step 6.
+On a new machine, add `secrets.toml` and `secret.key` (both mode 0600) and the plugin binaries
+before step 6.
 
 If the data root isn't `~/.giles`, use its path in steps 2 to 4, or set `GILES_HOME` for
 `giles serve`.

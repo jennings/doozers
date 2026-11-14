@@ -25,6 +25,7 @@ environment.
 <root>/
   giles.toml          DataRoot::config_file()       human-written
   secrets.toml        DataRoot::secrets_file()      human-written, mode 0600
+  secret.key          DataRoot::secret_key_file()   the secret store's key, mode 0600, made at first start
   agents/<agent>/     DataRoot::agent_dir(name)     agent.toml, SOUL.md, skills/, ...
     memory.db         DataRoot::agent_memory_db()   the agent's memories, created on first use
   users/<user>/       DataRoot::user_dir(name)      USER.md, the person-written profile
@@ -71,7 +72,8 @@ either. It matters most for `data/<kind>/<instance>/`, the only directory a plug
 
 `DataRoot::create_layout` runs at `giles serve` startup and is idempotent. It creates the root and
 every directory above, each with mode 0700. It creates no files: `giles.toml` and `secrets.toml` are
-written by people, and the database, token, sockets, and pid files by the subsystems that own them.
+written by people, and the database, `secret.key`, token, sockets, and pid files by the subsystems
+that own them.
 
 Existing directories keep their modes, so an operator may loosen one deliberately, except `run/`,
 which is reset to 0700 on every start because it holds the admin token and the sockets.

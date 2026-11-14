@@ -898,6 +898,9 @@ User-run plugins reached over TCP, with optional TLS and a bearer token or OAuth
   come from the environment with `{ env = "NAME" }`. The core resolves references before
   `Configure`; plugins receive plain values and never read either source.
 - The core refuses to start if `secrets.toml` is readable by group or others.
+- The local secret store (`giles_core::secrets`) replaces `secrets.toml` in steps: values sealed
+  with AES-256-GCM in `giles.db`, under a data key wrapped by the key in `<root>/secret.key`, behind
+  a `SecretProvider` trait that Vault and `giles-secret-*` plugins will also implement (#29).
 - Validation errors, logs, and `giles status` never show a value at a secret path; they show the
   path and `<redacted>`.
 
@@ -1354,6 +1357,7 @@ Everything lives under `GILES_HOME`, default `~/.giles`.
 ~/.giles/
   giles.toml                    # startup settings (operator-written; section 11.2)
   secrets.toml                  # mode 0600 (human-written)
+  secret.key                    # mode 0600: the local secret store's key file (section 7.7)
   agents/<agent>/               # section 11.3
   users/<user>/                 # section 11.3
   skills/<skill>/SKILL.md       # global skills

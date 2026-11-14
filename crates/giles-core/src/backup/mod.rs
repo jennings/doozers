@@ -509,8 +509,9 @@ fn pre_migration_stem_of(name: &str) -> Option<&str> {
 /// copy of a live database can miss its WAL. So a `memory.db` with no snapshot in `memory` (one
 /// created after [`MemorySnapshots::take`] listed the agents) is left out.
 ///
-/// Left out: `secrets.toml` (credentials stay where the operator keeps them, so a backup copied
-/// elsewhere never carries them), the database (the `.db` file), `plugins/` (binaries, installed
+/// Left out: `secrets.toml` and `secret.key` (credentials, and the key that unlocks the secrets in
+/// the database, stay where the operator keeps them, so a backup copied elsewhere never carries
+/// them), the database (the `.db` file), `plugins/` (binaries, installed
 /// again), `data/channel/`, `data/environment/`, `data/provider/`, and `data/toolset/` (state that
 /// belongs to plugins, which the core doesn't read), `backups/`, `trash/` (agents removed in the
 /// web UI: the operator put them there to be rid of them, and keeps them on this machine only),
