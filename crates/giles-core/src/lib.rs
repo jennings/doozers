@@ -30,6 +30,7 @@ pub mod routes;
 pub mod runtime;
 pub mod sandbox;
 pub mod scheduler;
+pub mod secrets;
 pub mod sessions;
 pub mod skills;
 mod stderr_lines;

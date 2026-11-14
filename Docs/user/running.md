@@ -31,6 +31,7 @@ The data root looks like this:
 ~/.giles/
   giles.toml        your configuration (you write it)
   secrets.toml      API keys and passwords (you write it; make it mode 0600)
+  secret.key        the key to the secrets Giles stores (Giles makes it; back it up)
   agents/           one directory per agent
   users/            one directory per user
   skills/           global skills

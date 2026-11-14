@@ -17,6 +17,7 @@ use crate::registry::{Registry, RegistryError};
 use crate::router::Router;
 use crate::routes::{Routes, RoutesError};
 use crate::scheduler::{JobChanges, OutboxDelivery, Scheduler, SchedulerOptions};
+use crate::secrets::{KeyError, KeyFile, LocalSecrets, SecretProvider};
 use crate::sessions::{Approvals, Clock, Sessions, SessionsOptions, SystemClock, TurnRunner};
 use crate::workspaces::{self, WorkspaceSweep, Workspaces};
 
@@ -46,6 +47,9 @@ pub enum StartError {
         /// Why.
         source: giles_store::Error,
     },
+    /// The local secret store couldn't be unlocked.
+    #[error(transparent)]
+    Secrets(#[from] KeyError),
     /// The blob store couldn't be opened.
     #[error("cannot open the blob store {}: {source}", .path.display())]
     Blobs {
@@ -98,6 +102,8 @@ pub struct Runtime {
     pub memory_dbs: MemoryDbs,
     /// The blob store, `data/blobs`.
     pub blobs: BlobStore,
+    /// The secret store: the local store in `giles.db`, unlocked by `secret.key`.
+    pub secrets: Arc<dyn SecretProvider>,
     /// Configured instances and their objects, the tool index, the skill index, and the running
     /// configuration ([`Registry::config`]).
     pub registry: Arc<Registry>,
@@ -115,7 +121,8 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// Opens (and migrates) the database and the blob store under `root`, builds the registry
+    /// Opens (and migrates) the database, unlocks the local secret store
+    /// ([`LocalSecrets::open`]), opens the blob store under `root`, builds the registry
     /// from `config` with built-in providers reading attachments from the blob store, imports
     /// `giles.toml`'s `[[routes]]` if that never happened and loads the routes ([`Routes::open`]),
     /// and registers the core tools. The data root's layout must exist. `serve` logs the registry's
@@ -138,6 +145,9 @@ impl Runtime {
                     }
                     source => StartError::Store { path, source },
                 })?;
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+        let secrets =
+            LocalSecrets::open(store.clone(), &KeyFile::default_for(&root), clock.clone()).await?;
         let path = root.blobs_dir();
         let blobs = BlobStore::open(path.clone(), store.clone())
             .await
@@ -145,7 +155,6 @@ impl Runtime {
         let media = Arc::new(BlobMedia::new(blobs.clone()));
         let registry = Arc::new(Registry::from_config(root.clone(), config.clone(), media)?);
         let routes = Arc::new(Routes::open(store.clone(), registry.live_config().clone()).await?);
-        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let workspaces = Workspaces::new(store.clone(), registry.clone(), clock.clone());
         workspaces.recover().await.map_err(StartError::Workspaces)?;
         let runtime = Self {
@@ -154,6 +163,7 @@ impl Runtime {
             outbox: Outbox::new(store.clone(), registry.clone(), clock),
             store,
             blobs,
+            secrets: Arc::new(secrets),
             registry,
             routes,
             jobs: JobChanges::default(),

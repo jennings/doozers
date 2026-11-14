@@ -36,6 +36,7 @@
 - [Data root](technical/data-root.md)
 - [Storage](technical/storage.md)
 - [Backups](technical/backups.md)
+- [Secret store](technical/secret-store.md)
 - [Registry and startup](technical/registry.md)
 - [Plugin transport](technical/plugin-transport.md)
 - [Plugin SDK](technical/plugin-sdk.md)

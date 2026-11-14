@@ -533,9 +533,9 @@ wrong.
 
 ## Secrets
 
-`secrets` and `secret_key` are the rows of the local secret store. The store keeps sealed values and
-checks nothing about them. Validating paths, sealing, and opening are the core's business
-(`giles_core::secrets`), so no plaintext value ever reaches `giles-store`.
+`secrets` and `secret_key` are the rows of the [local secret store](secret-store.md). The store
+keeps sealed values and checks nothing about them. Validating paths, sealing, and opening are the
+core's business (`giles_core::secrets`), so no plaintext value ever reaches `giles-store`.
 
 | Method                                    | Contract                                                         |
 | ----------------------------------------- | ---------------------------------------------------------------- |
