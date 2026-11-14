@@ -45,6 +45,8 @@ async fn create(env: &Env, agent: &str, creator: &str, schedule: &str, prompt: &
         at,
         prompt: prompt.to_owned(),
         session: crate::config::JobSession::Isolated,
+        disabled: false,
+        changed_at: None,
     };
     env.store
         .job_create(

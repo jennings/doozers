@@ -1130,6 +1130,83 @@ async fn a_runtime_job_of_a_removed_agent_does_not_run() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_disabled_runtime_job_waits_and_switching_it_on_makes_up_no_missed_times() {
+    let mut h = Harness::new("", &[]).await;
+    let job = h
+        .store
+        .job_create(
+            AgentId::new(AGENT).unwrap(),
+            owner(),
+            json!({"cron": "0 * * * *", "prompt": "Hourly.", "disabled": true}),
+            h.now(),
+        )
+        .await
+        .unwrap();
+    h.start().await;
+    h.advance_to(ts("2026-10-22T17:30:00Z")).await;
+    h.assert_nothing_ran().await;
+
+    h.store
+        .job_update_spec(
+            job.id,
+            json!({"cron": "0 * * * *", "prompt": "Hourly.", "changed_at": h.now()}),
+        )
+        .await
+        .unwrap();
+    h.changes.notify();
+    // 15:00, 16:00, and 17:00 passed while it was off: none of them runs now.
+    h.assert_nothing_ran().await;
+    assert_eq!(h.ran().await.at, ts("2026-10-22T18:00:00Z"));
+    h.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_edited_runtime_job_runs_on_its_new_schedule_and_a_disabled_one_stops() {
+    let mut h = Harness::new("", &[]).await;
+    h.start().await;
+    let job = h
+        .store
+        .job_create(
+            AgentId::new(AGENT).unwrap(),
+            owner(),
+            json!({"cron": "0 9 * * *", "prompt": "At nine."}),
+            h.now(),
+        )
+        .await
+        .unwrap();
+    h.changes.notify();
+    h.settle().await;
+
+    // 07:00 PDT: moved to 07:30 with a new prompt.
+    h.store
+        .job_update_spec(
+            job.id,
+            json!({"cron": "30 7 * * *", "prompt": "Half past seven.", "changed_at": h.now()}),
+        )
+        .await
+        .unwrap();
+    h.changes.notify();
+    let ran = h.ran().await;
+    assert_eq!(ran.at, ts("2026-10-22T14:30:00Z"));
+    assert!(ran.prompt.ends_with("Half past seven."));
+    // Nothing at nine any more.
+    h.advance_to(ts("2026-10-22T16:30:00Z")).await;
+    h.assert_nothing_ran().await;
+
+    h.store
+        .job_update_spec(
+            job.id,
+            json!({"cron": "30 7 * * *", "prompt": "Half past seven.", "disabled": true}),
+        )
+        .await
+        .unwrap();
+    h.changes.notify();
+    h.advance_to(ts("2026-10-23T15:00:00Z")).await;
+    h.assert_nothing_ran().await;
+    h.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_agent_is_busy_for_as_long_as_one_of_its_job_runs_is() {
     let mut h = Harness::new(MORNING, &[]).await;
     let gate = Arc::new(tokio::sync::Notify::new());

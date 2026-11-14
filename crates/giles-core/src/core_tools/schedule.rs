@@ -145,6 +145,8 @@ pub fn parse_input(input: Value, now: Timestamp, tz: &TimeZone) -> Result<Reques
                 at,
                 prompt,
                 session: input.session.unwrap_or_default(),
+                disabled: false,
+                changed_at: None,
             }))
         }
         "list" | "cancel" if create_only => Err(format!(
@@ -281,6 +283,16 @@ impl ScheduleTool {
             for job in jobs {
                 let line = match serde_json::from_value::<RuntimeSpec>(job.spec.clone()) {
                     Ok(spec) => match spec.when() {
+                        Ok(when) if spec.disabled => format!(
+                            "disabled: {} ({}): {}",
+                            match (&when, spec.cron.as_deref()) {
+                                (When::At(at), _) => format!("once, {}", show_time(*at, tz)),
+                                (When::Cron(_), Some(pattern)) => format!("every `{pattern}`"),
+                                (When::Cron(_), None) => "on a schedule".to_owned(),
+                            },
+                            session_name(spec.session),
+                            short(&spec.prompt)
+                        ),
                         Ok(when) => format!(
                             "{} ({}): {}",
                             describe(&when, spec.cron.as_deref(), tz, now),
