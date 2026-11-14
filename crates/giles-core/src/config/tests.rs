@@ -215,6 +215,53 @@ fn the_journal_mode_defaults_to_wal_and_accepts_the_four_safe_modes_in_any_case(
 }
 
 #[test]
+fn the_secret_key_file_defaults_to_the_data_root_and_resolves_relative_paths_there() {
+    let home = Home::new(MINIMAL);
+    assert_eq!(home.load_ok().core.secret_key_file, home.path("secret.key"));
+    for (value, expected) in [
+        (
+            "/run/secrets/giles_key",
+            PathBuf::from("/run/secrets/giles_key"),
+        ),
+        ("keys/giles.key", home.path("keys/giles.key")),
+    ] {
+        home.write(
+            "giles.toml",
+            &format!("{MINIMAL}[core]\nsecret_key_file = {value:?}\n"),
+        );
+        assert_eq!(home.load_ok().core.secret_key_file, expected, "{value}");
+    }
+    home.write(
+        "giles.toml",
+        &format!("{MINIMAL}[core]\nsecret_key_file = \"\"\n"),
+    );
+    assert_error(
+        &home,
+        "giles.toml",
+        "core.secret_key_file",
+        "must not be empty",
+    );
+}
+
+#[test]
+fn no_grant_may_reach_a_secret_key_file_outside_the_data_root() {
+    let outside = tempfile::tempdir().unwrap();
+    let key_dir = outside.path().join("credentials");
+    let home = Home::new(&format!(
+        "{MINIMAL}[core]\nsecret_key_file = {:?}\n\
+         [toolset.t]\ncommand = \"/x\"\nsandbox = {{ read = [{:?}] }}\n",
+        key_dir.join("giles.key"),
+        key_dir,
+    ));
+    assert_error(
+        &home,
+        "giles.toml",
+        "toolset.t.sandbox.read[0]",
+        "overlaps the secret store's key file",
+    );
+}
+
+#[test]
 fn journal_modes_that_risk_corruption_or_do_not_exist_are_refused() {
     for (value, reason) in [
         ("\"memory\"", "can corrupt the database or lose data"),
@@ -2070,17 +2117,35 @@ fn grants_through_a_symlink_into_the_data_root_are_rejected() {
 fn check_grant_applies_the_same_rule() {
     let home = Home::new(MINIMAL);
     let name = InstanceName::new("files").unwrap();
-    assert!(check_grant(&home.root, Kind::Toolset, &name, Path::new("/opt/homebrew")).is_ok());
+    let key = home.root.secret_key_file();
     assert!(
         check_grant(
             &home.root,
+            &key,
+            Kind::Toolset,
+            &name,
+            Path::new("/opt/homebrew")
+        )
+        .is_ok()
+    );
+    assert!(
+        check_grant(
+            &home.root,
+            &key,
             Kind::Toolset,
             &name,
             &home.path("data/toolset/files/x")
         )
         .is_ok()
     );
-    let err = check_grant(&home.root, Kind::Toolset, &name, &home.path("plugins")).unwrap_err();
+    let err = check_grant(
+        &home.root,
+        &key,
+        Kind::Toolset,
+        &name,
+        &home.path("plugins"),
+    )
+    .unwrap_err();
     assert!(err.contains("overlaps the data root"), "{err}");
 }
 

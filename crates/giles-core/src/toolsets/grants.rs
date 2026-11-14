@@ -79,11 +79,14 @@ pub(crate) fn install_prefix(path: &Path) -> Option<&Path> {
     }
 }
 
-/// What no grant may be or contain: the data root (except the instance's own data directory) and
-/// the socket directory (`check_grant`), and the operator's home directory.
+/// What no grant may be or contain: the data root (except the instance's own data directory), the
+/// socket directory, and the secret store's key file (`check_grant`), and the operator's home
+/// directory.
 pub(crate) struct Protect<'a> {
     /// The data root.
     pub root: &'a DataRoot,
+    /// The secret store's key file.
+    pub secret_key_file: &'a Path,
     /// The instance granted.
     pub instance: &'a InstanceName,
     /// The operator's `HOME`, if set.
@@ -108,7 +111,14 @@ impl Protect<'_> {
                 return false;
             }
         }
-        check_grant(self.root, Kind::Toolset, self.instance, path).is_ok()
+        check_grant(
+            self.root,
+            self.secret_key_file,
+            Kind::Toolset,
+            self.instance,
+            path,
+        )
+        .is_ok()
     }
 }
 
@@ -316,8 +326,10 @@ mod tests {
         ) -> Plan {
             let program = fs::canonicalize(found).unwrap();
             let instance = InstanceName::new("files").unwrap();
+            let key_file = self.root.secret_key_file();
             let protect = Protect {
                 root: &self.root,
+                secret_key_file: &key_file,
                 instance: &instance,
                 home: Some(home),
             };

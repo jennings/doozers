@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use giles_store::JournalMode;
 use jiff::tz::TimeZone;
@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use super::error::{ConfigError, KeyPath};
 use super::instances::{RawChannel, RawEnvironment, RawProvider};
+use crate::paths::DataRoot;
 
 /// The HTTP listener when `[core]` sets no `http_listen`: `127.0.0.1:8080`.
 pub const DEFAULT_HTTP_LISTEN: SocketAddr =
@@ -26,6 +27,9 @@ pub struct CoreConfig {
     /// The SQLite journal mode of `data/giles.db`: [`JournalMode::Wal`] unless set. The database
     /// is switched to it at startup, from whichever mode it was in.
     pub journal_mode: JournalMode,
+    /// The local secret store's key file: `<root>/secret.key` unless set, and relative to the data
+    /// root if set relative.
+    pub secret_key_file: PathBuf,
 }
 
 /// `[owner]`: the one user of v1 (PLAN section 1.1).
@@ -108,6 +112,7 @@ pub(crate) struct RawGiles {
 struct RawCore {
     http_listen: Option<SocketAddr>,
     journal_mode: Option<String>,
+    secret_key_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,7 +123,7 @@ struct RawOwner {
 }
 
 impl RawGiles {
-    pub(crate) fn core(&self, file: &Path) -> Result<CoreConfig, ConfigError> {
+    pub(crate) fn core(&self, file: &Path, root: &DataRoot) -> Result<CoreConfig, ConfigError> {
         let journal_mode = match &self.core.journal_mode {
             Some(text) => text.parse::<JournalMode>().map_err(|err| {
                 ConfigError::at(
@@ -129,9 +134,21 @@ impl RawGiles {
             })?,
             None => JournalMode::default(),
         };
+        let secret_key_file = match &self.core.secret_key_file {
+            Some(path) if path.as_os_str().is_empty() => {
+                return Err(ConfigError::at(
+                    file,
+                    KeyPath::root().key("core").key("secret_key_file"),
+                    "must not be empty",
+                ));
+            }
+            Some(path) => root.root().join(path),
+            None => root.secret_key_file(),
+        };
         Ok(CoreConfig {
             http_listen: self.core.http_listen.unwrap_or(DEFAULT_HTTP_LISTEN),
             journal_mode,
+            secret_key_file,
         })
     }
 

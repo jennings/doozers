@@ -135,6 +135,7 @@ impl Env {
             ToolsetHost::start(
                 ToolsetLauncher::new(
                     root.clone(),
+                    root.secret_key_file(),
                     PathBuf::from("/nonexistent/giles"),
                     Err("there is no sandbox in tests".to_owned()),
                     self.blobs.clone(),

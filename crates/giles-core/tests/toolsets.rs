@@ -194,8 +194,14 @@ impl Home {
     fn launcher(&self, sandbox: Result<(), String>, blobs: BlobStore) -> ToolsetLauncher {
         let path = self.path();
         let exe = std::env::current_exe().unwrap();
-        ToolsetLauncher::new(self.root.clone(), exe, sandbox, blobs)
-            .env(move |name| (name == "PATH").then(|| path.clone()))
+        ToolsetLauncher::new(
+            self.root.clone(),
+            self.root.secret_key_file(),
+            exe,
+            sandbox,
+            blobs,
+        )
+        .env(move |name| (name == "PATH").then(|| path.clone()))
     }
 }
 

@@ -54,10 +54,11 @@ PLAN section 7.10). Most servers are scripts installed by a package manager:
    The prefix goes to both `read` and `execute`, since interpreters need an `execute` grant and
    their libraries need `read`.
 3. Each grant passes the same rule as configured grants (`config::check_grant`): it may not overlap
-   the data root (other than the instance's own data directory) or the socket directory. It also may
-   not be the operator's home directory or contain it (the launcher's `HOME`, compared as written
-   and with links resolved), whatever the data root: `~/bin/server` would otherwise grant all of
-   `~`, including `~/.ssh`. A prefix that fails narrows to the program's directory, then to the file
+   the data root (other than the instance's own data directory), the socket directory, or the secret
+   store's key file (`ToolsetLauncher::new` takes `core.secret_key_file`). It also may not be the
+   operator's home directory or contain it (the launcher's `HOME`, compared as written and with
+   links resolved), whatever the data root: `~/bin/server` would otherwise grant all of `~`,
+   including `~/.ssh`. A prefix that fails narrows to the program's directory, then to the file
    itself. A program inside the data root gets no grant at all; the backends always let the command
    itself run.
 4. Grants inside another grant are dropped; the rest are sorted.

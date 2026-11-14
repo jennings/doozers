@@ -3,8 +3,10 @@
 //!
 //! No plugin may be granted any part of the data root except its own data directory, or the
 //! directory holding the admin and proxy sockets. Otherwise a file-writing tool could edit
-//! `giles.toml` (e.g. set `unsandboxed = true`) or read `secrets.toml`. Nor may it write to (or
-//! connect to sockets in) a directory holding a binary Giles runs ([`BinaryDirs`]).
+//! `giles.toml` (e.g. set `unsandboxed = true`) or read `secrets.toml`. Nor may it be granted the
+//! secret store's key file, wherever `core.secret_key_file` puts it, or a directory holding it.
+//! Nor may it write to (or connect to sockets in) a directory holding a binary Giles runs
+//! ([`BinaryDirs`]).
 
 use std::fmt;
 use std::fs;
@@ -146,19 +148,21 @@ pub struct SandboxSpec {
     pub min_abi: Option<u32>,
 }
 
-/// The directories no grant may overlap, and the one exception.
+/// The paths no grant may overlap, and the one exception.
 pub(crate) struct Protected {
     /// The data root and, if the sockets aren't under it, the socket directory, each with its
     /// canonical form when that differs.
     pub dirs: Vec<(PathBuf, &'static str)>,
+    /// The secret store's key file, each spelling. No exception applies to it.
+    pub key_file: Vec<PathBuf>,
     /// The instance's own data directory, each spelling.
     pub own: Vec<PathBuf>,
 }
 
 impl Protected {
     /// What's protected for an instance whose data directory is `own`, under data root `root`
-    /// with sockets in `socket_dir`.
-    pub(crate) fn new(root: &Path, socket_dir: &Path, own: &Path) -> Self {
+    /// with sockets in `socket_dir` and the secret store's key file at `key_file`.
+    pub(crate) fn new(root: &Path, socket_dir: &Path, key_file: &Path, own: &Path) -> Self {
         let mut dirs = Vec::new();
         for (dir, what) in [
             (root, "the data root"),
@@ -172,22 +176,22 @@ impl Protected {
         }
         Self {
             dirs,
+            key_file: forms(key_file),
             own: forms(own),
         }
     }
 
-    /// Checks one grant: every spelling of it (as written and, if it exists, with symlinks
-    /// resolved) must be inside the instance's own data directory or overlap none of the
-    /// protected directories, in either direction.
+    /// Checks one grant: no spelling of it (as written and, if it exists, with symlinks resolved)
+    /// may be or contain the key file, and every spelling must be inside the instance's own data
+    /// directory or overlap none of the protected directories, in either direction.
     pub(crate) fn check(&self, grant: &Path) -> Result<(), String> {
         for form in forms(grant) {
-            if self.own.iter().any(|own| form.starts_with(own)) {
-                continue;
-            }
-            if let Some((dir, what)) = self
-                .dirs
-                .iter()
-                .find(|(dir, _)| form.starts_with(dir) || dir.starts_with(&form))
+            let in_own = self.own.iter().any(|own| form.starts_with(own));
+            if !in_own
+                && let Some((dir, what)) = self
+                    .dirs
+                    .iter()
+                    .find(|(dir, _)| form.starts_with(dir) || dir.starts_with(&form))
             {
                 return Err(format!(
                     "{} overlaps {what}, {}; a plugin may only be granted its own data \
@@ -195,6 +199,18 @@ impl Protected {
                     form.display(),
                     dir.display(),
                     self.own[0].display(),
+                ));
+            }
+            if let Some(key_file) = self
+                .key_file
+                .iter()
+                .find(|key_file| key_file.starts_with(&form) || form.starts_with(key_file))
+            {
+                return Err(format!(
+                    "{} overlaps the secret store's key file, {}; no plugin may be granted it or \
+                     a directory holding it",
+                    form.display(),
+                    key_file.display(),
                 ));
             }
         }
@@ -241,15 +257,16 @@ fn grant_path(text: &str) -> Result<PathBuf, String> {
 }
 
 /// Checks a path the core is about to grant the `kind` instance `instance` (e.g. a stdio server's install prefix,
-/// PLAN section 7.10) by the same rule as configured grants: it must not overlap `root`'s data
-/// root or socket directory, except inside the instance's own data directory. Symlinks are
-/// resolved for paths that exist.
+/// PLAN section 7.10) by the same rule as configured grants: it must not overlap the secret store's
+/// key file `secret_key_file`, nor `root`'s data root or socket directory except inside the
+/// instance's own data directory. Symlinks are resolved for paths that exist.
 ///
 /// # Errors
 ///
-/// The reason, naming the directory it overlaps.
+/// The reason, naming what it overlaps.
 pub fn check_grant(
     root: &DataRoot,
+    secret_key_file: &Path,
     kind: Kind,
     instance: &InstanceName,
     grant: &Path,
@@ -257,7 +274,7 @@ pub fn check_grant(
     let own = root
         .plugin_data_dir(kind, instance.as_str())
         .map_err(|e| e.to_string())?;
-    Protected::new(root.root(), root.socket_dir(), &own).check(grant)
+    Protected::new(root.root(), root.socket_dir(), secret_key_file, &own).check(grant)
 }
 
 /// Validates a `sandbox` table at `path` in `file`. `kind` picks the network default.
@@ -430,6 +447,7 @@ mod tests {
         Protected::new(
             Path::new("/srv/giles"),
             Path::new("/srv/giles/run"),
+            Path::new("/srv/giles/secret.key"),
             Path::new("/srv/giles/data/toolset/files"),
         )
     }
@@ -478,6 +496,7 @@ mod tests {
         let p = Protected::new(
             Path::new("/srv/giles"),
             Path::new("/tmp/giles-0123456789abcdef"),
+            Path::new("/srv/giles/secret.key"),
             Path::new("/srv/giles/data/toolset/x"),
         );
         assert_eq!(p.check(Path::new("/tmp/other")), Ok(()));
@@ -495,6 +514,33 @@ mod tests {
     }
 
     #[test]
+    fn a_key_file_outside_the_data_root_is_never_granted() {
+        let p = Protected::new(
+            Path::new("/srv/giles"),
+            Path::new("/srv/giles/run"),
+            Path::new("/run/secrets/giles_key"),
+            Path::new("/srv/giles/data/toolset/files"),
+        );
+        for ok in [
+            "/run/secrets/other",
+            "/run/secrets/giles_key2",
+            "/opt/homebrew",
+        ] {
+            assert_eq!(p.check(Path::new(ok)), Ok(()), "{ok}");
+        }
+        for bad in ["/run", "/run/secrets", "/run/secrets/giles_key"] {
+            let err = p.check(Path::new(bad)).unwrap_err();
+            assert!(
+                err.contains("overlaps the secret store's key file, /run/secrets/giles_key"),
+                "{bad}: {err}"
+            );
+        }
+        // The data root's own message wins for a grant overlapping both.
+        let err = p.check(Path::new("/")).unwrap_err();
+        assert!(err.contains("overlaps the data root"), "{err}");
+    }
+
+    #[test]
     fn symlinks_are_resolved_when_they_exist() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("root");
@@ -509,7 +555,7 @@ mod tests {
         let link_to_outside = own.join("docs");
         std::os::unix::fs::symlink(dir.path().join("outside"), &link_to_outside).unwrap();
 
-        let p = Protected::new(&root, &root.join("run"), &own);
+        let p = Protected::new(&root, &root.join("run"), &root.join("secret.key"), &own);
         assert_eq!(p.check(&dir.path().join("outside")), Ok(()));
         assert_eq!(p.check(&own.join("sub")), Ok(()));
         // A grant that leads into the data root through a symlink.

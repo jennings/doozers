@@ -173,7 +173,7 @@ impl Config {
                 .and_then(toml::Value::as_table);
             ConfigHash::of(table.unwrap_or(&toml::Table::new()))
         };
-        let core = raw.core(file)?;
+        let core = raw.core(file, root)?;
         let owner = raw.owner(file)?;
         // A table with `url` is a remote toolset, which is stored in the database now: the table
         // is ignored whatever else it holds. The others are stdio servers.
@@ -235,6 +235,7 @@ impl Config {
         let ctx = instances::Ctx {
             file,
             root,
+            secret_key_file: &core.secret_key_file,
             builtins: &options.builtins,
             resolver: &resolver,
             unknown: RefCell::default(),

@@ -28,6 +28,7 @@ type EnvFn = dyn Fn(&str) -> Option<OsString> + Send + Sync;
 #[derive(Clone)]
 pub struct ToolsetLauncher {
     root: DataRoot,
+    secret_key_file: PathBuf,
     trampoline: PathBuf,
     sandbox: std::result::Result<(), String>,
     blobs: BlobStore,
@@ -56,18 +57,21 @@ pub struct ResolvedProgram {
 
 impl ToolsetLauncher {
     /// A launcher for `root` whose sandbox trampoline is `trampoline` (the `giles` binary, run as
-    /// `giles sandbox-exec`). `sandbox` is the host's sandbox check ([`sandbox::check_host`],
+    /// `giles sandbox-exec`). No server is granted `secret_key_file`, the secret store's key
+    /// file, or a directory holding it. `sandbox` is the host's sandbox check ([`sandbox::check_host`],
     /// run once by `serve`): an error refuses every sandboxed server with that message. Media
     /// the servers' tools return is stored in `blobs`. Programs are looked up on the process's
     /// `PATH`.
     pub fn new(
         root: DataRoot,
+        secret_key_file: PathBuf,
         trampoline: PathBuf,
         sandbox: std::result::Result<(), String>,
         blobs: BlobStore,
     ) -> Self {
         Self {
             root,
+            secret_key_file,
             trampoline,
             sandbox,
             blobs,
@@ -158,6 +162,7 @@ impl ToolsetLauncher {
         let home = env("HOME").map(PathBuf::from);
         let protect = Protect {
             root: &self.root,
+            secret_key_file: &self.secret_key_file,
             instance,
             home: home.as_deref(),
         };

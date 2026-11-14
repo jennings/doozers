@@ -146,8 +146,12 @@ impl Runtime {
                     source => StartError::Store { path, source },
                 })?;
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-        let secrets =
-            LocalSecrets::open(store.clone(), &KeyFile::default_for(&root), clock.clone()).await?;
+        let secrets = LocalSecrets::open(
+            store.clone(),
+            &KeyFile::new(&root, &config.core.secret_key_file),
+            clock.clone(),
+        )
+        .await?;
         let path = root.blobs_dir();
         let blobs = BlobStore::open(path.clone(), store.clone())
             .await

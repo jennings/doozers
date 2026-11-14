@@ -463,6 +463,8 @@ fn serialize_paths<S: Serializer>(
 pub(crate) struct Ctx<'a> {
     pub file: &'a Path,
     pub root: &'a DataRoot,
+    /// The local secret store's key file, which no grant may overlap.
+    pub secret_key_file: &'a Path,
     pub builtins: &'a Builtins,
     pub resolver: &'a Resolver<'a>,
     /// The keys found in `auth` tables that nothing recognizes: ignored, and reported by the
@@ -769,7 +771,12 @@ impl Ctx<'_> {
             .root
             .plugin_data_dir(kind, name.as_str())
             .map_err(|e| self.err(path.clone(), e.to_string()))?;
-        let protected = Protected::new(self.root.root(), self.root.socket_dir(), &own);
+        let protected = Protected::new(
+            self.root.root(),
+            self.root.socket_dir(),
+            self.secret_key_file,
+            &own,
+        );
         Ok(Sandbox {
             unsandboxed,
             grants: sandbox::grants(self.file, &path.key("sandbox"), raw, kind, &protected)?,
