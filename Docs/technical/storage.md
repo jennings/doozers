@@ -137,11 +137,12 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 6)
+## Schema (version 7)
 
-The files in `crates/giles-store/src/migrations/` are the authority (`0001_initial.sql` has every
-table but `blobs`, `routes`, `toolsets`, and `workspaces`, which `0002_blobs.sql`,
-`0003_routes.sql`, `0004_toolsets.sql`, and `0005_workspaces.sql` add); this is their outline.
+The files in `crates/giles-store/src/migrations/` are the authority. `0001_initial.sql` has every
+table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, and `secret_key`, which
+`0002_blobs.sql`, `0003_routes.sql`, `0004_toolsets.sql`, `0005_workspaces.sql`, and
+`0007_secrets.sql` add. This is their outline.
 
 | Table          | Columns and rules                                                                    |
 | -------------- | ------------------------------------------------------------------------------------ |
@@ -160,6 +161,8 @@ table but `blobs`, `routes`, `toolsets`, and `workspaces`, which `0002_blobs.sql
 | `routes_imported` | One row, once the `[[routes]]` of `giles.toml` were imported: `at`.                  |
 | `toolsets`     | The MCP toolsets the web UI manages: `name` (primary key, `NOCASE`), `spec` (JSON text), `created_at`, `updated_at`. |
 | `workspaces`   | The environment workspaces: `id` (core-assigned, primary key), `environment`, the owner (`agent`, `channel`, `conversation`, or `job_session`; exactly one form), `options` (JSON), the plugin's `description`, `working_directory`, `persistence`, `state` (`creating`, `active`, `deleting`, `deleted`), `created_at`, `last_used_at`, `deleted_at`, `delete_reason`. Partial unique indexes allow one `creating` or `active` row per owner. See [Workspaces](#workspaces). |
+| `secrets`      | The local secret store: `path` (primary key), `description`, `algorithm`, `nonce`, `ciphertext` (the sealed value), `created_at`, `created_by`, `updated_at`, `updated_by` (user ids, null when no user did it). See [Secrets](#secrets). |
+| `secret_key`   | One row, once the secret store has a data key: `source` (the key source that wrapped it), `algorithm`, `nonce`, `wrapped`, `created_at`. |
 
 `identities` and `pairings` are deferred with multi-user support (PLAN 1.1, D49) and don't exist
 yet.
@@ -527,6 +530,28 @@ write are one transaction. `None` skips the check, for a caller that means to ov
 also moves `updated_at`, so a form loaded before a rename is stale too (and its name no longer finds
 the row). The absence check comes first: a missing toolset is `NoSuchToolset` whatever else is
 wrong.
+
+## Secrets
+
+`secrets` and `secret_key` are the rows of the local secret store. The store keeps sealed values and
+checks nothing about them. Validating paths, sealing, and opening are the core's business
+(`giles_core::secrets`), so no plaintext value ever reaches `giles-store`.
+
+| Method                                    | Contract                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| `secret(path)`                            | The record and sealed value at `path`, if any.                   |
+| `secret_record(path)`                     | The record (path and metadata, no value) at `path`, if any.      |
+| `secret_records(under)`                   | Records of paths starting with `under/`, or every record for `None`, ordered by path. |
+| `secret_put(path, value, user, now)`      | Creates the secret with an empty description, or replaces its sealed value and keeps its description and creation. The update is `now` by `user`. |
+| `secret_describe(path, description, user, now)` | Sets the description and the update. `None` if there is no such secret. |
+| `secret_delete(path)`                     | Deletes the secret. `false` if there is none.                    |
+| `secret_data_key()`                       | The wrapped data key, if one was stored.                         |
+| `secret_count()`                          | How many secrets are stored.                                     |
+| `secret_data_key_set(key)`                | Stores the wrapped data key, replacing any. `Error::Conflict` if a secret is stored, checked in the same transaction: every secret is sealed with the data key. |
+
+Paths are compared byte for byte, because the core admits only lowercase paths. `secret_records`
+selects the range from `under/` up to `under0` (`0` follows `/` in ASCII), so `ssh` lists `ssh/prod`
+but not `ssh-old/a` or `ssh` itself.
 
 ## Workspaces
 

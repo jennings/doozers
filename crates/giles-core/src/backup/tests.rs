@@ -380,7 +380,7 @@ fn pruning_keeps_the_newest_pre_migration_snapshots_and_nothing_else_is_touched(
 fn downgrade_to_v1(path: &Path) {
     let conn = rusqlite::Connection::open(path).unwrap();
     conn.execute_batch(
-        "DROP TABLE workspaces; DROP TABLE toolsets; DROP TABLE routes_imported; DROP TABLE routes; DROP TABLE blobs;
+        "DROP TABLE secret_key; DROP TABLE secrets; DROP TABLE workspaces; DROP TABLE toolsets; DROP TABLE routes_imported; DROP TABLE routes; DROP TABLE blobs;
          PRAGMA user_version = 1;",
     )
     .unwrap();
