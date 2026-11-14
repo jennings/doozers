@@ -70,6 +70,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
         ToolsetHost::start(
             ToolsetLauncher::new(
                 root.clone(),
+                config.core.secret_key_file.clone(),
                 giles_exe.clone(),
                 sandbox.clone().map(drop),
                 runtime.blobs.clone(),

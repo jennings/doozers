@@ -127,6 +127,7 @@ pub fn validate_toolset(
     let validation = Ctx {
         file,
         root: ctx.root,
+        secret_key_file: &ctx.config.core.secret_key_file,
         builtins: &ctx.options.builtins,
         resolver: &resolver,
         unknown: RefCell::default(),

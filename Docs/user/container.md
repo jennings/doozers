@@ -51,6 +51,27 @@ A secret can instead come from the container's environment ([Secrets](configurat
 refer to it as `{ env = "ANTHROPIC_API_KEY" }` and pass it with
 `docker run --env ANTHROPIC_API_KEY=...` (or `--env-file`).
 
+The key that unlocks the secrets Giles stores is `/data/secret.key`, which Giles creates on first
+start. To keep it out of the data volume, move it into a Compose secret:
+
+```yaml
+services:
+  giles:
+    secrets:
+      - giles_secret_key
+secrets:
+  giles_secret_key:
+    file: ./giles-secret.key
+```
+
+```toml
+[core]
+secret_key_file = "/run/secrets/giles_secret_key"
+```
+
+Move `giles-home/secret.key` to `./giles-secret.key` before you start Giles with the setting. See
+[`secret_key_file`](configuration.md#secret_key_file).
+
 ## Sandboxing
 
 The plugin sandbox works with Docker's default security settings; no `--privileged` or extra

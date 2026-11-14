@@ -77,7 +77,8 @@ giles serve
 ```
 
 On a new machine, add `secrets.toml` and `secret.key` (both mode 0600) and the plugin binaries
-before step 6.
+before step 6. If you set [`secret_key_file`](configuration.md#secret_key_file), put the key there
+instead of `secret.key`.
 
 If the data root isn't `~/.giles`, use its path in steps 2 to 4, or set `GILES_HOME` for
 `giles serve`.

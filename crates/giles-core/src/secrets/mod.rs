@@ -152,17 +152,33 @@ pub enum KeyError {
         /// The key file.
         path: PathBuf,
     },
+    /// The key file set by `core.secret_key_file` doesn't exist. Giles creates one only at the
+    /// default location.
+    #[error(
+        "the secret store's key file {}, set by `core.secret_key_file`, doesn't exist; create it \
+         with `openssl rand -hex 32 > {}` and make it readable only by Giles, or remove the setting \
+         to use the default",
+        .path.display(),
+        .path.display()
+    )]
+    NotCreated {
+        /// The key file.
+        path: PathBuf,
+    },
     /// The key file is missing, and secrets sealed with its key are stored.
     #[error(
         "the secret store's key file {} is missing, and giles.db holds {stored} secret(s) sealed \
-         with its key; restore the file from where you keep it",
-        .path.display()
+         with its key; restore the file from where you keep it{}",
+        .path.display(),
+        if *.configured { ", or fix `core.secret_key_file` if it names the wrong file" } else { "" }
     )]
     Missing {
         /// The key file.
         path: PathBuf,
         /// How many secrets are stored.
         stored: u64,
+        /// Whether `core.secret_key_file` names it.
+        configured: bool,
     },
     /// The key file's key doesn't unlock the stored data key, and secrets sealed with it are
     /// stored.

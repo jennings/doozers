@@ -20,14 +20,22 @@ pub(super) const SOURCE: &str = "key-file";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyFile {
     path: PathBuf,
+    /// Whether it's the default, `<root>/secret.key`, which Giles may create.
+    default: bool,
+    /// Whether it's in the data root, where group and others must have no access to it. Outside,
+    /// whatever mounts it (systemd, an orchestrator) owns its mode.
+    in_root: bool,
 }
 
 impl KeyFile {
-    /// The default key file, `<root>/secret.key`. Giles creates it, mode 0600, when it's missing
-    /// and no secret is stored.
-    pub fn default_for(root: &DataRoot) -> Self {
+    /// The key file at `path` (`core.secret_key_file`) for the data root `root`. Giles creates
+    /// it, mode 0600, when it's missing and no secret is stored, but only at the default location,
+    /// `<root>/secret.key`.
+    pub fn new(root: &DataRoot, path: &Path) -> Self {
         Self {
-            path: root.secret_key_file(),
+            path: path.to_owned(),
+            default: path == root.secret_key_file(),
+            in_root: path.starts_with(root.root()),
         }
     }
 
@@ -36,8 +44,13 @@ impl KeyFile {
         &self.path
     }
 
-    /// The key, or `None` if the file doesn't exist. The file must be a regular file that neither
-    /// group nor others can access.
+    /// Whether Giles may create the file: it's at the default location.
+    pub(super) fn may_create(&self) -> bool {
+        self.default
+    }
+
+    /// The key, or `None` if the file doesn't exist. The file must be a regular file. In the data
+    /// root, neither group nor others may have access to it.
     pub(super) fn read(&self) -> Result<Option<KeyBytes>, KeyError> {
         let meta = match fs::metadata(&self.path) {
             Ok(meta) => meta,
@@ -50,7 +63,7 @@ impl KeyFile {
             });
         }
         let mode = meta.mode() & 0o777;
-        if mode & 0o077 != 0 {
+        if self.in_root && mode & 0o077 != 0 {
             return Err(KeyError::Permissions {
                 path: self.path.clone(),
                 mode,
@@ -114,9 +127,8 @@ mod tests {
     use super::*;
 
     fn key_file(dir: &Path) -> KeyFile {
-        KeyFile {
-            path: dir.join("secret.key"),
-        }
+        let root = DataRoot::new(dir, Path::new("/tmp")).unwrap();
+        KeyFile::new(&root, &root.secret_key_file())
     }
 
     #[test]
@@ -131,6 +143,28 @@ mod tests {
         let text = fs::read_to_string(file.path()).unwrap();
         assert_eq!(text.len(), 65, "{text:?}");
         assert!(matches!(file.create(), Err(KeyError::Io { .. })));
+    }
+
+    #[test]
+    fn outside_the_data_root_the_mode_is_left_to_whatever_mounts_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::new(dir.path().join("root"), Path::new("/tmp")).unwrap();
+        let mounted = dir.path().join("run-secrets-giles");
+        fs::write(&mounted, "00".repeat(32)).unwrap();
+        fs::set_permissions(&mounted, fs::Permissions::from_mode(0o444)).unwrap();
+        let file = KeyFile::new(&root, &mounted);
+        assert!(!file.may_create());
+        assert!(file.read().unwrap().is_some());
+
+        let inside = root.root().join("keys/secret.key");
+        fs::create_dir_all(inside.parent().unwrap()).unwrap();
+        fs::write(&inside, "00".repeat(32)).unwrap();
+        fs::set_permissions(&inside, fs::Permissions::from_mode(0o444)).unwrap();
+        assert!(matches!(
+            KeyFile::new(&root, &inside).read(),
+            Err(KeyError::Permissions { .. })
+        ));
+        assert!(KeyFile::new(&root, &root.secret_key_file()).may_create());
     }
 
     #[test]

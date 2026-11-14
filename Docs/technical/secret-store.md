@@ -79,11 +79,21 @@ flowchart LR
 
 ### Key file
 
-`KeyFile::default_for(root)` is `<root>/secret.key`, holding 64 hex digits (`openssl rand -hex 32`
-makes one). Surrounding whitespace is ignored. Reading refuses a file that isn't regular, that group
-or others can access, or that doesn't hold exactly 64 hex digits. No message quotes the file.
+`KeyFile::new(root, path)` is the file at `core.secret_key_file`, by default `<root>/secret.key`. A
+relative setting resolves against the data root. The file holds 64 hex digits
+(`openssl rand -hex 32` makes one), and surrounding whitespace is ignored. Reading refuses a file
+that isn't regular or doesn't hold exactly 64 hex digits. No message quotes the file.
 
-Giles creates the file with `create_new` and mode 0600, so it never overwrites one.
+- **Mode.** Inside the data root, the file must have no group or other bits, as `secrets.toml` must
+  not. Outside it, whatever mounts the file owns its mode. systemd credentials are 0400, and Docker
+  Compose bind-mounts secrets with the host file's mode.
+- **Creation.** Giles creates the file only at the default location, with `create_new` and mode
+  0600, so it never overwrites one. A configured file that doesn't exist is `KeyError::NotCreated`,
+  whatever the database holds. A typo in the setting therefore can't produce a fresh key.
+
+The setting serves keys that live off the data disk. `$CREDENTIALS_DIRECTORY/<name>`, from
+`LoadCredentialEncrypted=`, is a `systemd-creds` credential, TPM2-bound if the host has a TPM. A
+`/run/secrets/<name>` file comes from an orchestrator. Giles reads one file either way.
 
 ### Opening at startup
 
@@ -94,8 +104,9 @@ Giles creates the file with `create_new` and mode 0600, so it never overwrites o
 | -------- | --------------- | -------------- | ------ |
 | present  | unwraps         | any            | Opens. |
 | present  | none            | none           | New data key, wrapped and stored. |
-| missing  | none            | none           | Creates the key file, then a new data key. |
-| missing  | present         | none           | Warns, creates the key file, makes a new data key. |
+| missing  | none            | none           | Creates the default key file, then a new data key. |
+| missing  | present         | none           | Warns, creates the default key file, makes a new data key. |
+| missing, configured | any  | any            | Refuses: `KeyError::NotCreated`. |
 | present  | doesn't unwrap  | none           | Warns, makes a new data key. |
 | missing  | present         | some           | Refuses: `KeyError::Missing`. Nothing is created. |
 | present  | doesn't unwrap  | some           | Refuses: `KeyError::WrongKey`. Nothing changes. |
@@ -108,7 +119,9 @@ new key over it.
 ### Reach
 
 - `secret.key` and `giles.db` sit in the data root, which no plugin sandbox grant may overlap
-  ([Plugin sandbox](sandbox.md)).
+  ([Plugin sandbox](sandbox.md)). A configured key file anywhere else is protected the same way: no
+  grant may be it or contain it, and the instance's own data directory is no exception
+  ([Configuration](config.md#sandbox-grants)).
 - `giles backup` copies only an explicit list of files, which leaves out `secret.key`
   ([Backups](backups.md)). A backup carries ciphertext only.
 - With the default key file, theft of the whole disk exposes the secrets. A TPM-bound

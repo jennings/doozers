@@ -55,10 +55,11 @@ leaves the plugin's network open, and a misspelled `ask` lets those tools run wi
 
 Settings of the core itself. Optional.
 
-| Key            | Default            | Meaning                                                                        |
-| -------------- | ------------------ | ------------------------------------------------------------------------------ |
-| `http_listen`  | `"127.0.0.1:8080"` | Address of the HTTP server (web chat, admin pages, login links)                |
-| `journal_mode` | `"wal"`            | SQLite journal mode of `data/giles.db`: `wal`, `delete`, `truncate`, `persist` |
+| Key               | Default            | Meaning                                                                        |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------ |
+| `http_listen`     | `"127.0.0.1:8080"` | Address of the HTTP server (web chat, admin pages, login links)                |
+| `journal_mode`    | `"wal"`            | SQLite journal mode of `data/giles.db`: `wal`, `delete`, `truncate`, `persist` |
+| `secret_key_file` | `"secret.key"`     | The key that unlocks the secrets Giles stores, relative to the data root       |
 
 To reach Giles from other machines, or from outside a container, set `http_listen` to
 `"0.0.0.0:8080"`. The web interface does not handle TLS, so read
@@ -84,6 +85,47 @@ power loss during a write could then corrupt the database or lose data.
 
 To switch modes, change the value and restart Giles. It converts the existing database in place.
 First stop any other program that has `giles.db` open, such as the `sqlite3` shell.
+
+#### `secret_key_file`
+
+Giles encrypts the secrets it stores in `data/giles.db` with the key in `secret.key`, which it
+creates on first start. Keep a copy of `secret.key`. Without it, the stored secrets can't be read,
+and [backups](backups.md) leave it out.
+
+With the key and the database on one disk, anyone who takes the whole disk can read the secrets. On
+a host with systemd, keep the key in an encrypted systemd credential instead. It's bound to the
+host's TPM2 chip when there is one.
+
+1. Encrypt the key Giles made, then delete the plain copy:
+
+   ```sh
+   sudo mkdir -p /etc/credstore.encrypted
+   sudo systemd-creds encrypt --name=secret-key ~/.giles/secret.key \
+     /etc/credstore.encrypted/secret-key
+   rm ~/.giles/secret.key
+   ```
+
+2. Give it to Giles in its unit file, here `giles.service`:
+
+   ```ini
+   [Service]
+   LoadCredentialEncrypted=secret-key:/etc/credstore.encrypted/secret-key
+   ```
+
+3. Point Giles at the decrypted copy systemd provides:
+
+   ```toml
+   [core]
+   secret_key_file = "/run/credentials/giles.service/secret-key"
+   ```
+
+Giles creates a key file only at the default location. If the file `secret_key_file` names is
+missing, or holds a different key than the stored secrets need, Giles refuses to start and names the
+file. To go back, copy the key back to `~/.giles/secret.key` (mode 0600) and remove the setting.
+
+In a container, use the platform's secret files instead
+([Running in a container](container.md#secrets)). No plugin may be granted the key file or a
+directory holding it in its [sandbox](#sandbox).
 
 ### `[owner]`
 

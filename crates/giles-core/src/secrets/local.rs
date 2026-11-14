@@ -36,8 +36,8 @@ impl std::fmt::Debug for LocalSecrets {
 impl LocalSecrets {
     /// Opens the store in `store`, unlocking it with the key in `key_file`.
     ///
-    /// The first time, it makes a random data key, creating the key file if it's missing, and
-    /// stores the data key wrapped. Later, it unwraps the stored data key. If the key file is
+    /// The first time, it makes a random data key, creating the key file if it's missing and at
+    /// the default location ([`KeyError::NotCreated`] elsewhere), and stores the data key wrapped. Later, it unwraps the stored data key. If the key file is
     /// missing or doesn't unwrap the data key while no secret is stored, nothing can be lost, so
     /// it makes a new data key (and key file) with a warning. Once a secret is stored, it never
     /// does.
@@ -60,6 +60,12 @@ impl LocalSecrets {
                 return Err(KeyError::Missing {
                     path: path.to_owned(),
                     stored,
+                    configured: !key_file.may_create(),
+                });
+            }
+            None if !key_file.may_create() => {
+                return Err(KeyError::NotCreated {
+                    path: path.to_owned(),
                 });
             }
             None => {

@@ -31,7 +31,7 @@ impl Home {
     }
 
     fn key_file(&self) -> KeyFile {
-        KeyFile::default_for(&self.root)
+        KeyFile::new(&self.root, &self.root.secret_key_file())
     }
 
     async fn open(&self) -> Result<LocalSecrets, KeyError> {
@@ -220,6 +220,43 @@ async fn with_secrets_stored_a_missing_or_wrong_key_file_refuses_and_changes_not
     let secrets = home.open().await.unwrap();
     assert_eq!(
         secrets.get(&path("a")).await.unwrap().unwrap().expose(),
+        "value"
+    );
+}
+
+#[tokio::test]
+async fn a_configured_key_file_is_used_but_never_created() {
+    let home = Home::new().await;
+    let configured = home.dir.path().join("elsewhere.key");
+    let key_file = KeyFile::new(&home.root, &configured);
+    let open = || LocalSecrets::open(home.store.clone(), &key_file, Arc::new(FixedClock));
+    let err = open().await.unwrap_err();
+    assert!(matches!(err, KeyError::NotCreated { .. }), "{err:?}");
+    assert!(err.to_string().contains("core.secret_key_file"), "{err}");
+    assert!(!configured.exists());
+    assert!(home.store.secret_data_key().await.unwrap().is_none());
+
+    fs::write(&configured, "ef".repeat(32)).unwrap();
+    fs::set_permissions(
+        &configured,
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    )
+    .unwrap();
+    let secrets = open().await.unwrap();
+    secrets
+        .put(&path("a"), &Secret::new("value"), None)
+        .await
+        .unwrap();
+    assert!(!home.key_file().path().exists(), "no default key file");
+    assert_eq!(
+        open()
+            .await
+            .unwrap()
+            .get(&path("a"))
+            .await
+            .unwrap()
+            .unwrap()
+            .expose(),
         "value"
     );
 }

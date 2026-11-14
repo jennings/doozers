@@ -37,7 +37,9 @@ The steps:
 2. Validate `[core]` and `[owner]`. `core.journal_mode` is parsed with
    `giles_store::JournalMode::from_str` (case-insensitive; `memory` and `off` and anything unknown
    are errors at `core.journal_mode`) and defaults to WAL ([Storage](storage.md#journal-modes));
-   `Runtime::start` passes it to the store.
+   `Runtime::start` passes it to the store. `core.secret_key_file` is joined onto the data root (an
+   absolute path replaces it), defaults to `DataRoot::secret_key_file()`, and may not be empty. It's
+   the [secret store](secret-store.md#key-file)'s key file.
 3. Load `secrets.toml` ([Secrets](#secrets)).
 4. Check that instance names are unique within each kind, ignoring ASCII case (macOS file systems
    are case-insensitive by default, so `Libera` and `libera` would share a directory). A provider, a
@@ -320,14 +322,17 @@ contains one (`Path::starts_with`, so whole components: `/srv/giles-backup` is n
 `/srv/giles`), unless that spelling is inside the instance's own data directory,
 `DataRoot::plugin_data_dir(kind, instance)`.
 
+A grant also may not be `core.secret_key_file` or contain it, in any spelling, with no exception for
+the own data directory. The data root's message wins when a grant overlaps both.
+
 The spellings of a path are the lexical path and, when it differs, the path with symlinks resolved:
 the longest existing ancestor is canonicalized and the rest appended. Protected directories and the
 own data directory are expanded the same way (on macOS, `/var` and `/tmp` are symlinks into
 `/private`). Limits: the check sees the filesystem at startup. A symlink created or retargeted
 afterwards, or a bind mount, can make a granted path lead into the data root; Landlock and Seatbelt
 resolve paths again when the sandbox is applied, so the trampoline should re-run the same check on
-the spec it receives. `check_grant(root, kind, instance, path)` exposes the rule for paths the core
-adds itself, such as a stdio server's install prefix.
+the spec it receives. `check_grant(root, secret_key_file, kind, instance, path)` exposes the rule
+for paths the core adds itself, such as a stdio server's install prefix.
 
 ### Binary directories
 
