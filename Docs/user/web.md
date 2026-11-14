@@ -109,15 +109,43 @@ The buttons send [the same replies](commands.md) you could type, and typing them
 ## Scheduled jobs
 
 **Scheduled jobs** on the chat list shows your jobs with every agent in one table. It lists the jobs
-an agent scheduled for you with the `schedule` tool. The owner also sees the
+you scheduled here and the ones an agent scheduled when you asked it. The owner also sees the
 [`[[jobs]]`](configuration.md#jobs) of every agent, marked `agent.toml`.
 
 Each row shows the agent, the job, its schedule, and its next and last run, soonest next run first.
 Times are in the time zone the job runs in. The next run skips times outside the job's
 `active_hours`.
 
-The page only shows jobs. To cancel a job, ask its agent. To change a `[[jobs]]` entry, edit
-`agent.toml`.
+### Scheduling a job
+
+**New job** opens a form:
+
+- **Agent**: the agent that runs the job.
+- **Runs**: on a cron schedule, or once.
+- **Cron schedule**: for a job that repeats, five fields, such as `0 9 * * 1-5` for 09:00 on
+  weekdays.
+- **Time**: for a job that runs once. The form says which time zone it's in.
+- **Prompt**: what the agent does when the job runs. Its reply is sent to you.
+- **Runs in**: its own session, or your DM with the agent.
+
+You can have up to 20 jobs with each agent. Giles refuses a job that would never run, such as one at
+a time that has passed.
+
+### Changing a job
+
+Each of your jobs has **Edit**, **Disable**, and **Delete** buttons. A change applies at once,
+without a restart.
+
+- **Edit** opens the form, filled in. To move a job to another agent, delete it and schedule a new
+  one.
+- **Disable** keeps the job from running until you press **Enable**. The runs it missed while
+  disabled aren't made up.
+- **Delete** deletes the job, without asking first.
+
+A job that runs once can't be enabled after its time passed. Edit it to pick a new time, or delete
+it.
+
+The `[[jobs]]` from `agent.toml` can't be changed here. Edit `agent.toml` to change them.
 
 ## Admin pages
 

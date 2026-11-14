@@ -167,7 +167,7 @@ pub fn parse_input(input: Value, now: Timestamp, tz: &TimeZone) -> Result<Reques
 
 /// A time: RFC 3339 with an offset (`2026-10-22T17:00:00Z`), or a date and time without one
 /// (`2026-10-22T17:00`), read in `tz`.
-fn parse_at(text: &str, tz: &TimeZone) -> Result<Timestamp, String> {
+pub(crate) fn parse_at(text: &str, tz: &TimeZone) -> Result<Timestamp, String> {
     if let Ok(at) = text.parse::<Timestamp>() {
         return Ok(at);
     }

@@ -38,6 +38,7 @@ use crate::config::{Config, LiveConfig};
 use crate::http::{self, RouterBuilder};
 use crate::identity;
 use crate::runtime::Runtime;
+use crate::scheduler::JobChanges;
 use crate::sessions::{Clock, SystemClock};
 
 /// How many transcript rows a chat page shows, newest last.
@@ -65,6 +66,8 @@ pub(super) struct Inner {
     /// The running configuration: the agents a chat can be started with.
     pub(super) agents: LiveConfig,
     pub(super) clock: Arc<dyn Clock>,
+    /// Tells the scheduler when the jobs page changes a runtime job.
+    pub(super) jobs: JobChanges,
     pub(super) shutdown: CancellationToken,
 }
 
@@ -78,13 +81,14 @@ impl fmt::Debug for WebApp {
 
 impl WebApp {
     /// The pages of `channel`, reading history from `store`, attachments from `blobs`, and the
-    /// agents a chat can be started with from `agents`. Event streams end when `shutdown` is
-    /// cancelled.
+    /// agents a chat can be started with from `agents`; the jobs page tells the scheduler about
+    /// its changes through `jobs`. Event streams end when `shutdown` is cancelled.
     pub fn new(
         channel: Arc<WebChannel>,
         store: Store,
         blobs: BlobStore,
         agents: LiveConfig,
+        jobs: JobChanges,
         shutdown: CancellationToken,
     ) -> Self {
         Self::with_clock(
@@ -92,6 +96,7 @@ impl WebApp {
             store,
             blobs,
             agents,
+            jobs,
             Arc::new(SystemClock),
             shutdown,
         )
@@ -103,6 +108,7 @@ impl WebApp {
         store: Store,
         blobs: BlobStore,
         agents: LiveConfig,
+        jobs: JobChanges,
         clock: Arc<dyn Clock>,
         shutdown: CancellationToken,
     ) -> Self {
@@ -113,6 +119,7 @@ impl WebApp {
                 blobs,
                 agents,
                 clock,
+                jobs,
                 shutdown,
             }),
         }
@@ -127,6 +134,7 @@ impl WebApp {
             runtime.store.clone(),
             runtime.blobs.clone(),
             runtime.registry.live_config().clone(),
+            runtime.jobs.clone(),
             shutdown,
         );
         tokio::spawn(app.clone().expire_sessions());
@@ -155,7 +163,7 @@ impl WebApp {
             .route("/chats/{chat}/approvals", post(post_approval))
             .route("/chats/{chat}/events", get(events))
             .route("/blobs/{id}", get(blob))
-            .route("/jobs", get(super::jobs::jobs_page))
+            .merge(super::jobs::routes())
             .merge(super::login::routes())
             .with_state(self.clone())
     }
@@ -255,14 +263,14 @@ pub(super) fn agent_label(config: &Config, agent: &AgentId) -> String {
 }
 
 /// An agent the chat list offers to start a chat with.
-struct AgentChoice {
-    id: String,
-    label: String,
+pub(super) struct AgentChoice {
+    pub(super) id: String,
+    pub(super) label: String,
 }
 
 /// The agents `user` may start a chat with, by id. v1 has one user, the owner, who may use every
 /// agent; with roles (PLAN section 3.1) this is where a member's `agents` globs apply.
-fn agent_choices(config: &Config, user: &WebUser) -> Vec<AgentChoice> {
+pub(super) fn agent_choices(config: &Config, user: &WebUser) -> Vec<AgentChoice> {
     if user.user != identity::owner() {
         return Vec::new();
     }
