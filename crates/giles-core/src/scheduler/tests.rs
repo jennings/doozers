@@ -226,6 +226,7 @@ impl Harness {
             "giles.toml",
             "[owner]\nidentities = [\"fake:owner\"]\ntimezone = \"America/Los_Angeles\"\n\
              [provider.anthropic]\n[provider.ollama]\ncomponent = \"openai\"\n[channel.fake]\n\
+             [channel.other]\n\
              [environment.box]\ncomponent = \"docker\"\naddress = \"http://127.0.0.1:9000\"\n",
         );
         for (name, contents) in files {
@@ -505,6 +506,7 @@ async fn a_cron_job_fires_in_the_owners_time_zone_in_a_session_of_its_own() {
         delivered,
         [Delivery {
             user: owner(),
+            conversation: None,
             kind: DeliveryKind::JobReply,
             markdown: "Report.".into(),
             expires_at: None,
@@ -806,6 +808,7 @@ async fn ask_to_routes_approval_prompts_through_the_delivery_and_answers_through
         prompt,
         Delivery {
             user: owner(),
+            conversation: None,
             kind: DeliveryKind::ApprovalPrompt,
             markdown: "Scheduled job `tidy`: Allow `x`? Reply `yes 4821` or `no 4821`.".into(),
             expires_at: Some(h.now().checked_add(Duration::from_secs(600)).unwrap()),
@@ -862,6 +865,100 @@ async fn runtime_jobs_run_as_their_creator_and_one_shots_are_deleted() {
     // The cancelled one never runs.
     h.advance_to(ts("2026-10-22T17:00:00Z")).await;
     h.assert_nothing_ran().await;
+    h.stop().await;
+}
+
+/// A one-shot runtime job of the owner at 08:00 PDT, scheduled in conversation `c-9` on
+/// `channel`, running in `session`.
+async fn job_in_conversation(h: &Harness, channel: &str, session: &str) {
+    h.store
+        .job_create(
+            AgentId::new(AGENT).unwrap(),
+            owner(),
+            json!({
+                "at": "2026-10-22T15:00:00Z",
+                "prompt": "Tea time.",
+                "session": session,
+                "conversation": {"channel": channel, "id": "c-9"},
+            }),
+            h.now(),
+        )
+        .await
+        .unwrap();
+    h.changes.notify();
+}
+
+fn other_key() -> SessionKey {
+    SessionKey {
+        channel: "other".to_owned(),
+        conversation: ConversationId::new("c-9").unwrap(),
+        ..Harness::key()
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_isolated_runtime_job_replies_in_the_conversation_it_was_scheduled_in() {
+    let mut h = Harness::new("", &[]).await;
+    // The owner's DM on their default identity is newer, and isn't where the job goes.
+    let dm = h.dm(&["Hi", "Hello."]).await;
+    h.start().await;
+    job_in_conversation(&h, "other", "isolated").await;
+
+    assert_eq!(h.ran().await.session.kind, SessionKind::Job);
+    assert_eq!(
+        h.delivered(1).await[0].conversation,
+        Some(JobConversation {
+            channel: "other".into(),
+            id: ConversationId::new("c-9").unwrap(),
+        })
+    );
+    h.settle().await;
+    let session = h
+        .store
+        .find_open_session(other_key())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(h.texts(session.id).await, ["Report."]);
+    assert_eq!(h.texts(dm.id).await, ["Hi", "Hello."]);
+    h.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dm_runtime_job_runs_in_the_conversation_it_was_scheduled_in() {
+    let mut h = Harness::new("", &[]).await;
+    let dm = h.dm(&["Hi", "Hello."]).await;
+    h.start().await;
+    job_in_conversation(&h, "other", "dm").await;
+
+    let ran = h.ran().await;
+    assert_eq!(ran.session.key(), Some(other_key()));
+    assert_eq!(ran.session.kind, SessionKind::Direct);
+    assert_eq!(ran.session.user, Some(owner()));
+    let delivered = h.delivered(1).await;
+    assert_eq!(delivered[0].markdown, "Report.");
+    assert_eq!(
+        delivered[0]
+            .conversation
+            .as_ref()
+            .map(|c| c.channel.as_str()),
+        Some("other")
+    );
+    assert_eq!(h.texts(dm.id).await, ["Hi", "Hello."]);
+    h.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_runtime_job_whose_conversations_channel_is_gone_uses_the_default_identity() {
+    let mut h = Harness::new("", &[]).await;
+    let dm = h.dm(&["Hi", "Hello."]).await;
+    h.start().await;
+    job_in_conversation(&h, "gone", "isolated").await;
+
+    h.ran().await;
+    assert_eq!(h.delivered(1).await[0].conversation, None);
+    h.settle().await;
+    assert_eq!(h.texts(dm.id).await, ["Hi", "Hello.", "Report."]);
     h.stop().await;
 }
 

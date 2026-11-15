@@ -125,8 +125,8 @@ Times are in the time zone the job runs in. The next run skips times outside the
 - **Cron schedule**: for a job that repeats, five fields, such as `0 9 * * 1-5` for 09:00 on
   weekdays.
 - **Time**: for a job that runs once. The form says which time zone it's in.
-- **Prompt**: what the agent does when the job runs. Its reply is sent to you.
-- **Runs in**: its own session, or your DM with the agent.
+- **Prompt**: what the agent does when the job runs. Its reply is sent to your default identity.
+- **Runs in**: its own session, or your DM with the agent on your default identity.
 
 You can have up to 20 jobs with each agent. Giles refuses a job that would never run, such as one at
 a time that has passed.
@@ -136,8 +136,8 @@ a time that has passed.
 Each of your jobs has **Edit**, **Disable**, and **Delete** buttons. A change applies at once,
 without a restart.
 
-- **Edit** opens the form, filled in. To move a job to another agent, delete it and schedule a new
-  one.
+- **Edit** opens the form, filled in. A job an agent scheduled keeps replying in the conversation
+  where you asked for it. To move a job to another agent, delete it and schedule a new one.
 - **Disable** keeps the job from running until you press **Enable**. The runs it missed while
   disabled aren't made up.
 - **Delete** deletes the job, without asking first.

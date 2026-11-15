@@ -28,6 +28,7 @@ rename must move each of them.
 | `workspaces.environment`                     | The environment instance that holds a workspace | Updates in the transaction (environments) |
 | `usage.provider`                             | The provider instance of a request             | Updates in the transaction (providers)     |
 | `messages.meta` `$.provider`                 | The provider that wrote an assistant message   | Updates in the transaction (providers)     |
+| `jobs.spec` `$.conversation.channel`         | The channel of the conversation a runtime job was scheduled in | Updates in the transaction (channels) |
 | `data/<kind>/<name>/`                        | The plugin's only writable directory           | Moves (`rename(2)`)            |
 | `agents/<agent>/groups/<name>/`              | Per-group `MEMORY.md` files of the old memory design | Moves (channels)        |
 | `agents/<agent>/memory.db`, `memories.owner_instance` | The channel instance of a group that owns a memory (also a shared memory's author) | Updates in the hook, one transaction per database (channels) |
@@ -56,7 +57,7 @@ leftover block consistent after that (`RenameReport::legacy_routes`).
 
 Things that look like they carry a name and don't:
 
-- `inbox.payload`, `outbox.payload`, `jobs.spec`, and `job_runs` hold no instance name.
+- `inbox.payload`, `outbox.payload`, `job_runs`, and the rest of `jobs.spec` hold no instance name.
 - Identities (`irc:libera:account:me`) use the namespace the channel reports, not the instance name
   (PLAN section 3.2), so users' identity links and `[owner] identities` are untouched.
 - `run/sandbox/<kind>/<name>.json` is rewritten at every launch; it is left as it is and goes stale.

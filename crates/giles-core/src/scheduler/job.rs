@@ -1,8 +1,8 @@
 //! What the scheduler runs: config jobs from `agent.toml` and runtime jobs from the `jobs` table,
 //! in one shape.
 
-use giles_store::{JobKey, RuntimeJob};
-use giles_types::{AgentId, Timestamp, UserId};
+use giles_store::{JobKey, RuntimeJob, SessionKey};
+use giles_types::{AgentId, ConversationId, Timestamp, UserId};
 use serde::{Deserialize, Serialize};
 
 use super::schedule::When;
@@ -18,6 +18,9 @@ pub struct JobDef {
     /// A runtime job's creator: the turn's requester, and the user it delivers to. `None` for a
     /// config job, which has no requester and delivers to the owner.
     pub creator: Option<UserId>,
+    /// The conversation a runtime job was scheduled in, where it runs and replies. `None` for a
+    /// config job and one scheduled on the web jobs page: those use the user's default identity.
+    pub conversation: Option<JobConversation>,
     /// Times before this are never made up as missed: when a runtime job was created, or last
     /// edited or switched back on. `None` for a config job.
     pub since: Option<Timestamp>,
@@ -48,6 +51,7 @@ impl JobDef {
             key: JobKey::Config(job.id.clone()),
             agent: agent.clone(),
             creator: None,
+            conversation: None,
             since: None,
             disabled: false,
             when: When::Cron(Box::new(job.cron.clone())),
@@ -73,6 +77,7 @@ impl JobDef {
             key: JobKey::Runtime(job.id),
             agent: job.agent.clone(),
             creator: Some(job.creator.clone()),
+            conversation: spec.conversation.clone(),
             since: Some(
                 spec.changed_at
                     .map_or(job.created_at, |at| at.max(job.created_at)),
@@ -104,6 +109,28 @@ impl JobDef {
     }
 }
 
+/// The conversation a runtime job was scheduled in (the turn's that called the `schedule` tool):
+/// an `isolated` run's reply goes there, and a `dm` run is a turn in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JobConversation {
+    /// The channel instance.
+    pub channel: String,
+    /// The conversation on it.
+    pub id: ConversationId,
+}
+
+impl JobConversation {
+    /// The session key of this conversation with `agent`.
+    pub fn key(&self, agent: &AgentId) -> SessionKey {
+        SessionKey {
+            agent: agent.clone(),
+            channel: self.channel.clone(),
+            conversation: self.id.clone(),
+        }
+    }
+}
+
 /// A runtime job's definition, the `spec` column of `jobs`: written by the `schedule` tool,
 /// read by the scheduler. Exactly one of `cron` and `at` is set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +147,10 @@ pub struct RuntimeSpec {
     /// Which session it runs in.
     #[serde(default)]
     pub session: JobSession,
+    /// The conversation it was scheduled in; `None` for a job scheduled on the web jobs page,
+    /// which delivers to the user's default identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<JobConversation>,
     /// Switched off: the job keeps its row but doesn't run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub disabled: bool,
@@ -174,6 +205,7 @@ mod tests {
         assert_eq!(job.creator, UserId::new("owner").ok());
         assert_eq!(job.session, JobSession::Dm);
         assert_eq!(job.prompt, JobPrompt::Inline("Stand-up notes?".into()));
+        assert_eq!(job.conversation, None);
         assert!(!job.is_one_shot());
 
         let at = JobDef::from_runtime(&runtime(json!({
@@ -205,6 +237,7 @@ mod tests {
             at: Some("2026-10-22T17:00:00Z".parse().unwrap()),
             prompt: "Tea.".into(),
             session: JobSession::Isolated,
+            conversation: None,
             disabled: false,
             changed_at: None,
         };
@@ -214,6 +247,25 @@ mod tests {
             json!({"at": "2026-10-22T17:00:00Z", "prompt": "Tea.", "session": "isolated"})
         );
         assert_eq!(serde_json::from_value::<RuntimeSpec>(value).unwrap(), spec);
+    }
+
+    #[test]
+    fn a_runtime_job_keeps_the_conversation_it_was_scheduled_in() {
+        let job = JobDef::from_runtime(&runtime(json!({
+            "at": "2026-10-22T17:00:00Z",
+            "prompt": "Tea.",
+            "conversation": {"channel": "discord", "id": "1234"},
+        })))
+        .unwrap();
+        let conversation = job.conversation.unwrap();
+        assert_eq!(
+            conversation.key(&job.agent),
+            SessionKey {
+                agent: job.agent.clone(),
+                channel: "discord".into(),
+                conversation: ConversationId::new("1234").unwrap(),
+            }
+        );
     }
 
     #[test]

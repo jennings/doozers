@@ -1,12 +1,15 @@
 //! `outbox`: proactive sends (job output, approval prompts, login codes) awaiting delivery to an
-//! identity, retried until the channel accepts them or they expire (PLAN 6.11, 8.5).
+//! identity or into a conversation, retried until the channel accepts them or they expire (PLAN
+//! 6.11, 8.5).
 //!
 //! One sender loop in the core drives it: [`Store::outbox_due`] for rows to try now,
 //! [`Store::outbox_delete`] on success, [`Store::outbox_retry`] on failure, and
 //! [`Store::outbox_expire`] to drop and log expired rows. There are no leases, so only one loop
 //! may run.
 
-use giles_types::{NativeId, Timestamp, UserId};
+use std::fmt;
+
+use giles_types::{ConversationId, NativeId, Timestamp, UserId};
 use rusqlite::{Row, params};
 use serde_json::Value;
 
@@ -18,15 +21,51 @@ row_id!(
     OutboxId
 );
 
+/// Where an outbox row goes: the `target` and `recipient` columns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutboxTarget {
+    /// An identity, `<namespace>:<native id>`: the core routes it to the channel instance owning
+    /// the namespace at each attempt and sends the native id as `SendRequest.recipient`.
+    Recipient(NativeId),
+    /// A conversation on the row's `instance`, replied into as is.
+    Conversation(ConversationId),
+}
+
+impl OutboxTarget {
+    fn columns(&self) -> (&'static str, &str) {
+        match self {
+            Self::Recipient(identity) => ("recipient", identity.as_str()),
+            Self::Conversation(conversation) => ("conversation", conversation.as_str()),
+        }
+    }
+
+    fn from_columns(target: &str, recipient: String) -> Result<Self> {
+        match target {
+            "recipient" => parse_id(recipient, NativeId::new).map(Self::Recipient),
+            "conversation" => parse_id(recipient, ConversationId::new).map(Self::Conversation),
+            other => Err(Error::corrupt(format!("unknown outbox target {other:?}"))),
+        }
+    }
+}
+
+/// The identity as written, or `conversation <id>`, for logs.
+impl fmt::Display for OutboxTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Recipient(identity) => f.write_str(identity.as_str()),
+            Self::Conversation(conversation) => write!(f, "conversation {conversation}"),
+        }
+    }
+}
+
 /// A send to enqueue with [`Store::outbox_enqueue`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewOutbox {
-    /// The channel instance it routes to, for logs (the core's sender routes again at each
-    /// attempt).
+    /// The channel instance: for an identity, the one it routes to now, for logs (the core's
+    /// sender routes again at each attempt); for a conversation, the one it's on.
     pub instance: String,
-    /// The identity to send to, `<namespace>:<native id>`; the sender sends the native id as
-    /// `SendRequest.recipient`.
-    pub recipient: NativeId,
+    /// Where it goes.
+    pub target: OutboxTarget,
     /// What it is, for logs: `job_reply`, `approval_prompt`, `login_code`, or `notice`.
     pub kind: String,
     /// The user it's for, if any.
@@ -47,8 +86,8 @@ pub struct OutboxEntry {
     pub id: OutboxId,
     /// The channel instance.
     pub instance: String,
-    /// The recipient identity.
-    pub recipient: NativeId,
+    /// Where it goes.
+    pub target: OutboxTarget,
     /// What it is.
     pub kind: String,
     /// The user it's for.
@@ -70,8 +109,8 @@ pub struct OutboxEntry {
 /// The columns [`from_row`] reads, in order.
 macro_rules! columns {
     () => {
-        "id, instance, recipient, kind, user_id, payload, attempts, last_error, created_at,
-        next_attempt_at, expires_at"
+        "id, instance, target, recipient, kind, user_id, payload, attempts, last_error,
+        created_at, next_attempt_at, expires_at"
     };
 }
 
@@ -82,19 +121,19 @@ fn from_row(row: &Row<'_>) -> Result<OutboxEntry> {
     Ok(OutboxEntry {
         id: row.get(0)?,
         instance: row.get(1)?,
-        recipient: parse_id(row.get(2)?, NativeId::new)?,
-        kind: row.get(3)?,
+        target: OutboxTarget::from_columns(&row.get::<_, String>(2)?, row.get(3)?)?,
+        kind: row.get(4)?,
         user: row
-            .get::<_, Option<String>>(4)?
+            .get::<_, Option<String>>(5)?
             .map(|u| parse_id(u, UserId::new))
             .transpose()?,
-        payload: serde_json::from_str(&row.get::<_, String>(5)?)?,
-        attempts: u32::try_from(row.get::<_, i64>(6)?)
+        payload: serde_json::from_str(&row.get::<_, String>(6)?)?,
+        attempts: u32::try_from(row.get::<_, i64>(7)?)
             .map_err(|_| Error::corrupt("outbox attempts out of range"))?,
-        last_error: row.get(7)?,
-        created_at: get_time(row, 8)?,
-        next_attempt_at: get_time(row, 9)?,
-        expires_at: get_time(row, 10)?,
+        last_error: row.get(8)?,
+        created_at: get_time(row, 9)?,
+        next_attempt_at: get_time(row, 10)?,
+        expires_at: get_time(row, 11)?,
     })
 }
 
@@ -108,14 +147,16 @@ impl Store {
         }
         let payload = serde_json::to_string(&send.payload)?;
         self.write(move |conn| {
+            let (target, recipient) = send.target.columns();
             conn.prepare_cached(
-                "INSERT INTO outbox (instance, recipient, kind, user_id, payload, created_at,
-                    next_attempt_at, expires_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
+                "INSERT INTO outbox (instance, target, recipient, kind, user_id, payload,
+                    created_at, next_attempt_at, expires_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
             )?
             .execute(params![
                 send.instance,
-                send.recipient.as_str(),
+                target,
+                recipient,
                 send.kind,
                 send.user.as_ref().map(UserId::as_str),
                 payload,
@@ -230,7 +271,7 @@ mod tests {
     fn send(kind: &str, created: i64, expires: i64) -> NewOutbox {
         NewOutbox {
             instance: "whatsapp".into(),
-            recipient: NativeId::new("+15551234567").unwrap(),
+            target: OutboxTarget::Recipient(NativeId::new("whatsapp:+15551234567").unwrap()),
             kind: kind.into(),
             user: Some(UserId::new("owner").unwrap()),
             payload: json!({ "markdown": kind }),
@@ -336,6 +377,26 @@ mod tests {
                 .await
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn rows_keep_their_target() {
+        let (_dir, store) = store().await;
+        let conversation = OutboxTarget::Conversation(ConversationId::new("dm-1").unwrap());
+        store
+            .outbox_enqueue(NewOutbox {
+                target: conversation.clone(),
+                ..send("job", 0, 100)
+            })
+            .await
+            .unwrap();
+        store.outbox_enqueue(send("job", 1, 100)).await.unwrap();
+        let due = store.outbox_due(at(1), 10).await.unwrap();
+        assert_eq!(due[0].target, conversation);
+        assert_eq!(
+            due[1].target,
+            OutboxTarget::Recipient(NativeId::new("whatsapp:+15551234567").unwrap())
         );
     }
 

@@ -612,6 +612,9 @@ The agent can also schedule jobs with the `schedule` tool when you ask, such as 
 "every weekday at 9, ask me for my stand-up notes". Allow it with `schedule` in `tools`. Its jobs
 run once or on a cron schedule, in your time zone.
 
+A job the agent schedules belongs to the conversation where you asked for it. Its reply comes there,
+and a job that runs in your DM runs in that conversation, with its history.
+
 The agent can list your jobs, including the ones in `agent.toml`, which it can't change. It can
 cancel the jobs it scheduled. You can have up to 20 such jobs with each agent, and a scheduled job
 can't schedule more jobs.

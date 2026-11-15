@@ -1,7 +1,7 @@
 //! The `schedule` core tool (PLAN section 6.11): the agent creates, lists, and cancels runtime
 //! jobs for the requesting user ("remind me at 5"). A job is a row in `jobs` whose spec is a
-//! [`RuntimeSpec`], created by the requester, who it runs as and delivers to; the scheduler
-//! picks changes up through [`JobChanges`]. `list` also shows the agent's config jobs, which the
+//! [`RuntimeSpec`], created by the requester, who it runs as and delivers to, in the conversation
+//! the tool was called in; the scheduler picks changes up through [`JobChanges`]. `list` also shows the agent's config jobs, which the
 //! tool can't change.
 
 use std::fmt::Write as _;
@@ -21,7 +21,7 @@ use super::{CoreCall, CoreTool};
 use crate::agent_loop::ToolOutput;
 use crate::agent_loop::history::message_timezone;
 use crate::config::{JobPrompt, JobSession, LiveConfig, parse_cron};
-use crate::scheduler::{JobChanges, RuntimeSpec, When};
+use crate::scheduler::{JobChanges, JobConversation, RuntimeSpec, When};
 use crate::sessions::Clock;
 
 /// The tool's name.
@@ -145,6 +145,8 @@ pub fn parse_input(input: Value, now: Timestamp, tz: &TimeZone) -> Result<Reques
                 at,
                 prompt,
                 session: input.session.unwrap_or_default(),
+                // The call's conversation, set by the tool.
+                conversation: None,
                 disabled: false,
                 changed_at: None,
             }))
@@ -399,7 +401,12 @@ impl CoreTool for ScheduleTool {
             (Request::Create(_), Some(_)) if call.turn.job => ToolOutput::error(
                 "jobs can't be scheduled from a scheduled job's run; ask the user to schedule it",
             ),
-            (Request::Create(spec), Some(requester)) => {
+            (Request::Create(mut spec), Some(requester)) => {
+                // The job runs and replies in this conversation.
+                spec.conversation = call.context.conversation.map(|c| JobConversation {
+                    channel: c.channel,
+                    id: c.conversation.id,
+                });
                 self.create(agent, requester, spec, &tz).await
             }
             (Request::Cancel(id), Some(requester)) => self.cancel(agent, &requester, id).await,
@@ -418,8 +425,8 @@ pub(super) fn spec() -> ToolSpec {
                       cron schedule (\"remind me at 5\", \"every weekday at 9, summarize my \
                       inbox\"); list this user's jobs and the configured ones; or cancel one of \
                       this user's jobs. When a job runs you get its prompt, and your reply is \
-                      sent to the user; reply exactly NO_REPLY to send nothing. Times are in the \
-                      user's time zone."
+                      sent to the user in this conversation; reply exactly NO_REPLY to send \
+                      nothing. Times are in the user's time zone."
             .to_owned(),
         input_schema: json!({
             "type": "object",
@@ -455,7 +462,7 @@ pub(super) fn spec() -> ToolSpec {
                     "enum": ["isolated", "dm"],
                     "default": "isolated",
                     "description": "create: \"isolated\" runs with a fresh context; \"dm\" runs \
-                                    in this user's DM with you, with its history.",
+                                    in this conversation, with its history.",
                 },
                 "id": {
                     "type": "integer",

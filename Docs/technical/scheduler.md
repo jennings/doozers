@@ -8,10 +8,11 @@
 | `Scheduler`                | `start(SchedulerOptions, shutdown)`, `closed()`                       |
 | `SchedulerOptions`         | Store, `Registry`, `Sessions`, `TurnRunner`, `JobDelivery`, `JobChanges`, `Clock` |
 | `JobDelivery`              | Where output goes (the outbox): `enqueue(Delivery) -> OutboxId`, `remove(id)` |
-| `Delivery`, `DeliveryKind` | A send to a user's default identity: `JobReply` or `ApprovalPrompt`, optional expiry |
+| `Delivery`, `DeliveryKind` | A send into the job's conversation, or else to the user's default identity: `JobReply` or `ApprovalPrompt`, optional expiry |
 | `JobChanges`               | `notify()` after creating, changing, or deleting runtime jobs; `Runtime::jobs` holds one |
 | `JobDef`                   | A config or runtime job in one shape; `label()` is `` `id` `` or `#3` |
-| `RuntimeSpec`              | A runtime job's stored `spec`: `cron` or `at`, `prompt`, `session`, `disabled`, `changed_at` |
+| `RuntimeSpec`              | A runtime job's stored `spec`: `cron` or `at`, `prompt`, `session`, `conversation`, `disabled`, `changed_at` |
+| `JobConversation`          | The conversation a runtime job was scheduled in: `channel` (instance) and `id` |
 | `When`                     | `Cron` or one-shot `At`; `next_after`, `first_fire`                   |
 | `job_reply`, `JobReply`    | What a run said: `NoReply`, `Empty`, or the text                      |
 
@@ -20,9 +21,9 @@
 `giles serve` calls `Runtime::start_scheduler(sessions, runner, shutdown)` after the outbox and the
 session manager have started (approval prompts may only be queued once the outbox's sender has
 dropped the previous process's), with the same runner (the agent loop). Its `JobDelivery` is
-`OutboxDelivery`: `OutboxItem::to_owner` with `JobReply` or `ApprovalPrompt` and the delivery's
-expiry; `remove` withdraws a prompt. At shutdown `serve` waits for `Scheduler::closed()` before
-`Sessions::closed()`.
+`OutboxDelivery`: an `OutboxItem` into the delivery's conversation (`Destination::Conversation`), or
+else `OutboxItem::to_owner`, with `JobReply` or `ApprovalPrompt` and the delivery's expiry; `remove`
+withdraws a prompt. At shutdown `serve` waits for `Scheduler::closed()` before `Sessions::closed()`.
 
 ## Timing
 
@@ -58,20 +59,25 @@ delivered, so a job that cancels itself in its last run still reports. Only `/st
 
 ## One run
 
-1. **The DM.** The job's user is a runtime job's creator, else the owner. Their DM is the direct
-   session of that user with the agent, open or ended, with the newest activity on a channel
-   instance that can own their default identity: one whose registered channel's namespace and `:`
-   start the identity, or, not registered yet, whose component is its first segment
-   (`Store::latest_direct_session`).
+1. **The DM.** The job's user is a runtime job's creator, else the owner. A runtime job with a
+   `conversation` whose channel instance is still configured has that conversation as its DM (its
+   open session, if any, for the excerpt and `idle_only`), and its reply goes there. Any other job
+   (a config job, a runtime job made on the web jobs page, or one whose instance is gone, which is
+   logged) uses the user's DM on their default identity: the direct session of that user with the
+   agent, open or ended, with the newest activity on a channel instance that can own the identity,
+   one whose registered channel's namespace and `:` start the identity, or, not registered yet,
+   whose component is its first segment (`Store::latest_direct_session`). Its reply goes to the
+   default identity.
 2. **`idle_only`**: waits until the DM has no running turn, hold, or queued message
    (`Sessions::wait_idle`). Then `active_hours` is checked again: a run whose wait ended outside
    them is skipped and not recorded.
 3. Records the run's start in `job_runs`, then reads the prompt (`prompt_file` at each run).
 4. **Approvals.** Without `ask_to`, `ask` tools are denied as unattended. With
    `ask_to = "deliver_to"` and a DM, the target is the user in that DM, with prompts queued through
-   `JobDelivery` as `ApprovalPrompt` (prefixed `Scheduled job <label>:`, expiring after
-   `approval_timeout`) and removed when the approval resolves first; replies come from the DM
-   ([Approvals](approvals.md)). Without a DM there is nobody to answer, so they're denied.
+   `JobDelivery` as `ApprovalPrompt` to where its reply would go (prefixed `Scheduled job <label>:`,
+   expiring after `approval_timeout`) and removed when the approval resolves first; replies come
+   from the DM ([Approvals](approvals.md)). Without a DM there is nobody to answer, so they're
+   denied.
 5. **The turn**, a `Turn` with `job: Some(JobTurn)` ([Agent loop](agent-loop.md)). Its prompt is a
    user message: the time prefix,
    `Scheduled job <label>. Your reply is sent to the user; reply exactly NO_REPLY to send nothing.`,
@@ -83,15 +89,17 @@ delivered, so a job that cancels itself in its last run still reports. Only `/st
      and stays. A config job's turn has no requester, so its memory tools see and write shared
      memories only ([Skills and Memory](skills-and-memory.md#who-sees-what)); a runtime job runs as
      its creator, with the creator's memories.
-   - `dm`: the user's open DM session (`Sessions::open_direct`, `idle_reset` applied), held
+   - `dm`: the DM's open session (`Sessions::open_direct`, `idle_reset` applied), held
      (`Sessions::hold`) so the run is its own turn after the turns ahead of it; `/stop` there
      cancels it. With no DM yet it runs like an isolated job.
 6. **The reply** is read back from the transcript (`job_reply`): `NoReply` when the last assistant
    message's text is exactly `NO_REPLY`, else the text of every assistant message of the run.
    - `NO_REPLY`: nothing is sent; an isolated run's session is deleted, a `dm` run's messages are
      cut from the DM (`truncate_messages`).
-   - Text: queued as a `JobReply`, and for an isolated run appended to the DM as an assistant
-     message (under a hold, between turns); a `dm` run's reply is in the DM already.
+   - Text: queued as a `JobReply` (with the job's conversation, if the DM is one), and for an
+     isolated run appended to the DM as an assistant message (under a hold, between turns); a `dm`
+     run's reply is in the DM already. A web chat shows the queued reply on its open pages, and its
+     transcript shows the stored one.
    - A cancelled or failed turn delivers nothing (logged).
 
 ## The `schedule` tool
@@ -103,9 +111,9 @@ action refuses the keys of the others): `action` = `create` | `list` | `cancel`.
 - `create`: `prompt` and exactly one of `cron` (five fields), `at` (RFC 3339 with an offset, or
   `YYYY-MM-DDTHH:MM` in the user's time zone) or `in` (a delay, `parse_duration`), plus optional
   `session` (`isolated` default, `dm`). `in` becomes `at`; a past time or a cron pattern with no
-  future match is refused. It stores a `RuntimeSpec` with the requester as creator, calls
-  `JobChanges::notify()`, and answers e.g. "Scheduled job #2: every `0 9 * * 1-5`, next Fri
-  2026-10-23 09:00 BST."
+  future match is refused. It stores a `RuntimeSpec` with the requester as creator and the call's
+  conversation (`CallContext::conversation`) as `conversation`, calls `JobChanges::notify()`, and
+  answers e.g. "Scheduled job #2: every `0 9 * * 1-5`, next Fri 2026-10-23 09:00 BST."
 - `list`: the requester's jobs with this agent (number, schedule and next run, session, prompt cut
   to 100 characters; a disabled job is marked `disabled:` and has no next run), then the agent's
   config jobs as read-only.
@@ -129,4 +137,5 @@ both session kinds, delivery with DM append and excerpt, model override and prom
 run, `dm` jobs queued behind a running turn and falling back without a DM, `idle_only`, `ask_to`
 targets and prompt withdrawal, runtime jobs (creator as requester, cancel, one-shot deletion, a
 missed one-shot at startup, an edit moving a job, a disabled job not running and making up nothing
-when switched back on).
+when switched back on, `isolated` and `dm` runs in the conversation they were scheduled in, and the
+default identity when that conversation's instance is gone).
