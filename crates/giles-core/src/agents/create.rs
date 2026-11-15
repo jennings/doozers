@@ -80,8 +80,31 @@ pub struct NewAgent {
     pub environments: Vec<String>,
     /// An IANA time zone; empty for none.
     pub timezone: String,
+    /// The settings of the form's "Advanced" section.
+    pub advanced: AdvancedSettings,
     /// `SOUL.md`.
     pub soul: String,
+}
+
+/// The settings of the agent forms' collapsed "Advanced" section. Each is unset when `None` or
+/// empty, so the default applies as in a hand-written `agent.toml`; the strings are what the owner
+/// typed, checked like a hand-written `agent.toml`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AdvancedSettings {
+    /// `compaction_model`: `<provider>/<model>`.
+    pub compaction_model: String,
+    /// `max_iterations`.
+    pub max_iterations: Option<u32>,
+    /// `max_iterations_jobs`.
+    pub max_iterations_jobs: Option<u32>,
+    /// `busy_mode`: `steer` or `queue`.
+    pub busy_mode: String,
+    /// `memory_cap`.
+    pub memory_cap: Option<u32>,
+    /// `approval_timeout`: a duration, such as `10m`.
+    pub approval_timeout: String,
+    /// `idle_reset`: a duration, such as `6h`.
+    pub idle_reset: String,
 }
 
 /// Why an agent wasn't created. Nothing was written (or what was written was removed).
@@ -141,14 +164,17 @@ pub fn split_list(text: &str) -> Vec<String> {
 }
 
 /// `agent.toml` for `agent`, from the TOML serializer: unset values are left out, so the
-/// defaults apply as in a hand-written file. Every value is a string or a list of strings, which
-/// the serializer always accepts.
+/// defaults apply as in a hand-written file. Every value is a string, a list of strings, or a
+/// whole number, which the serializer always accepts. The keys are in the order the configuration
+/// reference lists them.
 pub fn agent_toml(agent: &NewAgent) -> String {
     #[derive(Serialize)]
     struct AgentToml<'a> {
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<&'a str>,
         models: &'a [String],
+        #[serde(skip_serializing_if = "Option::is_none")]
+        compaction_model: Option<&'a str>,
         #[serde(skip_serializing_if = "<[String]>::is_empty")]
         tools: &'a [String],
         #[serde(skip_serializing_if = "<[String]>::is_empty")]
@@ -156,20 +182,40 @@ pub fn agent_toml(agent: &NewAgent) -> String {
         #[serde(skip_serializing_if = "<[String]>::is_empty")]
         environments: &'a [String],
         #[serde(skip_serializing_if = "Option::is_none")]
+        max_iterations: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_iterations_jobs: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        busy_mode: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        memory_cap: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        approval_timeout: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         timezone: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        idle_reset: Option<&'a str>,
     }
     fn present(s: &str) -> Option<&str> {
         Some(s.trim()).filter(|s| !s.is_empty())
     }
+    let advanced = &agent.advanced;
     toml::to_string(&AgentToml {
         name: present(&agent.name),
         models: &agent.models,
+        compaction_model: present(&advanced.compaction_model),
         tools: &agent.tools,
         ask: &agent.ask,
         environments: &agent.environments,
+        max_iterations: advanced.max_iterations,
+        max_iterations_jobs: advanced.max_iterations_jobs,
+        busy_mode: present(&advanced.busy_mode),
+        memory_cap: advanced.memory_cap,
+        approval_timeout: present(&advanced.approval_timeout),
         timezone: present(&agent.timezone),
+        idle_reset: present(&advanced.idle_reset),
     })
-    .expect("strings and lists of strings always serialize")
+    .expect("strings, lists of strings, and whole numbers always serialize")
 }
 
 impl AgentManager {

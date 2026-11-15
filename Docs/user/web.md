@@ -195,7 +195,20 @@ text.
 - **Ask first**: optional tool names or globs that need your approval before each call, separated by
   commas or spaces.
 - **Time zone**: optional, such as `Europe/London`.
+- **Advanced**: a collapsed section of settings most agents leave alone. Leave a field empty for its
+  default. The section opens by itself when one of them is set.
+  - **Compaction model**: the model that summarizes older messages when a chat gets long.
+  - **Max iterations** and **Max iterations for jobs**: how many model requests with tools a chat
+    turn or a job turn may make.
+  - **Messages during a reply**: **Steer** shows the messages you send while the agent works to it
+    at its next tool step. **Queue** keeps them for the next turn.
+  - **Memory cap**: the most characters of core memories in each scope.
+  - **Approval timeout**: how long a tool call in **Ask first** waits for your approval, such as
+    `10m`.
+  - **Idle reset**: start a new session when a chat has been quiet this long, such as `12h`.
 - **SOUL.md**: who the agent is.
+
+The [`agent.toml` reference](configuration.md#agentsagentagenttoml) lists each setting's default.
 
 Giles checks the agent as it checks a hand-written `agent.toml`. If something is wrong, such as a
 model naming a provider you haven't configured, the form shows the problem and nothing is written.
@@ -203,8 +216,8 @@ model naming a provider you haven't configured, the form shows the problem and n
 Otherwise Giles writes `agents/<id>/agent.toml` and `SOUL.md`. You can chat with the agent at once,
 without a restart.
 
-For settings the form doesn't have, edit [`agent.toml`](configuration.md) by hand. Like any other
-configuration change, that takes effect at the next restart.
+The form has every agent setting except [`[[jobs]]`](configuration.md#jobs). To change those, edit
+`agent.toml` by hand. Like any other configuration change, that takes effect at the next restart.
 
 ### Editing an agent
 
@@ -215,8 +228,9 @@ Saving takes effect without a restart:
 
 - New chats and the next run of the agent's [jobs](configuration.md#jobs) use the new settings. A
   chat already going keeps the settings it started with. Use `/new` to start a fresh one.
-- Giles changes only what the form has: `name`, `models`, `tools`, `ask`, `environments`,
-  `timezone`, and `SOUL.md`. The rest of `agent.toml`, comments included, stays as you wrote it.
+- Giles changes only what the form has. A field you empty removes its setting from `agent.toml`, so
+  the default applies. The rest of the file, comments and `[[jobs]]` included, stays as you wrote
+  it.
 - If you edit `agent.toml` or `SOUL.md` by hand while the form is open, saving is refused with
   "changed on disk". Use the form's link to reload the current values.
 

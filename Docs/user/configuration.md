@@ -532,6 +532,9 @@ UI. It warns at every start while `giles.toml` still has them, so remove them fr
 Each directory under `agents/` is an agent, named by the directory, and must contain `agent.toml`.
 Giles ignores files in `agents/` and directories whose names start with `.`.
 
+Change these settings on the agent's form in [the web UI](web.md#agents). The table below is for
+editing `agent.toml` by hand instead. The form has every key except `[[jobs]]`.
+
 | Key                   | Default         | Meaning                                                           |
 | --------------------- | --------------- | ----------------------------------------------------------------- |
 | `name`                |                 | Display name                                                      |

@@ -35,3 +35,34 @@
 <p class="detail">Tools that need your approval before each call.</p>
 <label for="timezone">Time zone</label>
 <input id="timezone" name="timezone" value="{{ form.timezone }}" placeholder="Europe/London">
+<details{% if form.advanced.is_set() %} open{% endif %}>
+<summary>Advanced</summary>
+<div class="advanced">
+<p class="detail">Leave a field empty for its default.</p>
+<label for="compaction_model">Compaction model</label>
+<input id="compaction_model" name="compaction_model" value="{{ form.advanced.compaction_model }}" list="known-models">
+<p class="detail">The model that summarizes older messages when a chat gets long, <code>&lt;provider&gt;/&lt;model&gt;</code>. Empty to use the first of Models.</p>
+<label for="max_iterations">Max iterations</label>
+<input id="max_iterations" name="max_iterations" value="{{ form.advanced.max_iterations }}" type="number" min="1">
+<p class="detail">How many model requests with tools a chat turn may make before the agent has to answer. Empty for no limit.</p>
+<label for="max_iterations_jobs">Max iterations for jobs</label>
+<input id="max_iterations_jobs" name="max_iterations_jobs" value="{{ form.advanced.max_iterations_jobs }}" type="number" min="1" placeholder="{{ crate::config::DEFAULT_MAX_ITERATIONS_JOBS }}">
+<p class="detail">The same for scheduled jobs. Empty for {{ crate::config::DEFAULT_MAX_ITERATIONS_JOBS }}.</p>
+<label for="busy_mode">Messages during a reply</label>
+<select id="busy_mode" name="busy_mode">
+<option value=""{% if form.advanced.busy_mode.is_empty() %} selected{% endif %}>Default (steer)</option>
+<option value="steer"{% if form.advanced.busy_mode == "steer" %} selected{% endif %}>Steer: show them to the agent at its next tool step</option>
+<option value="queue"{% if form.advanced.busy_mode == "queue" %} selected{% endif %}>Queue: keep them for the next turn</option>
+</select>
+<p class="detail">What happens to the messages you send while the agent is still working on a reply.</p>
+<label for="memory_cap">Memory cap</label>
+<input id="memory_cap" name="memory_cap" value="{{ form.advanced.memory_cap }}" type="number" min="1" placeholder="{{ crate::config::DEFAULT_MEMORY_CAP }}">
+<p class="detail">The most characters of core memories in each scope: shared, each user, and each group. Empty for {{ crate::config::DEFAULT_MEMORY_CAP }}.</p>
+<label for="approval_timeout">Approval timeout</label>
+<input id="approval_timeout" name="approval_timeout" value="{{ form.advanced.approval_timeout }}" placeholder="{{ crate::config::DEFAULT_APPROVAL_TIMEOUT.as_secs() / 60 }}m">
+<p class="detail">How long a tool call in Ask first waits for your approval before it is denied, such as <code>30s</code>, <code>10m</code>, or <code>1h30m</code>. Empty for {{ crate::config::DEFAULT_APPROVAL_TIMEOUT.as_secs() / 60 }} minutes.</p>
+<label for="idle_reset">Idle reset</label>
+<input id="idle_reset" name="idle_reset" value="{{ form.advanced.idle_reset }}">
+<p class="detail">Start a new session when a chat has been quiet this long, such as <code>12h</code>. Empty for never.</p>
+</div>
+</details>

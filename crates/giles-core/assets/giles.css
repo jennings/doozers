@@ -330,6 +330,22 @@ button,
   margin-top: 1rem;
 }
 
+/* The agent forms' collapsed "Advanced" section, laid out like the rest of the form. */
+.agent-form details {
+  margin-top: 0.6rem;
+}
+
+.agent-form summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.agent-form .advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
 /* The memory page: a memory's text, and the forms under it. */
 .memory-item pre,
 .memory-problem pre {

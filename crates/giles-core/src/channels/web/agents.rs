@@ -26,10 +26,10 @@ use super::auth::{WebUser, check_csrf};
 use super::memory;
 use super::pages::{WebApp, agent_label, error_page, no_store};
 use crate::agents::{
-    AgentEdit, AgentFile, AgentForm, AgentManager, Content, CreateError, DEFAULT_SOUL, EditError,
-    EnvironmentNotes, EnvironmentPicker, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, NewAgent,
-    RemovalPreview, RemoveError, Removed, ToolPicker, agent_id_from_name, environment_picker,
-    list_files, split_list, tool_picker,
+    AdvancedSettings, AgentEdit, AgentFile, AgentForm, AgentManager, Content, CreateError,
+    DEFAULT_SOUL, EditError, EnvironmentNotes, EnvironmentPicker, MAX_FILE_BYTES, MAX_FILES,
+    MAX_TOTAL_BYTES, NewAgent, RemovalPreview, RemoveError, Removed, ToolPicker,
+    agent_id_from_name, environment_picker, list_files, split_list, tool_picker,
 };
 use crate::config::{AgentConfig, Config};
 use crate::http::{self, RouterBuilder};
@@ -88,6 +88,82 @@ fn environment_boxes(
     let environments = EnvironmentPicker::new(config, &picked_environments(checks));
     let notes = environments.notes(picker);
     (environments, notes)
+}
+
+/// The fields of the forms' collapsed "Advanced" section, as typed (and shown again after an
+/// error). Each is empty for unset, so the default applies.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct AdvancedForm {
+    compaction_model: String,
+    max_iterations: String,
+    max_iterations_jobs: String,
+    busy_mode: String,
+    memory_cap: String,
+    approval_timeout: String,
+    idle_reset: String,
+}
+
+impl AdvancedForm {
+    /// The fields for `settings`, as the agent's files have them.
+    fn of(settings: AdvancedSettings) -> Self {
+        let whole = |value: Option<u32>| value.map(|n| n.to_string()).unwrap_or_default();
+        Self {
+            compaction_model: settings.compaction_model,
+            max_iterations: whole(settings.max_iterations),
+            max_iterations_jobs: whole(settings.max_iterations_jobs),
+            busy_mode: settings.busy_mode,
+            memory_cap: whole(settings.memory_cap),
+            approval_timeout: settings.approval_timeout,
+            idle_reset: settings.idle_reset,
+        }
+    }
+
+    /// Whether any field has a value. The section then starts open, so the owner sees what is set
+    /// (and, after an error, the field it is about, which can't be empty).
+    fn is_set(&self) -> bool {
+        [
+            &self.compaction_model,
+            &self.max_iterations,
+            &self.max_iterations_jobs,
+            &self.busy_mode,
+            &self.memory_cap,
+            &self.approval_timeout,
+            &self.idle_reset,
+        ]
+        .iter()
+        .any(|text| !text.trim().is_empty())
+    }
+
+    /// The settings, or the problem to show if a number field isn't a number. Everything else is
+    /// checked with the rest of `agent.toml`.
+    fn settings(&self) -> Result<AdvancedSettings, String> {
+        let whole = |key: &str, text: &str| match text.trim() {
+            "" => Ok(None),
+            text => text
+                .parse()
+                .map(Some)
+                .map_err(|_| format!("{key}: must be a number of at least 1")),
+        };
+        Ok(AdvancedSettings {
+            compaction_model: self.compaction_model.clone(),
+            max_iterations: whole("max_iterations", &self.max_iterations)?,
+            max_iterations_jobs: whole("max_iterations_jobs", &self.max_iterations_jobs)?,
+            busy_mode: self.busy_mode.clone(),
+            memory_cap: whole("memory_cap", &self.memory_cap)?,
+            approval_timeout: self.approval_timeout.clone(),
+            idle_reset: self.idle_reset.clone(),
+        })
+    }
+}
+
+/// `response`, a form shown again with a problem, answered with `status` (unless showing it
+/// failed).
+fn with_status(mut response: Response, status: StatusCode) -> Response {
+    if response.status().is_success() {
+        *response.status_mut() = status;
+    }
+    response
 }
 
 impl WebApp {
@@ -314,6 +390,9 @@ struct CreateForm {
     models: String,
     /// The "Other tools" text: the entries that have no checkbox.
     tools: String,
+    /// The "Advanced" section.
+    #[serde(flatten)]
+    advanced: AdvancedForm,
     /// The tool and environment checkboxes that were ticked ([`CHECK_PREFIX`],
     /// [`ENVIRONMENT_PREFIX`]).
     #[serde(flatten)]
@@ -331,6 +410,7 @@ impl Default for CreateForm {
             name: String::new(),
             models: String::new(),
             tools: String::new(),
+            advanced: AdvancedForm::default(),
             checks: HashMap::new(),
             ask: String::new(),
             timezone: String::new(),
@@ -400,6 +480,13 @@ async fn create(
         form.id = agent_id_from_name(&form.name);
     }
     let config = pages.manager.config().get();
+    let advanced = match form.advanced.settings() {
+        Ok(advanced) => advanced,
+        Err(problem) => {
+            let response = render_form(&pages, &user, &form, Some(problem)).await;
+            return with_status(response, StatusCode::BAD_REQUEST);
+        }
+    };
     let agent = NewAgent {
         id: form.id.clone(),
         name: form.name.clone(),
@@ -408,6 +495,7 @@ async fn create(
         ask: split_list(&form.ask),
         environments: environment_picker::compose(&picked_environments(&form.checks)),
         timezone: form.timezone.clone(),
+        advanced,
         // Browsers submit a textarea's line breaks as CRLF; the file keeps plain LF.
         soul: form.soul.replace("\r\n", "\n"),
     };
@@ -418,11 +506,8 @@ async fn create(
                 CreateError::Exists(_) => StatusCode::CONFLICT,
                 _ => StatusCode::BAD_REQUEST,
             };
-            let mut response = render_form(&pages, &user, &form, Some(err.form_message())).await;
-            if response.status().is_success() {
-                *response.status_mut() = status;
-            }
-            response
+            let response = render_form(&pages, &user, &form, Some(err.form_message())).await;
+            with_status(response, status)
         }
         Err(err) => {
             error!(agent = %agent.id, error = %err, "creating an agent failed");
@@ -445,6 +530,9 @@ struct EditForm {
     models: String,
     /// The "Other tools" text: the entries that have no checkbox.
     tools: String,
+    /// The "Advanced" section.
+    #[serde(flatten)]
+    advanced: AdvancedForm,
     /// The tool and environment checkboxes that were ticked ([`CHECK_PREFIX`],
     /// [`ENVIRONMENT_PREFIX`]).
     #[serde(flatten)]
@@ -466,6 +554,7 @@ impl EditForm {
             csrf: None,
             models: list(&agent.models),
             tools: list(&other),
+            advanced: AdvancedForm::of(agent.advanced),
             checks: checks_of(&tools, &agent.environments),
             ask: list(&agent.ask),
             name: agent.name,
@@ -581,6 +670,14 @@ async fn edit(
         return rejected.into_response();
     }
     let config = pages.manager.config().get();
+    let advanced = match form.advanced.settings() {
+        Ok(advanced) => advanced,
+        Err(problem) => {
+            let response =
+                render_edit_form(&pages, &user, &agent, &form, Some(problem), false).await;
+            return with_status(response, StatusCode::BAD_REQUEST);
+        }
+    };
     let change = AgentEdit {
         id: agent.clone(),
         name: form.name.clone(),
@@ -589,6 +686,7 @@ async fn edit(
         ask: split_list(&form.ask),
         environments: environment_picker::compose(&picked_environments(&form.checks)),
         timezone: form.timezone.clone(),
+        advanced,
         // Browsers submit a textarea's line breaks as CRLF; the file keeps plain LF.
         soul: form.soul.replace("\r\n", "\n"),
         version: form.version.clone(),
@@ -604,7 +702,7 @@ async fn edit(
                 EditError::Stale | EditError::Unsupported(_) => StatusCode::CONFLICT,
                 _ => StatusCode::BAD_REQUEST,
             };
-            let mut response = render_edit_form(
+            let response = render_edit_form(
                 &pages,
                 &user,
                 &agent,
@@ -613,10 +711,7 @@ async fn edit(
                 stale,
             )
             .await;
-            if response.status().is_success() {
-                *response.status_mut() = status;
-            }
-            response
+            with_status(response, status)
         }
     }
 }
