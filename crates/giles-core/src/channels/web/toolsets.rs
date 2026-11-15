@@ -12,8 +12,9 @@
 //! The form adds and edits remote MCP servers only, as the manager stores nothing else: a server
 //! Giles runs on the host is configured in `giles.toml`, and the pages list it read-only.
 //!
-//! No page shows a secret value. A bearer token is the name of a secret in `secrets.toml`, shown
-//! by name.
+//! No page shows a secret value. A bearer token is typed into a write-only field, which the
+//! manager stores in the secret store; the pages only say whether one is stored, and an edit that
+//! leaves the field blank keeps it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -42,6 +43,7 @@ use crate::config::{
 };
 use crate::http::{self, RouterBuilder};
 use crate::registry::{Registry, ToolTarget};
+use crate::toolsets::credentials;
 use crate::toolsets::{
     AgentGlobChange, RESERVED_TOOLSET_NAME, ToolsetManager, ToolsetManagerError, ToolsetSource,
     ToolsetView,
@@ -354,10 +356,12 @@ struct ToolsetForm {
     name: String,
     url: String,
     insecure: bool,
-    /// `none` or `secret`.
+    /// `none` or `token`.
     bearer: String,
-    /// The name of the secret in `secrets.toml` that holds the token.
-    bearer_secret: String,
+    /// The token as typed. Never filled in from a stored toolset, and never shown again.
+    bearer_token: String,
+    /// Whether the toolset has a token stored, which a blank `bearer_token` keeps.
+    bearer_stored: bool,
     deadline: String,
     parallel: bool,
     /// One directory per line.
@@ -389,15 +393,11 @@ fn humanize(duration: Duration) -> String {
     format!("{millis}ms")
 }
 
-/// The name of the secret a stored `auth` takes its bearer token from. A stored toolset has no
-/// other kind of token.
-fn bearer_secret(auth: Option<&toml::Value>) -> Option<String> {
+/// Whether a stored `auth` has a bearer token: a stored toolset's is always a reference to its own
+/// secret.
+fn has_bearer(auth: Option<&toml::Value>) -> bool {
     auth.and_then(toml::Value::as_table)
-        .and_then(|table| table.get("bearer"))
-        .and_then(toml::Value::as_table)
-        .and_then(|bearer| bearer.get("secret"))
-        .and_then(toml::Value::as_str)
-        .map(str::to_owned)
+        .is_some_and(|table| table.contains_key("bearer"))
 }
 
 impl ToolsetForm {
@@ -409,7 +409,8 @@ impl ToolsetForm {
             url: String::new(),
             insecure: false,
             bearer: "none".to_owned(),
-            bearer_secret: String::new(),
+            bearer_token: String::new(),
+            bearer_stored: false,
             deadline: String::new(),
             parallel: false,
             skills: String::new(),
@@ -418,14 +419,15 @@ impl ToolsetForm {
 
     /// The form of the stored toolset `name` with `spec`, last changed at `updated_at`.
     fn from_spec(name: &str, spec: &ToolsetSpec, updated_at: Option<Timestamp>) -> Self {
-        let secret = bearer_secret(spec.auth.as_ref());
+        let bearer = has_bearer(spec.auth.as_ref());
         Self {
             updated_at: updated_at.map(|at| at.to_string()).unwrap_or_default(),
             name: name.to_owned(),
             url: spec.url.clone().unwrap_or_default(),
             insecure: spec.insecure == Some(true),
-            bearer: if secret.is_some() { "secret" } else { "none" }.to_owned(),
-            bearer_secret: secret.unwrap_or_default(),
+            bearer: if bearer { "token" } else { "none" }.to_owned(),
+            bearer_token: String::new(),
+            bearer_stored: bearer,
             deadline: spec
                 .deadline
                 .map(|deadline| humanize(deadline.0))
@@ -451,7 +453,7 @@ impl ToolsetForm {
         let text = |key: &str| fields.get(key).cloned().unwrap_or_default();
         let flag = |key: &str| fields.contains_key(key);
         let bearer = match text("bearer").as_str() {
-            "secret" => "secret",
+            "token" => "token",
             _ => "none",
         };
         Self {
@@ -460,7 +462,8 @@ impl ToolsetForm {
             url: text("url").trim().to_owned(),
             insecure: flag("insecure"),
             bearer: bearer.to_owned(),
-            bearer_secret: text("bearer_secret").trim().to_owned(),
+            bearer_token: text("bearer_token").trim().to_owned(),
+            bearer_stored: flag("bearer_stored"),
             deadline: text("deadline").trim().to_owned(),
             parallel: flag("parallel"),
             skills: text("skills"),
@@ -475,22 +478,37 @@ impl ToolsetForm {
             .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http:"))
     }
 
-    /// The spec the form describes.
+    /// The spec the form describes. A typed token is in it as the value, for the manager to store;
+    /// a blank one is the reference to the toolset's stored token.
     ///
     /// # Errors
     ///
-    /// The key and the reason, as validation gives them, for a setting that isn't valid.
+    /// The key and the reason, as validation gives them, for a setting that isn't valid, and a
+    /// token that is needed and not typed.
     fn spec(&self) -> Result<ToolsetSpec, ToolsetError> {
         let text = |text: &str| Value::String(text.to_owned());
         let mut map = Map::new();
         if !self.url.is_empty() {
             map.insert("url".to_owned(), text(&self.url));
         }
-        if self.bearer == "secret" {
-            let mut bearer = Map::new();
-            bearer.insert("secret".to_owned(), text(&self.bearer_secret));
+        if self.bearer == "token" {
+            let key = KeyPath::root().key("auth").key("bearer");
+            let bearer = if !self.bearer_token.is_empty() {
+                text(&self.bearer_token)
+            } else if self.bearer_stored {
+                let own = credentials::toolset_path(&self.name, credentials::BEARER_TOKEN)
+                    .map_err(|reason| ToolsetError { key, reason })?;
+                let mut reference = Map::new();
+                reference.insert("secret".to_owned(), text(own.as_str()));
+                Value::Object(reference)
+            } else {
+                return Err(ToolsetError {
+                    key,
+                    reason: "enter the token".to_owned(),
+                });
+            };
             let mut auth = Map::new();
-            auth.insert("bearer".to_owned(), Value::Object(bearer));
+            auth.insert("bearer".to_owned(), bearer);
             map.insert("auth".to_owned(), Value::Object(auth));
         }
         if self.insecure && self.plain_http() {
@@ -514,7 +532,7 @@ impl ToolsetForm {
 }
 
 /// The settings of the toolset the form describes, for its page: the ones the owner set. The
-/// bearer token is shown by the name of its secret.
+/// bearer token is never shown, only that there is one.
 fn settings(form: &ToolsetForm) -> Vec<Setting> {
     fn add(out: &mut Vec<Setting>, label: &'static str, values: Vec<String>) {
         if !values.is_empty() {
@@ -530,11 +548,11 @@ fn settings(form: &ToolsetForm) -> Vec<Setting> {
     }
     let mut out = Vec::new();
     add(&mut out, "URL", one(&form.url));
-    if form.bearer == "secret" {
+    if form.bearer == "token" {
         add(
             &mut out,
             "Authentication",
-            vec![format!("secret {}", form.bearer_secret)],
+            vec!["bearer token (stored)".to_owned()],
         );
     }
     if form.insecure && form.plain_http() {
@@ -1150,7 +1168,8 @@ mod tests {
     fn a_spec_survives_the_form() {
         for json in [
             r#"{ "url": "http://example.com/mcp",
-                 "auth": { "bearer": { "secret": "search" } }, "insecure": true,
+                 "auth": { "bearer": { "secret": "toolsets/search/bearer-token" } },
+                 "insecure": true,
                  "deadline": "90s", "parallel": true, "skills": ["/srv/skills"] }"#,
             r#"{ "url": "https://example.com/mcp" }"#,
         ] {
@@ -1164,14 +1183,18 @@ mod tests {
     #[test]
     fn a_posted_form_reads_back_what_was_shown() {
         let original = spec(
-            r#"{ "url": "https://example.com/mcp", "auth": { "bearer": { "secret": "t" } },
+            r#"{ "url": "https://example.com/mcp",
+                 "auth": { "bearer": { "secret": "toolsets/search/bearer-token" } },
                  "deadline": "2m", "skills": ["/a", "/b"] }"#,
         );
         let form = ToolsetForm::from_spec("search", &original, None);
+        assert!(form.bearer_stored);
         let fields: HashMap<String, String> = [
+            ("name", form.name.clone()),
             ("url", form.url.clone()),
             ("bearer", form.bearer.clone()),
-            ("bearer_secret", form.bearer_secret.clone()),
+            ("bearer_stored", "1".to_owned()),
+            ("bearer_token", String::new()),
             ("deadline", form.deadline.clone()),
             ("skills", form.skills.clone()),
         ]

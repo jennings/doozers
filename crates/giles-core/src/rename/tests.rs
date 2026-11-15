@@ -1138,6 +1138,82 @@ async fn a_stored_toolset_is_renamed_with_its_row_and_agent_globs() {
     );
 }
 
+/// Giles stopped: a stored toolset's secrets, its users' tokens, and the references to them move
+/// with its name, as they do when Giles runs.
+#[tokio::test]
+async fn a_stored_toolset_is_renamed_with_its_secrets() {
+    use crate::secrets::{KeyFile, LocalSecrets, SecretPath, SecretProvider};
+    let home = Home::populated().await;
+    add_stored(
+        &home,
+        "notes",
+        r#"{ "url": "https://notes.example.com/mcp",
+             "auth": { "bearer": { "secret": "toolsets/notes/bearer-token" } } }"#,
+    )
+    .await;
+    let secrets = LocalSecrets::open(
+        home.store.clone(),
+        &KeyFile::new(&home.root, &home.root.secret_key_file()),
+        std::sync::Arc::new(crate::sessions::SystemClock),
+    )
+    .await
+    .unwrap();
+    let put = async |path: &str, value: &str| {
+        secrets
+            .put(
+                &SecretPath::new(path).unwrap(),
+                &crate::config::Secret::new(value),
+                None,
+            )
+            .await
+            .unwrap();
+    };
+    put("toolsets/notes/bearer-token", "tok-1").await;
+    put("users/owner/toolsets/notes/oauth-token", "{}").await;
+    put("toolsets/notes-other/bearer-token", "other").await;
+
+    home.rename(Kind::Toolset, "notes", "memos").await.unwrap();
+
+    let rows = home.store.toolsets().await.unwrap();
+    assert!(
+        rows[0].spec.contains("toolsets/memos/bearer-token"),
+        "{}",
+        rows[0].spec
+    );
+    let paths: Vec<String> = secrets
+        .list(None)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|secret| secret.path.to_string())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "toolsets/memos/bearer-token",
+            "toolsets/notes-other/bearer-token",
+            "users/owner/toolsets/memos/oauth-token",
+        ]
+    );
+    let token = secrets
+        .get(&SecretPath::new("toolsets/memos/bearer-token").unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(token.expose(), "tok-1");
+
+    // A name that can't name a secret is refused, and nothing changes.
+    let err = home
+        .rename(Kind::Toolset, "memos", "-memos")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, RenameError::StoredToolsetName { .. }),
+        "{err}"
+    );
+    assert_eq!(stored_names(&home).await, ["memos"]);
+}
+
 #[tokio::test]
 async fn a_stored_toolset_cannot_take_the_name_of_another_toolset() {
     let home = Home::populated().await;

@@ -32,6 +32,12 @@ pub struct CoreConfig {
     pub secret_key_file: PathBuf,
 }
 
+/// The secret store's key file for `core.secret_key_file = configured`: relative to the data root,
+/// or `<root>/secret.key` if unset.
+pub fn resolve_secret_key_file(root: &DataRoot, configured: Option<&Path>) -> PathBuf {
+    configured.map_or_else(|| root.secret_key_file(), |path| root.root().join(path))
+}
+
 /// `[owner]`: the one user of v1 (PLAN section 1.1).
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -142,8 +148,7 @@ impl RawGiles {
                     "must not be empty",
                 ));
             }
-            Some(path) => root.root().join(path),
-            None => root.secret_key_file(),
+            configured => resolve_secret_key_file(root, configured.as_deref()),
         };
         Ok(CoreConfig {
             http_listen: self.core.http_listen.unwrap_or(DEFAULT_HTTP_LISTEN),

@@ -334,19 +334,19 @@ a warning at every start. Add that server here instead.
 
 A remote server is one you reach over the network. Giles doesn't run or sandbox it.
 
-1. Put the server's token in [`secrets.toml`](configuration.md#secrets), such as
-   `github = "<token>"`, and keep the file private with `chmod 600 ~/.giles/secrets.toml`.
-2. Open **New MCP server** and enter a **Name**, such as `github`. Its tools are named
+1. Open **New MCP server** and enter a **Name**, such as `github`. Its tools are named
    `github__<tool>`.
-3. Enter the **URL**, such as `https://api.githubcopilot.com/mcp/`.
-4. For **Authentication**, choose **A secret in secrets.toml** and enter `github`.
-5. Select **Add**.
+2. Enter the **URL**, such as `https://api.githubcopilot.com/mcp/`.
+3. For **Authentication**, choose **Bearer token** and paste the token.
+4. Select **Add**.
 
 The server's page opens and shows its state and its tools. If Giles can't connect, the page shows
 why.
 
-The form never shows a token. It shows the name of the secret. Giles reads `secrets.toml` again each
-time it connects, so a secret you add later needs no restart.
+Giles keeps the token encrypted and never shows it again. When you edit the server, leave the token
+field blank to keep the stored token, or type a new one to replace it. If you change the URL to
+another server, type the token again. Giles never sends a stored token to a server it wasn't given
+for.
 
 The form has more settings, all optional:
 

@@ -10,18 +10,29 @@
 //! # Changes
 //!
 //! One async lock spans each change, as it does for [`Routes`](crate::routes::Routes): validate
-//! the spec against the running configuration with `secrets.toml` read again
-//! ([`validate_toolset`]), write the row, change the [`LiveConfig`], and then add, replace, or
-//! remove the toolset in the [`ToolsetHost`], so the running core never differs from what is
-//! stored for more than the change in progress. Nothing is written when the spec is refused.
+//! the spec against the running configuration with its credentials read from the secret store
+//! ([`validate_toolset`]), store the credentials, write the row, change the [`LiveConfig`], and
+//! then add, replace, or remove the toolset in the [`ToolsetHost`], so the running core never
+//! differs from what is stored for more than the change in progress. Nothing is written when the
+//! spec is refused.
 //!
 //! The extra rules beyond `validate_toolset`:
 //!
 //! - the name `new` is reserved, because it is the address of the form for a new toolset;
 //! - a name that a `[toolset.<name>]` table of `giles.toml` uses belongs to that toolset;
 //! - the spec has `url` (`validate_toolset` then refuses the keys of a stdio server next to it);
-//! - a bearer token is `{ secret = "<name>" }`, so the token is in `secrets.toml`, not in the
-//!   database or the process environment.
+//! - a credential is the value itself, which is stored in the secret store at the toolset's own
+//!   path, or a reference to that path, `{ secret = "toolsets/<name>/bearer-token" }`
+//!   ([`credentials`](super::credentials)). The row holds only the reference, so a value is never
+//!   in the database's toolset rows, the process environment, or `giles toolset show`.
+//!
+//! # Secrets
+//!
+//! A stored toolset owns the secrets at `toolsets/<name>/...`. A change that stops referring to
+//! one deletes it, removing the toolset deletes them all, and a rename moves them and the
+//! references to them. At startup, a bearer token that is still in the row as text, or still
+//! refers to `secrets.toml` (the ways before the secret store), is copied to the toolset's own
+//! path, and the spec rewritten.
 //!
 //! Toolsets in `giles.toml` keep working beside the stored ones. They show up in
 //! [`list`](ToolsetManager::list) as [`ToolsetSource::File`] and can't be changed here
@@ -34,8 +45,7 @@
 //! admin service lists as a `Failed` instance (the manager is a [`PluginControl`]) and the pages
 //! can show. Startup never fails on a stored toolset, and the owner fixes it in the web UI, which
 //! needs Giles running. Saving a failed toolset starts it, so does restarting it
-//! ([`retry`](ToolsetManager::retry), after a secret was added to `secrets.toml`, say), and
-//! removing it deletes it.
+//! ([`retry`](ToolsetManager::retry)), and removing it deletes it.
 //!
 //! # Removal
 //!
@@ -85,13 +95,15 @@ use giles_types::Timestamp;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
+use super::credentials;
 use super::host::ToolsetHost;
 use crate::admin::{PluginControl, PluginRunState, PluginRuntime};
 use crate::config::{
-    Builtins, Config, InstanceName, KeyPath, Kind, LiveConfig, LoadOptions, Secrets,
+    Builtins, Config, InstanceName, KeyPath, Kind, LiveConfig, LoadOptions, Secret, Secrets,
     ToolsetContext, ToolsetError, ToolsetInstance, ToolsetSpec, validate_toolset,
 };
 use crate::paths::DataRoot;
+use crate::secrets::{SecretError, SecretPath, SecretProvider};
 
 mod rename;
 
@@ -104,9 +116,11 @@ pub const RESERVED_TOOLSET_NAME: &str = "new";
 pub struct ToolsetManagerOptions {
     /// The database the toolsets are stored in.
     pub store: Store,
-    /// The data root: `secrets.toml`, and the plugins' data directories that `skills` must not
-    /// overlap.
+    /// The data root: `secrets.toml` (for moving old bearer tokens out of it), and the plugins'
+    /// data directories that `skills` must not overlap.
     pub root: DataRoot,
+    /// Where the toolsets' credentials are kept.
+    pub secrets: Arc<dyn SecretProvider>,
     /// The running configuration, which stored toolsets are validated against and added to.
     pub config: LiveConfig,
     /// Where toolsets are started, replaced, and stopped.
@@ -209,6 +223,9 @@ pub enum ToolsetManagerError {
     /// The database failed.
     #[error("cannot store the toolsets: {0}")]
     Store(giles_store::Error),
+    /// The secret store failed. The change may be half done, as for [`Store`](Self::Store).
+    #[error("cannot keep the toolset's credentials: {0}")]
+    Secrets(SecretError),
 }
 
 fn failed_message(step: &str, error: &str, undo_errors: &[String]) -> String {
@@ -260,6 +277,12 @@ impl ToolsetManagerError {
     }
 }
 
+impl From<SecretError> for ToolsetManagerError {
+    fn from(error: SecretError) -> Self {
+        Self::Secrets(error)
+    }
+}
+
 impl From<giles_store::Error> for ToolsetManagerError {
     fn from(error: giles_store::Error) -> Self {
         match error {
@@ -284,6 +307,7 @@ struct State {
 pub struct ToolsetManager {
     store: Store,
     root: DataRoot,
+    secrets: Arc<dyn SecretProvider>,
     config: LiveConfig,
     host: Arc<ToolsetHost>,
     /// Held by [`rename`](Self::rename) after `changing`, which keeps agents from being changed
@@ -324,6 +348,7 @@ impl ToolsetManager {
         let ToolsetManagerOptions {
             store,
             root,
+            secrets,
             config,
             host,
             agent_lock,
@@ -331,6 +356,7 @@ impl ToolsetManager {
         let manager = Arc::new_cyclic(|me| Self {
             store,
             root,
+            secrets,
             config,
             host,
             agent_lock,
@@ -340,6 +366,7 @@ impl ToolsetManager {
         });
         {
             let _changing = manager.changing.lock().await;
+            manager.move_tokens_into_the_store().await?;
             for row in manager.store.toolsets().await? {
                 if let Err(reason) = manager.start_stored(&row).await {
                     warn!(toolset = %row.name, %reason, "a stored toolset is not started");
@@ -421,14 +448,28 @@ impl ToolsetManager {
         if rows.iter().any(|row| row.name.eq_ignore_ascii_case(name)) {
             return Err(ToolsetManagerError::Exists);
         }
+        let (spec, literals) = self.prepare(name, spec)?;
+        let values = self.credential_values(&spec, &literals).await?;
         let instance = self
-            .check(name, spec, None)
+            .check(name, &spec, None, values)
             .map_err(ToolsetManagerError::invalid)?;
-        let json = to_json(spec)?;
-        let row = self
+        let json = to_json(&spec)?;
+        // Left over from a toolset of the same name whose secrets couldn't all be deleted.
+        self.prune(name, &[]).await?;
+        self.put_literals(&literals).await?;
+        let row = match self
             .store
             .toolset_insert(name, &json, Timestamp::now())
-            .await?;
+            .await
+        {
+            Ok(row) => row,
+            Err(error) => {
+                if let Err(undo) = self.prune(name, &[]).await {
+                    warn!(toolset = %name, error = %undo, "cannot delete the secrets of a toolset that wasn't added");
+                }
+                return Err(error.into());
+            }
+        };
         self.apply(&row.name, instance, false)
             .await
             .map_err(ToolsetManagerError::whole)?;
@@ -467,13 +508,36 @@ impl ToolsetManager {
         let replacing = running
             .then(|| InstanceName::new(old.name.as_str()).ok())
             .flatten();
+        let (spec, literals) = self.prepare(&old.name, spec)?;
+        // A stored credential goes only to the server it was given for. Pointing the toolset at
+        // another server takes the credentials typed again.
+        let old_url = ToolsetSpec::from_json(&old.spec)
+            .ok()
+            .and_then(|old| old.url);
+        let other_server = credentials::other_server(old_url.as_deref(), spec.url.as_deref());
+        if other_server
+            && let Some((key, _)) = credentials::reference_keys(&spec)
+                .into_iter()
+                .find(|(_, path)| !literals.iter().any(|(given, _)| given.as_str() == path))
+        {
+            return Err(ToolsetManagerError::Invalid {
+                key,
+                reason: "the URL now points at another server: enter the credential again, so \
+                         the stored one isn't sent there"
+                    .to_owned(),
+            });
+        }
+        let values = self.credential_values(&spec, &literals).await?;
         let instance = self
-            .check(&old.name, spec, replacing.as_ref())
+            .check(&old.name, &spec, replacing.as_ref(), values)
             .map_err(ToolsetManagerError::invalid)?;
-        let json = to_json(spec)?;
+        let json = to_json(&spec)?;
+        self.put_literals(&literals).await?;
         let row = self
             .store
             .toolset_update(&old.name, &json, expected_updated_at, Timestamp::now())
+            .await?;
+        self.prune(&row.name, &credentials::references(&spec))
             .await?;
         self.apply(&row.name, instance, running)
             .await
@@ -481,7 +545,7 @@ impl ToolsetManager {
         Ok(self.view_of(&row))
     }
 
-    /// Starts the stored toolset `name` again if it isn't running: reads `secrets.toml` again and
+    /// Starts the stored toolset `name` again if it isn't running: reads its credentials again and
     /// validates the stored spec against the running configuration, as startup did, and adds the
     /// toolset if it passes. The view says what became of it: no `failure` if it started, else
     /// the reason it still can't (which replaces the old one). A toolset that is running is left
@@ -528,6 +592,11 @@ impl ToolsetManager {
         };
         if !self.store.toolset_remove(&row.name).await? {
             return Err(ToolsetManagerError::NotFound);
+        }
+        if let Err(error) = self.prune(&row.name, &[]).await {
+            // The row is gone, so the toolset is; its secrets are deleted again when a toolset of
+            // the name is added.
+            warn!(toolset = %row.name, %error, "cannot delete a removed toolset's secrets");
         }
         let running = {
             let mut state = lock(&self.state);
@@ -577,20 +646,20 @@ impl ToolsetManager {
 
     /// Everything that must hold for the toolset `name` with `spec` to be used, as the web UI and
     /// startup both ask it. `replacing` is the toolset's own running instance, when it is edited.
-    /// Reads `secrets.toml` now.
+    /// `values` are the credentials the spec refers to, by path ([`credential_values`]).
+    ///
+    /// [`credential_values`]: Self::credential_values
     fn check(
         &self,
         name: &str,
         spec: &ToolsetSpec,
         replacing: Option<&InstanceName>,
+        values: BTreeMap<String, Secret>,
     ) -> Result<ToolsetInstance, ToolsetError> {
         self.check_name(name)?;
         let config = self.config.get();
         remote_only(spec)?;
-        let secrets = Secrets::load(&self.root.secrets_file()).map_err(|error| ToolsetError {
-            key: KeyPath::root(),
-            reason: error.to_string(),
-        })?;
+        let secrets = Secrets::from_store(values);
         // A remote toolset has no command to find, no `{ env = ... }` reference (`remote_only`
         // refused it), and no grants: nothing to look up in the environment or check against
         // the `giles` binary.
@@ -709,10 +778,152 @@ impl ToolsetManager {
     /// Startup: validates the stored `row` and adds it, or says why not.
     async fn start_stored(&self, row: &StoredToolset) -> Result<(), String> {
         let spec = ToolsetSpec::from_json(&row.spec).map_err(|error| damaged(&error))?;
+        let (spec, literals) = self
+            .prepare(&row.name, &spec)
+            .map_err(|error| error.to_string())?;
+        if !literals.is_empty() {
+            return Err(damaged(&ToolsetError {
+                key: KeyPath::root().key("auth"),
+                reason: "holds a credential instead of a reference to the secret store".to_owned(),
+            }));
+        }
+        let values = self
+            .credential_values(&spec, &[])
+            .await
+            .map_err(|error| error.to_string())?;
         let instance = self
-            .check(&row.name, &spec, None)
+            .check(&row.name, &spec, None, values)
             .map_err(|error| error.to_string())?;
         self.apply(&row.name, instance, false).await
+    }
+
+    /// `spec` as it will be stored for the toolset `name`, with the literal credentials moved out
+    /// to be stored at their paths ([`credentials::take_literals`]).
+    fn prepare(
+        &self,
+        name: &str,
+        spec: &ToolsetSpec,
+    ) -> Result<(ToolsetSpec, Vec<(SecretPath, Secret)>), ToolsetManagerError> {
+        let mut spec = spec.clone();
+        let literals =
+            credentials::take_literals(name, &mut spec).map_err(ToolsetManagerError::invalid)?;
+        Ok((spec, literals))
+    }
+
+    /// The credentials `spec` refers to, by path: `literals` about to be stored, and the rest read
+    /// from the secret store. A missing one is left out, for validation to report.
+    async fn credential_values(
+        &self,
+        spec: &ToolsetSpec,
+        literals: &[(SecretPath, Secret)],
+    ) -> Result<BTreeMap<String, Secret>, ToolsetManagerError> {
+        let mut values: BTreeMap<String, Secret> = literals
+            .iter()
+            .map(|(path, value)| (path.to_string(), value.clone()))
+            .collect();
+        for path in credentials::references(spec) {
+            if values.contains_key(&path) {
+                continue;
+            }
+            let Ok(secret) = SecretPath::new(path.as_str()) else {
+                continue;
+            };
+            if let Some(value) = self.secrets.get(&secret).await? {
+                values.insert(path, value);
+            }
+        }
+        Ok(values)
+    }
+
+    /// Stores each literal credential at its path.
+    async fn put_literals(
+        &self,
+        literals: &[(SecretPath, Secret)],
+    ) -> Result<(), ToolsetManagerError> {
+        for (path, value) in literals {
+            self.secrets.put(path, value, None).await?;
+        }
+        Ok(())
+    }
+
+    /// Deletes the secrets the toolset `name` owns, except those at the paths in `keep`.
+    async fn prune(&self, name: &str, keep: &[String]) -> Result<(), ToolsetManagerError> {
+        for path in credentials::owned(self.secrets.as_ref(), name).await? {
+            if !keep.iter().any(|kept| kept == path.as_str()) {
+                self.secrets.delete(&path).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Moves the bearer tokens of stored toolsets that are still kept the ways before the secret
+    /// store, as text in the row or as a reference to `secrets.toml`, into the store at the
+    /// toolset's own path, and rewrites the spec to refer to it there. A toolset whose secret
+    /// isn't in `secrets.toml` is left as it is, to fail validation with the reason.
+    async fn move_tokens_into_the_store(&self) -> Result<(), giles_store::Error> {
+        let mut file: Option<Secrets> = None;
+        for row in self.store.toolsets().await? {
+            let Ok(mut spec) = ToolsetSpec::from_json(&row.spec) else {
+                continue;
+            };
+            let Some(bearer) = spec
+                .auth
+                .as_ref()
+                .and_then(|auth| auth.get("bearer"))
+                .cloned()
+            else {
+                continue;
+            };
+            let Ok(own) = credentials::toolset_path(&row.name, credentials::BEARER_TOKEN) else {
+                continue;
+            };
+            let (value, from) = match &bearer {
+                toml::Value::String(text) => (Secret::new(text.as_str()), "the toolset's row"),
+                other => {
+                    let Some(name) = other.get("secret").and_then(toml::Value::as_str) else {
+                        continue;
+                    };
+                    if name == own.as_str() {
+                        continue;
+                    }
+                    let secrets = match &file {
+                        Some(secrets) => secrets,
+                        None => match Secrets::load(&self.root.secrets_file()) {
+                            Ok(secrets) => file.insert(secrets),
+                            Err(error) => {
+                                warn!(%error, "cannot read secrets.toml to move toolset tokens out of it");
+                                continue;
+                            }
+                        },
+                    };
+                    let Some(value) = secrets.get(name) else {
+                        continue;
+                    };
+                    (value.clone(), "secrets.toml")
+                }
+            };
+            if let Err(error) = self.secrets.put(&own, &value, None).await {
+                warn!(toolset = %row.name, %error, "cannot move a toolset's token into the secret store");
+                continue;
+            }
+            if let Some(auth) = spec.auth.as_mut().and_then(toml::Value::as_table_mut) {
+                auth.insert(
+                    "bearer".to_owned(),
+                    toml::Value::Table(toml::Table::from_iter([(
+                        "secret".to_owned(),
+                        toml::Value::String(own.to_string()),
+                    )])),
+                );
+            }
+            let Ok(json) = serde_json::to_string(&spec) else {
+                continue;
+            };
+            self.store
+                .toolset_update(&row.name, &json, None, Timestamp::now())
+                .await?;
+            info!(toolset = %row.name, from, to = %own, "moved a toolset's bearer token into the secret store");
+        }
+        Ok(())
     }
 
     fn set_failed(&self, name: &str, reason: String) {
@@ -769,35 +980,15 @@ impl PluginControl for ToolsetManager {
     }
 }
 
-/// What a stored toolset must be beyond a valid `[toolset.<name>]` table: a remote server, with a
-/// bearer token, if any, in `secrets.toml`. `validate_toolset` refuses the keys of a stdio server
-/// next to `url`, and the shape of `auth`.
+/// What a stored toolset must be beyond a valid `[toolset.<name>]` table: a remote server.
+/// `validate_toolset` refuses the keys of a stdio server next to `url`, and the shape of `auth`;
+/// [`credentials::take_literals`] made its credentials references to the toolset's own secrets.
 fn remote_only(spec: &ToolsetSpec) -> Result<(), ToolsetError> {
     if spec.url.is_none() {
         return Err(ToolsetError {
             key: KeyPath::root().key("url"),
             reason: "a stored toolset is a remote server: set `url`. Configure a stdio server as \
                      `[toolset.<name>]` in giles.toml"
-                .to_owned(),
-        });
-    }
-    let bearer = spec
-        .auth
-        .as_ref()
-        .and_then(toml::Value::as_table)
-        .and_then(|auth| auth.get("bearer"));
-    let is_secret = |bearer: &toml::Value| {
-        bearer
-            .as_table()
-            .is_some_and(|reference| reference.len() == 1 && reference.contains_key("secret"))
-    };
-    if let Some(bearer) = bearer
-        && !is_secret(bearer)
-    {
-        return Err(ToolsetError {
-            key: KeyPath::root().key("auth").key("bearer"),
-            reason: "must be { secret = \"<name>\" }: the token of a stored toolset is kept in \
-                     secrets.toml"
                 .to_owned(),
         });
     }

@@ -20,9 +20,12 @@ use giles_store::{
 use giles_types::Timestamp;
 
 use crate::admin::InstanceLock;
-use crate::config::{Kind, is_valid_name};
+use crate::config::{Kind, ToolsetSpec, is_valid_name, resolve_secret_key_file};
 use crate::paths::DataRoot;
+use crate::secrets::{KeyFile, LocalSecrets, SecretPath, SecretProvider};
+use crate::sessions::SystemClock;
 use crate::toolsets::RESERVED_TOOLSET_NAME;
+use crate::toolsets::credentials;
 
 pub use edit::GlobChange;
 pub(crate) use edit::{ToolsetGlobs, rewrite_toolset_globs};
@@ -137,6 +140,9 @@ pub enum RenameError {
         /// The stored toolset's name.
         existing: String,
     },
+    /// The stored toolset's secrets couldn't be read or moved. Nothing was changed.
+    #[error("cannot move the stored toolset's secrets: {0}")]
+    Secrets(String),
     /// A stored toolset can't have the new name: the web UI and the admin RPCs refuse it too.
     #[error("a stored toolset can't be named {new:?}: {reason}")]
     StoredToolsetName {
@@ -468,9 +474,14 @@ pub async fn rename_instance(
             elsewhere: elsewhere(old),
         });
     }
+    // A stored toolset's secrets and the references to them move with its name.
+    let secrets = match stored_old {
+        Some(row) => StoredSecrets::plan(root, &config_text, store, row, new).await?,
+        None => None,
+    };
     // The row goes first, as `giles.toml` is rewritten before the agents' files and directories.
     if let Some(row) = stored_old {
-        rename_stored_toolset(store, row, new).await?;
+        rename_stored_toolset(store, row, new, secrets.as_ref()).await?;
     }
     let journal = Journal::default();
     let memory = MemoryJournal::default();
@@ -543,42 +554,201 @@ pub async fn rename_instance(
             ))
         }
     };
-    if let (Some(row), Err(error)) = (stored_old, &mut result)
-        && let Err(e) = store.toolset_restore(new, row).await
-    {
-        let note = format!("put the stored toolset {:?} back: {e}", row.name);
-        match error {
-            RenameError::Failed { undo_errors, .. } => undo_errors.push(note),
-            other => {
-                *other = RenameError::Failed {
-                    step: "renaming the database rows".to_owned(),
-                    error: other.to_string(),
-                    undo_errors: vec![note],
-                };
+    if let (Some(row), Err(error)) = (stored_old, &mut result) {
+        let mut notes: Vec<String> = store
+            .toolset_restore(new, row)
+            .await
+            .err()
+            .map(|e| format!("put the stored toolset {:?} back: {e}", row.name))
+            .into_iter()
+            .collect();
+        if let Some(secrets) = &secrets {
+            notes.extend(secrets.delete_copies().await);
+        }
+        if !notes.is_empty() {
+            match error {
+                RenameError::Failed { undo_errors, .. } => undo_errors.extend(notes),
+                other => {
+                    *other = RenameError::Failed {
+                        step: "renaming the database rows".to_owned(),
+                        error: other.to_string(),
+                        undo_errors: notes,
+                    };
+                }
             }
         }
+    }
+    if result.is_ok()
+        && let Some(secrets) = &secrets
+    {
+        secrets.delete_originals().await;
     }
     result
 }
 
-/// Renames the stored toolset `row` to `new`, and puts it back if that fails part-way.
+/// What renaming a stored toolset does to its secrets: where each one it owns moves, and the spec
+/// with its references moved too.
+struct StoredSecrets {
+    secrets: LocalSecrets,
+    moves: Vec<(SecretPath, SecretPath)>,
+    /// The spec to store under the new name, if its references changed.
+    spec: Option<String>,
+}
+
+impl StoredSecrets {
+    /// The moves for renaming `row` to `new`, or `None` if the toolset owns no secret and its
+    /// spec refers to none. Opens the secret store only if there are secrets to move, with the
+    /// key file `giles.toml` (`config_text`) names.
+    async fn plan(
+        root: &DataRoot,
+        config_text: &str,
+        store: &Store,
+        row: &StoredToolset,
+        new: &str,
+    ) -> Result<Option<Self>, RenameError> {
+        let old = row.name.as_str();
+        let mut moves = Vec::new();
+        for record in store
+            .secret_records(None)
+            .await
+            .map_err(RenameError::Store)?
+        {
+            let Ok(path) = SecretPath::new(record.path.as_str()) else {
+                continue;
+            };
+            // `moved` to the same name finds the paths the toolset owns.
+            if credentials::moved(&path, old, old).is_none() {
+                continue;
+            }
+            let Some(to) = credentials::moved(&path, old, new) else {
+                return Err(RenameError::StoredToolsetName {
+                    new: new.to_owned(),
+                    reason: format!(
+                        "the toolset's secrets can't be moved to it ({path}); a name starting \
+                         with `-` can't name a secret"
+                    ),
+                });
+            };
+            if to != path {
+                moves.push((path, to));
+            }
+        }
+        let spec = ToolsetSpec::from_json(&row.spec)
+            .ok()
+            .map(|spec| (credentials::retarget(&spec, old, new), spec))
+            .filter(|(moved, spec)| moved != spec)
+            .map(|(moved, _)| serde_json::to_string(&moved))
+            .transpose()
+            .map_err(|error| RenameError::Secrets(error.to_string()))?;
+        if moves.is_empty() && spec.is_none() {
+            return Ok(None);
+        }
+        let configured = toml::from_str::<toml::Table>(config_text)
+            .ok()
+            .and_then(|table| {
+                table
+                    .get("core")?
+                    .get("secret_key_file")?
+                    .as_str()
+                    .map(PathBuf::from)
+            });
+        let key_file = KeyFile::new(root, &resolve_secret_key_file(root, configured.as_deref()));
+        let secrets = LocalSecrets::open(store.clone(), &key_file, Arc::new(SystemClock))
+            .await
+            .map_err(|error| RenameError::Secrets(error.to_string()))?;
+        Ok(Some(Self {
+            secrets,
+            moves,
+            spec,
+        }))
+    }
+
+    /// Copies each secret to its new path. On a failure, deletes the copies made.
+    async fn copy(&self) -> Result<(), RenameError> {
+        for (from, to) in &self.moves {
+            let copied = async {
+                if let Some(value) = self.secrets.get(from).await? {
+                    self.secrets.put(to, &value, None).await?;
+                }
+                Ok::<_, crate::secrets::SecretError>(())
+            };
+            if let Err(error) = copied.await {
+                let undo_errors = self.delete_copies().await;
+                return Err(if undo_errors.is_empty() {
+                    RenameError::Secrets(error.to_string())
+                } else {
+                    RenameError::Failed {
+                        step: "moving the stored toolset's secrets".to_owned(),
+                        error: error.to_string(),
+                        undo_errors,
+                    }
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Deletes the copies at the new paths. Returns what couldn't be deleted.
+    async fn delete_copies(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+        for (_, to) in &self.moves {
+            if let Err(error) = self.secrets.delete(to).await {
+                errors.push(format!("delete the copied secret {to}: {error}"));
+            }
+        }
+        errors
+    }
+
+    /// Deletes the secrets at the old paths, once the rename is done. A failure leaves a copy
+    /// behind, which is logged.
+    async fn delete_originals(&self) {
+        for (from, _) in &self.moves {
+            if let Err(error) = self.secrets.delete(from).await {
+                tracing::warn!(secret = %from, %error, "cannot delete a renamed toolset's old secret");
+            }
+        }
+    }
+}
+
+/// Renames the stored toolset `row` to `new`, with its secrets copied to the new name's paths and
+/// its spec referring to them, and puts everything back if that fails part-way. The old secrets
+/// are deleted once the whole rename is done.
 async fn rename_stored_toolset(
     store: &Store,
     row: &StoredToolset,
     new: &str,
+    secrets: Option<&StoredSecrets>,
 ) -> Result<(), RenameError> {
-    match store.toolset_rename(&row.name, new, Timestamp::now()).await {
-        Ok(_) => Ok(()),
+    if let Some(secrets) = secrets {
+        secrets.copy().await?;
+    }
+    let mut current = row.name.as_str();
+    let renamed = async {
+        store
+            .toolset_rename(&row.name, new, Timestamp::now())
+            .await?;
+        current = new;
+        if let Some(spec) = secrets.and_then(|secrets| secrets.spec.as_deref()) {
+            store
+                .toolset_update(new, spec, None, Timestamp::now())
+                .await?;
+        }
+        Ok::<_, giles_store::Error>(())
+    };
+    match renamed.await {
+        Ok(()) => Ok(()),
         Err(error) => {
-            let undo = store.toolset_restore(&row.name, row).await;
-            Err(store_failure(
-                error,
-                false,
-                undo.err()
-                    .map(|e| format!("put the stored toolset {:?} back: {e}", row.name))
-                    .into_iter()
-                    .collect(),
-            ))
+            let mut undo_errors: Vec<String> = store
+                .toolset_restore(current, row)
+                .await
+                .err()
+                .map(|e| format!("put the stored toolset {:?} back: {e}", row.name))
+                .into_iter()
+                .collect();
+            if let Some(secrets) = secrets {
+                undo_errors.extend(secrets.delete_copies().await);
+            }
+            Err(store_failure(error, false, undo_errors))
         }
     }
 }

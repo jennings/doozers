@@ -83,13 +83,16 @@ pub fn scrub(text: &str, secrets: &[&Secret]) -> String {
     out
 }
 
-/// The contents of `secrets.toml`: a flat table of names to strings, which `{ secret = "name" }`
-/// references resolve against. A value is read when the file is loaded, so loading again picks up
-/// a changed file.
+/// What `{ secret = "name" }` references resolve against: the contents of `secrets.toml`, a flat
+/// table of names to strings, or values read from the secret store for a stored toolset
+/// ([`Secrets::from_store`]). A value is read when the file is loaded, so loading again picks up a
+/// changed file.
 #[derive(Debug, Default)]
 pub struct Secrets {
     file: PathBuf,
     exists: bool,
+    /// The values came from the secret store, not `file`.
+    store: bool,
     values: BTreeMap<String, Secret>,
 }
 
@@ -147,8 +150,25 @@ impl Secrets {
         Ok(Self {
             file: file.to_path_buf(),
             exists: true,
+            store: false,
             values,
         })
+    }
+
+    /// The value named `name`, if there is one.
+    pub fn get(&self, name: &str) -> Option<&Secret> {
+        self.values.get(name)
+    }
+
+    /// Values read from the secret store, by path: what a stored toolset's references resolve
+    /// against. A missing one is reported as missing from the secret store.
+    pub fn from_store(values: BTreeMap<String, Secret>) -> Self {
+        Self {
+            file: PathBuf::new(),
+            exists: true,
+            store: true,
+            values,
+        }
     }
 
     #[cfg(test)]
@@ -156,6 +176,7 @@ impl Secrets {
         Self {
             file: PathBuf::from("/h/secrets.toml"),
             exists: true,
+            store: false,
             values: values
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), Secret::new(*v)))
@@ -219,6 +240,9 @@ impl Resolver<'_> {
         match reference {
             Reference::Secret(name) => match self.secrets.values.get(name) {
                 Some(value) => Ok(value.clone()),
+                None if self.secrets.store => {
+                    Err(err(format!("no secret {name:?} in the secret store")))
+                }
                 None if self.secrets.exists => Err(err(format!(
                     "no secret {name:?} in {}",
                     self.secrets.file.display()

@@ -7,12 +7,14 @@ use giles_store::StoredToolset;
 use giles_types::{AgentId, Timestamp};
 use tracing::{info, warn};
 
-use super::{Target, ToolsetManager, ToolsetManagerError, ToolsetView, lock};
+use super::{Target, ToolsetManager, ToolsetManagerError, ToolsetView, lock, to_json};
 use crate::agents::EditError;
 use crate::agents::edit::{read_agent_toml, replace_agent_toml};
 use crate::config::{AgentConfig, Config, InstanceName, ToolsetInstance, ToolsetSpec};
 pub use crate::rename::GlobChange;
 use crate::rename::{ToolsetGlobs, rewrite_toolset_globs};
+use crate::secrets::SecretPath;
+use crate::toolsets::credentials;
 
 /// The tool globs of one agent that a rename rewrites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +64,12 @@ struct Plan {
     /// The stored toolset as it is now.
     row: StoredToolset,
     new: InstanceName,
+    /// The spec under the new name, its references moved with the secrets. `None` if it is the
+    /// same, or the stored spec can't be read: the row's spec stays as it is.
+    spec: Option<ToolsetSpec>,
+    /// The toolset's secrets and where they move: from the old name's paths to the new name's.
+    /// Empty when only the case of the name changes.
+    moves: Vec<(SecretPath, SecretPath)>,
     /// The instance running under the old name, and the one that will run under the new name.
     running: Option<ToolsetInstance>,
     renamed: Option<ToolsetInstance>,
@@ -84,6 +92,8 @@ impl Plan {
 enum Step {
     /// The running toolset was stopped and left the registry.
     Stopped,
+    /// The toolset's secrets were copied to these paths of the new name.
+    Copied(Vec<SecretPath>),
     Wrote {
         dir: PathBuf,
         before: String,
@@ -181,6 +191,11 @@ impl ToolsetManager {
                 }
             }
         }
+        for (from, _) in &plan.moves {
+            if let Err(error) = self.secrets.delete(from).await {
+                warn!(secret = %from, %error, "cannot delete a renamed toolset's old secret");
+            }
+        }
         info!(from = %plan.row.name, to = %renamed.name, "stored toolset renamed");
         Ok(ToolsetRenamed {
             from: plan.row.name.clone(),
@@ -224,14 +239,43 @@ impl ToolsetManager {
             }
             _ => None,
         };
-        let renamed = match (&running, &old_name) {
-            (Some(_), Some(old_name)) => {
-                let spec = ToolsetSpec::from_json(&row.spec)
-                    .map_err(|_| ToolsetManagerError::whole("the stored spec can't be read"))?;
+        let old_spec = ToolsetSpec::from_json(&row.spec).ok();
+        let spec = old_spec
+            .as_ref()
+            .map(|spec| credentials::retarget(spec, &row.name, new));
+        let mut moves = Vec::new();
+        for from in credentials::owned(self.secrets.as_ref(), &row.name).await? {
+            let Some(to) = credentials::moved(&from, &row.name, new) else {
+                return Err(ToolsetManagerError::whole(format!(
+                    "the toolset's secrets can't be moved to {new:?} ({from}): a name starting \
+                     with `-` can't name a secret"
+                )));
+            };
+            if to != from {
+                moves.push((from, to));
+            }
+        }
+        let renamed = match (&running, &old_name, &old_spec, &spec) {
+            (Some(_), Some(old_name), Some(old_spec), Some(spec)) => {
+                let values = self
+                    .credential_values(old_spec, &[])
+                    .await?
+                    .into_iter()
+                    .map(|(path, value)| {
+                        let path = SecretPath::new(path.as_str())
+                            .ok()
+                            .and_then(|path| credentials::moved(&path, &row.name, new))
+                            .map_or(path, |moved| moved.to_string());
+                        (path, value)
+                    })
+                    .collect();
                 Some(
-                    self.check(new, &spec, Some(old_name))
+                    self.check(new, spec, Some(old_name), values)
                         .map_err(ToolsetManagerError::invalid)?,
                 )
+            }
+            (Some(_), ..) => {
+                return Err(ToolsetManagerError::whole("the stored spec can't be read"));
             }
             _ => None,
         };
@@ -243,9 +287,12 @@ impl ToolsetManager {
         } else {
             self.plan_agents(&config, &row.name, new).await?
         };
+        let spec = spec.filter(|spec| Some(spec) != old_spec.as_ref());
         Ok(Plan {
             row,
             new: new_name,
+            spec,
+            moves,
             running,
             renamed,
             agents,
@@ -384,7 +431,28 @@ impl ToolsetManager {
             done.push(Step::Wrote { dir, before, after });
         }
 
-        let renamed = self
+        if !plan.moves.is_empty() {
+            let why = || "moving the toolset's secrets".to_owned();
+            let mut copied = Vec::new();
+            let mut result = Ok(());
+            for (from, to) in &plan.moves {
+                let step = async {
+                    if let Some(value) = self.secrets.get(from).await? {
+                        self.secrets.put(to, &value, None).await?;
+                    }
+                    Ok::<_, crate::secrets::SecretError>(())
+                };
+                if let Err(error) = step.await {
+                    result = Err((why(), error.to_string()));
+                    break;
+                }
+                copied.push(to.clone());
+            }
+            done.push(Step::Copied(copied));
+            result?;
+        }
+
+        let mut renamed = self
             .store
             .toolset_rename(&plan.row.name, plan.new.as_str(), Timestamp::now())
             .await
@@ -395,6 +463,15 @@ impl ToolsetManager {
                 )
             })?;
         done.push(Step::Renamed);
+        if let Some(spec) = &plan.spec {
+            let why = || "pointing the toolset at its moved secrets".to_owned();
+            let json = to_json(spec).map_err(|error| (why(), error.to_string()))?;
+            renamed = self
+                .store
+                .toolset_update(&renamed.name, &json, None, Timestamp::now())
+                .await
+                .map_err(|error| (why(), error.to_string()))?;
+        }
 
         if let (Some(old), Some(new)) = (&plan.running, &plan.renamed) {
             let why = "renaming the toolset in the running configuration";
@@ -458,6 +535,13 @@ impl ToolsetManager {
                     .and_then(|result| result);
                     if let Err(error) = back {
                         errors.push(format!("put {} back: {error}", path.display()));
+                    }
+                }
+                Step::Copied(paths) => {
+                    for path in paths {
+                        if let Err(error) = self.secrets.delete(&path).await {
+                            errors.push(format!("delete the copied secret {path}: {error}"));
+                        }
                     }
                 }
                 Step::Stopped => {

@@ -116,7 +116,7 @@ $ giles toolset list
 NAME    SOURCE      UPDATED                  PROBLEM
 files   giles.toml  -
 github  stored      2026-10-27 14:03:12 PDT
-notes   stored      2026-10-27 14:05:40 PDT  auth.bearer: no secret "notes" in /Users/me/.giles/secrets.toml
+notes   stored      2026-10-27 14:05:40 PDT  auth.bearer: no secret "toolsets/notes/bearer-token" in the secret store
 ```
 
 A spec is a TOML file with the remote server's keys:
@@ -126,21 +126,22 @@ url = "https://api.githubcopilot.com/mcp/"
 deadline = "2m"
 
 [auth]
-bearer = { secret = "github" }
+bearer = "<token>"
 ```
 
 | Key        | Default | Meaning                                                       |
 | ---------- | ------- | ------------------------------------------------------------- |
 | `url`      |         | The server's `https://` (or `http://`) URL                    |
-| `auth`     | none    | `{ bearer = { secret = "<name>" } }`                          |
+| `auth`     | none    | `{ bearer = "<token>" }`                                      |
 | `insecure` | `false` | Allow plain `http://` to a host other than this machine       |
 | `deadline` | `"5m"`  | How long one tool call may run                                |
 | `parallel` | `false` | The toolset's tools may run in parallel                       |
 | `skills`   | `[]`    | Absolute paths of skill directories the toolset offers        |
 
-Put the token in [`secrets.toml`](configuration.md#secrets) and name it in `auth`. A stored toolset
-takes no other form of token. `show` prints the secret's name, never the token. Giles reads
-`secrets.toml` again each time you run `set`, so a new secret needs no restart.
+Giles moves the token into its encrypted secret store and keeps only a reference in the spec. `show`
+prints that reference, `{ secret = "toolsets/<name>/bearer-token" }`, never the token. Delete the
+spec file once `set` succeeds, or pipe the spec through standard input so the token never lands in a
+file. To keep the stored token when you change other keys, leave the reference as `show` printed it.
 
 A server that Giles runs on this machine, a stdio server, is a
 [`[toolset.<name>]` table](configuration.md#toolsets) in `giles.toml`. `set` refuses a spec without

@@ -35,12 +35,6 @@ fn encode(pairs: &[(&str, &str)]) -> String {
         .finish()
 }
 
-fn write_secrets(env: &Env, text: &str) {
-    let file = env.root().secrets_file();
-    std::fs::write(&file, text).unwrap();
-    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
-}
-
 fn updated_at(view: &ToolsetView) -> Timestamp {
     match view.source {
         ToolsetSource::Stored { updated_at, .. } => updated_at,
@@ -94,6 +88,7 @@ struct Toolsets {
     app: WebApp,
     registry: Arc<Registry>,
     manager: Arc<ToolsetManager>,
+    secrets: Arc<dyn crate::secrets::SecretProvider>,
     admin: Arc<FakeAdmin>,
 }
 
@@ -144,9 +139,18 @@ impl Env {
             )
             .await,
         );
+        let secrets = crate::secrets::LocalSecrets::open(
+            self.store.clone(),
+            &crate::secrets::KeyFile::new(root, &root.secret_key_file()),
+            Arc::new(crate::sessions::SystemClock),
+        )
+        .await
+        .unwrap();
+        let secrets: Arc<dyn crate::secrets::SecretProvider> = Arc::new(secrets);
         let manager = ToolsetManager::start(ToolsetManagerOptions {
             store: self.store.clone(),
             root: root.clone(),
+            secrets: secrets.clone(),
             config: registry.live_config().clone(),
             host,
             agent_lock: Arc::default(),
@@ -157,6 +161,7 @@ impl Env {
             app,
             registry,
             manager,
+            secrets,
             admin: Arc::new(FakeAdmin::default()),
         }
     }
@@ -246,6 +251,17 @@ impl Toolsets {
         let response = call(app, Method::GET, "/admin/agents/new", &[], None).await;
         assert_eq!(response.status(), StatusCode::OK);
         body_text(response).await
+    }
+
+    /// The bearer token stored for the toolset `name`.
+    async fn token(&self, name: &str) -> Option<String> {
+        let path =
+            crate::secrets::SecretPath::new(format!("toolsets/{name}/bearer-token")).unwrap();
+        self.secrets
+            .get(&path)
+            .await
+            .unwrap()
+            .map(|secret| secret.expose().to_owned())
     }
 
     fn set_plugins(&self, plugins: Vec<pb::PluginInstance>) {
@@ -439,7 +455,6 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
 #[tokio::test]
 async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() {
     let env = env().await;
-    write_secrets(&env, "box-token = \"s3cr3t-value\"\n");
     let t = env.toolsets("").await;
     let (status, html) = t.get("/admin/mcp-servers/new").await;
     assert_eq!(status, StatusCode::OK);
@@ -448,8 +463,8 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
         &format!(r#"name="csrf" value="{CSRF}""#),
         r#"id="url" name="url""#,
         r#"<option value="none" selected>No authentication</option>"#,
-        r#"<option value="secret">A secret in secrets.toml</option>"#,
-        r#"name="bearer_secret""#,
+        r#"<option value="token">Bearer token</option>"#,
+        r#"<input type="password" name="bearer_token" autocomplete="off""#,
         // Hidden until the URL is plain http.
         r#"<label class="tool" id="insecure-field" hidden><input type="checkbox" name="insecure"> Allow insecure connections</label>"#,
         r#"name="deadline""#,
@@ -480,8 +495,8 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
                 ("name", "box"),
                 ("url", "http://mcp.example.com/mcp"),
                 ("insecure", "on"),
-                ("bearer", "secret"),
-                ("bearer_secret", "box-token"),
+                ("bearer", "token"),
+                ("bearer_token", "s3cr3t-value"),
                 ("deadline", "90s"),
                 ("parallel", "on"),
                 ("skills", "/srv/skills\r\n\r\n"),
@@ -494,10 +509,11 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
         stored_spec(&env, "box").await,
         spec(
             r#"{ "url": "http://mcp.example.com/mcp", "insecure": true,
-                 "auth": { "bearer": { "secret": "box-token" } },
+                 "auth": { "bearer": { "secret": "toolsets/box/bearer-token" } },
                  "deadline": "90s", "parallel": true, "skills": ["/srv/skills"] }"#
         )
     );
+    assert_eq!(t.token("box").await.as_deref(), Some("s3cr3t-value"));
     // It is running: in the live configuration, so the agent form offers its box at once.
     assert!(
         t.registry
@@ -508,8 +524,8 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
     );
     assert!(t.agent_form(&env).await.contains("box__*"));
 
-    // Without a token, only the URL is stored: a secret name typed with no secret chosen is left
-    // out, and so is "Allow insecure connections" for a URL that isn't plain http.
+    // Without a token, only the URL is stored: a token typed with no token chosen is left out,
+    // and so is "Allow insecure connections" for a URL that isn't plain http.
     let (status, _, _) = t
         .post(
             "/admin/mcp-servers",
@@ -518,7 +534,7 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
                 ("url", "https://mcp.example.com/mcp"),
                 ("insecure", "on"),
                 ("bearer", "none"),
-                ("bearer_secret", "ignored"),
+                ("bearer_token", "ignored"),
             ],
         )
         .await;
@@ -527,6 +543,7 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
         stored_spec(&env, "remote").await,
         spec(r#"{ "url": "https://mcp.example.com/mcp" }"#)
     );
+    assert_eq!(t.token("remote").await, None);
 }
 
 #[tokio::test]
@@ -559,15 +576,15 @@ async fn a_server_giles_would_run_is_refused_at_its_key() {
 async fn an_invalid_form_keeps_its_values_and_names_the_key() {
     let env = env().await;
     let t = env.toolsets("").await;
-    // A secret that isn't in secrets.toml.
+    // A bearer token chosen, and none typed.
     let (status, html, _) = t
         .post(
             "/admin/mcp-servers",
             &[
                 ("name", "box"),
                 ("url", "https://mcp.example.com/mcp"),
-                ("bearer", "secret"),
-                ("bearer_secret", "no-such-secret"),
+                ("bearer", "token"),
+                ("bearer_token", ""),
                 ("deadline", "90s"),
                 ("parallel", "on"),
                 ("skills", "/keep/me\n/and/me"),
@@ -576,11 +593,10 @@ async fn an_invalid_form_keeps_its_values_and_names_the_key() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     for expected in [
-        r#"role="alert">auth.bearer: no secret"#,
+        r#"role="alert">auth.bearer: enter the token"#,
         r#"id="name" name="name" value="box""#,
         r#"id="url" name="url" value="https://mcp.example.com/mcp""#,
-        r#"<option value="secret" selected>"#,
-        r#"name="bearer_secret" value="no-such-secret""#,
+        r#"<option value="token" selected>"#,
         r#"id="deadline" name="deadline" value="90s""#,
         r#"name="parallel" checked"#,
         "/keep/me\n/and/me</textarea>",
@@ -597,9 +613,12 @@ async fn an_invalid_form_keeps_its_values_and_names_the_key() {
         let mut form = remote_form("box");
         form.retain(|(key, _)| *key != field);
         form.push((field, value));
+        // A token typed into a form that is refused isn't shown again.
+        form.extend([("bearer", "token"), ("bearer_token", "typed-token-31")]);
         let (status, html, _) = t.post("/admin/mcp-servers", &form).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{field}");
         assert!(html.contains(error), "{error}\n{html}");
+        assert!(!html.contains("typed-token-31"), "{html}");
         assert!(
             html.contains(&format!(r#"name="{field}" value="{value}""#)),
             "{html}"
@@ -843,8 +862,8 @@ async fn values_are_escaped() {
             &[
                 ("name", XSS),
                 ("url", XSS),
-                ("bearer", "secret"),
-                ("bearer_secret", XSS),
+                ("bearer", "token"),
+                ("bearer_token", XSS),
                 ("deadline", XSS),
                 ("skills", XSS),
             ],
@@ -889,10 +908,10 @@ async fn values_are_escaped() {
 }
 
 #[tokio::test]
-async fn a_secret_named_by_reference_never_appears_in_the_html() {
+async fn a_token_never_appears_in_the_html() {
     let env = env().await;
-    write_secrets(&env, "api = \"tok-9f8e7d\"\n");
-    // A token stored as text, which only an older database can hold: it fails at startup.
+    // A token stored as text, which only an older database can hold: startup moves it into the
+    // secret store.
     env.store
         .toolset_insert(
             "plain",
@@ -902,15 +921,17 @@ async fn a_secret_named_by_reference_never_appears_in_the_html() {
         .await
         .unwrap();
     let t = env.toolsets("").await;
-    let secrets = ["tok-9f8e7d", "plain-bearer-777"];
+    assert_eq!(t.token("plain").await.as_deref(), Some("plain-bearer-777"));
+    assert_eq!(t.manager.get("plain").await.unwrap().failure, None);
+    let tokens = ["tok-9f8e7d", "plain-bearer-777"];
     let (status, _, _) = t
         .post(
             "/admin/mcp-servers",
             &[
                 ("name", "remote"),
                 ("url", "https://mcp.example.com/mcp"),
-                ("bearer", "secret"),
-                ("bearer_secret", "api"),
+                ("bearer", "token"),
+                ("bearer_token", "tok-9f8e7d"),
             ],
         )
         .await;
@@ -925,78 +946,58 @@ async fn a_secret_named_by_reference_never_appears_in_the_html() {
     for path in &pages {
         let (status, html) = t.get(path).await;
         assert_eq!(status, StatusCode::OK, "{path}");
-        for secret in secrets {
-            assert!(!html.contains(secret), "{path} shows {secret}\n{html}");
+        for token in tokens {
+            assert!(!html.contains(token), "{path} shows {token}\n{html}");
         }
     }
-    // The secret is shown by name.
+    // The pages say there is one.
     let (_, html) = t.get("/admin/mcp-servers/remote").await;
-    assert!(html.contains("secret api"), "{html}");
+    assert!(html.contains("bearer token (stored)"), "{html}");
     let (_, html) = t.get("/admin/mcp-servers/remote/edit").await;
-    assert!(
-        html.contains(r#"<option value="secret" selected>"#),
-        "{html}"
-    );
-    assert!(
-        html.contains(r#"name="bearer_secret" value="api""#),
-        "{html}"
-    );
-
-    // A form shown again after an error holds names, not values.
-    let (status, html, _) = t
-        .post(
-            "/admin/mcp-servers",
-            &[
-                ("name", "again"),
-                ("url", "http://mcp.example.com/plain"),
-                ("bearer", "secret"),
-                ("bearer_secret", "api"),
-            ],
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(
-        html.contains(r#"name="bearer_secret" value="api""#),
-        "{html}"
-    );
-    for secret in secrets {
-        assert!(!html.contains(secret), "{secret}\n{html}");
+    for expected in [
+        r#"<option value="token" selected>"#,
+        r#"placeholder="stored; leave blank to keep it""#,
+        r#"name="bearer_stored" value="1""#,
+    ] {
+        assert!(html.contains(expected), "{expected}\n{html}");
     }
 
-    // Saving the toolset with the token as text with a secret instead starts it.
-    let updated = updated_at(&t.manager.get("plain").await.unwrap()).to_string();
-    let (status, _, _) = t
-        .post(
-            "/admin/mcp-servers/plain/edit",
-            &[
-                ("updated_at", updated.as_str()),
-                ("url", "https://mcp.example.com/plain"),
-                ("bearer", "secret"),
-                ("bearer_secret", "api"),
-            ],
-        )
-        .await;
-    assert_eq!(status, StatusCode::SEE_OTHER);
+    // Saving with the field blank keeps the token; typing one replaces it.
+    for (typed, kept) in [("", "plain-bearer-777"), ("new-token-55", "new-token-55")] {
+        let updated = updated_at(&t.manager.get("plain").await.unwrap()).to_string();
+        let (status, _, _) = t
+            .post(
+                "/admin/mcp-servers/plain/edit",
+                &[
+                    ("updated_at", updated.as_str()),
+                    ("url", "https://mcp.example.com/plain"),
+                    ("bearer", "token"),
+                    ("bearer_stored", "1"),
+                    ("bearer_token", typed),
+                ],
+            )
+            .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        assert_eq!(t.token("plain").await.as_deref(), Some(kept));
+    }
     assert_eq!(
         stored_spec(&env, "plain").await,
         spec(
             r#"{ "url": "https://mcp.example.com/plain",
-                 "auth": { "bearer": { "secret": "api" } } }"#
+                 "auth": { "bearer": { "secret": "toolsets/plain/bearer-token" } } }"#
         )
     );
-    assert_eq!(t.manager.get("plain").await.unwrap().failure, None);
 }
 
 #[tokio::test]
 async fn the_toolset_page_shows_settings_state_and_tools_and_restarts() {
     let env = env().await;
-    write_secrets(&env, "box-token = \"s3cr3t-value\"\n");
     let t = env.toolsets("").await;
     t.manager
         .add(
             "box",
             &spec(
-                r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "bearer": { "secret": "box-token" } },
+                r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "bearer": "s3cr3t-value" },
                      "deadline": "90s", "parallel": true, "skills": ["/srv/skills"] }"#,
             ),
         )
@@ -1025,7 +1026,7 @@ async fn the_toolset_page_shows_settings_state_and_tools_and_restarts() {
         r#"<dd class="state-ok">running</dd>"#,
         "<dd>remote URL</dd>",
         "<code>http://127.0.0.1:9/mcp</code>",
-        "<code>secret box-token</code>",
+        "<code>bearer token (stored)</code>",
         "<code>90s</code>",
         "<code>allowed</code>",
         "<code>/srv/skills</code>",
@@ -1095,7 +1096,8 @@ async fn restart_refuses_a_name_that_is_not_a_toolset() {
 #[tokio::test]
 async fn a_stored_toolset_that_failed_shows_why_and_can_be_fixed() {
     let env = env().await;
-    // A secret the stored toolset needs isn't there when it starts, so it is failed.
+    // A secret the stored toolset needs isn't in `secrets.toml` when it starts, so it stays where
+    // it was and the toolset is failed.
     env.store
         .toolset_insert(
             "broken",
@@ -1111,13 +1113,11 @@ async fn a_stored_toolset_that_failed_shows_why_and_can_be_fixed() {
         html.contains(r#"<a href="/admin/mcp-servers/broken">broken</a>"#),
         "{html}"
     );
-    assert!(html.contains("no secret"), "{html}");
+    assert!(html.contains("auth.bearer: must be"), "{html}");
     let (_, html) = t.get("/admin/mcp-servers/broken").await;
     assert!(html.contains("Last error"), "{html}");
-    assert!(html.contains("secret late"), "{html}");
 
-    // Saving the form with a way that works starts it.
-    write_secrets(&env, "fixed = \"x\"\n");
+    // Saving the form with a token starts it.
     let updated = updated_at(&t.manager.get("broken").await.unwrap()).to_string();
     let (status, _, _) = t
         .post(
@@ -1125,8 +1125,8 @@ async fn a_stored_toolset_that_failed_shows_why_and_can_be_fixed() {
             &[
                 ("updated_at", updated.as_str()),
                 ("url", "https://mcp.example.com/mcp"),
-                ("bearer", "secret"),
-                ("bearer_secret", "fixed"),
+                ("bearer", "token"),
+                ("bearer_token", "fixed"),
             ],
         )
         .await;
