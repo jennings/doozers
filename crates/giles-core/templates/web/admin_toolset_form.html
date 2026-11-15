@@ -37,11 +37,14 @@
 <div class="field-row">
 <select name="bearer" aria-label="Whether the server needs a bearer token">
 <option value="none"{% if form.bearer == "none" %} selected{% endif %}>No authentication</option>
-<option value="secret"{% if form.bearer == "secret" %} selected{% endif %}>A secret in secrets.toml</option>
+<option value="token"{% if form.bearer == "token" %} selected{% endif %}>Bearer token</option>
 </select>
-<input name="bearer_secret" value="{{ form.bearer_secret }}" aria-label="Name of the secret" placeholder="secret name">
+<input type="password" name="bearer_token" autocomplete="off" aria-label="Bearer token" placeholder="{% if form.bearer_stored %}stored; leave blank to keep it{% else %}token{% endif %}">
+{%- if form.bearer_stored %}
+<input type="hidden" name="bearer_stored" value="1">
+{%- endif %}
 </div>
-<p class="detail">Name the secret in <code>secrets.toml</code> that holds the token. Giles reads it when it connects and never shows it.</p>
+<p class="detail">Giles keeps the token encrypted and never shows it again. To change it, type the new one.</p>
 <label for="deadline">Deadline</label>
 <input id="deadline" name="deadline" value="{{ form.deadline }}" placeholder="5m">
 <p class="detail">Optional. How long one tool call may run, such as <code>90s</code>. The default is <code>5m</code>.</p>

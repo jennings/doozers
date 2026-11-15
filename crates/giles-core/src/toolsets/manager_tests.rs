@@ -1,6 +1,6 @@
 //! The toolset manager with the fake connector of `tests.rs`: stored toolsets reach the registry
 //! and the host, specs are refused with their key and nothing stored (a stored toolset is remote,
-//! with a bearer token from `secrets.toml`), secrets are read again, startup reports toolsets
+//! with a bearer token from the secret store), secrets are read again, startup reports toolsets
 //! that fail, and a rename changes the row, the agents' globs, and the running toolset together,
 //! or none of them.
 
@@ -30,6 +30,8 @@ use crate::paths::DataRoot;
 use crate::registry::Registry;
 use crate::routes::Routes;
 use crate::scheduler::JobChanges;
+use crate::secrets::{KeyFile, LocalSecrets, SecretPath, SecretProvider};
+use crate::sessions::SystemClock;
 
 const FILES: &str = r#"{ "url": "https://files.example.com/mcp" }"#;
 
@@ -60,6 +62,7 @@ struct Fixture {
     _dir: tempfile::TempDir,
     root: DataRoot,
     store: Store,
+    secrets: Arc<dyn SecretProvider>,
     registry: Arc<Registry>,
     connector: Arc<FakeConnector>,
     host: Arc<ToolsetHost>,
@@ -86,9 +89,24 @@ impl Fixture {
         agents: &[(&str, &str)],
         scripts: Vec<(&'static str, Script)>,
     ) -> Self {
+        Self::start_with(extra, stored, agents, None, scripts).await
+    }
+
+    /// [`start_with_agents`](Self::start_with_agents) with `secrets.toml` holding `secrets_toml`,
+    /// if given.
+    async fn start_with(
+        extra: &str,
+        stored: &[(&str, &str)],
+        agents: &[(&str, &str)],
+        secrets_toml: Option<&str>,
+        scripts: Vec<(&'static str, Script)>,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
         root.create_layout().unwrap();
+        if let Some(text) = secrets_toml {
+            write_secrets(&root, text);
+        }
         std::fs::write(
             root.config_file(),
             format!("[owner]\nidentities = [\"web:owner\"]\n{extra}"),
@@ -113,9 +131,19 @@ impl Fixture {
         let host = Arc::new(ToolsetHost::start_with(connector.clone(), &registry, cache).await);
         host.started().await;
         let agent_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let secrets: Arc<dyn SecretProvider> = Arc::new(
+            LocalSecrets::open(
+                store.clone(),
+                &KeyFile::new(&root, &root.secret_key_file()),
+                Arc::new(SystemClock),
+            )
+            .await
+            .unwrap(),
+        );
         let manager = ToolsetManager::start(ToolsetManagerOptions {
             store: store.clone(),
             root: root.clone(),
+            secrets: secrets.clone(),
             config: registry.live_config().clone(),
             host: host.clone(),
             agent_lock: agent_lock.clone(),
@@ -126,6 +154,7 @@ impl Fixture {
             _dir: dir,
             root,
             store,
+            secrets,
             registry,
             connector,
             host,
@@ -166,6 +195,37 @@ impl Fixture {
             .collect();
         names.sort();
         names
+    }
+
+    /// The bearer token stored for the toolset `name`.
+    async fn token(&self, name: &str) -> Option<String> {
+        let path = SecretPath::new(format!("toolsets/{name}/bearer-token")).unwrap();
+        self.secrets
+            .get(&path)
+            .await
+            .unwrap()
+            .map(|secret| secret.expose().to_owned())
+    }
+
+    /// Stores `value` as the toolset `name`'s bearer token, outside the manager.
+    async fn set_token(&self, name: &str, value: &str) {
+        let path = SecretPath::new(format!("toolsets/{name}/bearer-token")).unwrap();
+        self.secrets
+            .put(&path, &crate::config::Secret::new(value), None)
+            .await
+            .unwrap();
+    }
+
+    /// The spec stored for the toolset `name`, as JSON.
+    async fn stored_spec(&self, name: &str) -> String {
+        self.store
+            .toolsets()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|row| row.name == name)
+            .unwrap()
+            .spec
     }
 
     /// The rows in the database, by name.
@@ -314,7 +374,7 @@ async fn an_invalid_spec_is_refused_with_its_key_and_nothing_is_stored() {
 }
 
 #[tokio::test]
-async fn a_stored_toolset_is_a_remote_server_with_its_token_in_secrets_toml() {
+async fn a_stored_toolset_is_a_remote_server_with_its_token_in_the_secret_store() {
     let f = Fixture::start("", &[], vec![("files", Script::new(&["read"]))]).await;
     let url = r#""url": "https://files.example.com/mcp""#;
 
@@ -342,67 +402,193 @@ async fn a_stored_toolset_is_a_remote_server_with_its_token_in_secrets_toml() {
         assert_eq!(key, KeyPath::root().key(stdio_key));
     }
 
-    // A bearer token comes from `secrets.toml`: not the environment, and not the database.
-    for bearer in [r#"{ "env": "FILES_TOKEN" }"#, r#""s3cr3t-value-42""#] {
+    // A bearer token is the token itself, or the toolset's own secret: not the environment, and
+    // not a secret of `secrets.toml` or of another toolset.
+    for bearer in [
+        r#"{ "env": "FILES_TOKEN" }"#,
+        r#"{ "secret": "files-token" }"#,
+        r#"{ "secret": "toolsets/other/bearer-token" }"#,
+    ] {
         let json = format!(r#"{{ {url}, "auth": {{ "bearer": {bearer} }} }}"#);
         let (key, reason) = invalid(f.manager.add("files", &spec(&json)).await.unwrap_err());
         assert_eq!(key, KeyPath::root().key("auth").key("bearer"));
-        assert!(reason.contains("secrets.toml"), "{reason}");
-        assert!(!reason.contains("s3cr3t-value-42"), "{reason}");
+        assert!(reason.contains("toolsets/files/bearer-token"), "{reason}");
     }
-
     assert!(f.stored().await.is_empty());
     assert!(f.configured().is_empty());
+
+    // The token goes to the secret store; the row keeps only the reference.
+    let json = format!(r#"{{ {url}, "auth": {{ "bearer": "s3cr3t-value-42" }} }}"#);
+    f.manager.add("files", &spec(&json)).await.unwrap();
+    assert_eq!(f.offered().await, ["files__read"]);
+    assert_eq!(f.token("files").await.as_deref(), Some("s3cr3t-value-42"));
+    let row = &f.store.toolsets().await.unwrap()[0];
+    assert!(
+        row.spec.contains("toolsets/files/bearer-token"),
+        "{}",
+        row.spec
+    );
+    assert!(!row.spec.contains("s3cr3t-value-42"), "{}", row.spec);
 }
 
 #[tokio::test]
-async fn a_missing_secret_is_refused_and_then_accepted_once_secrets_toml_has_it() {
-    let f = Fixture::start("", &[], vec![("files", Script::new(&["read"]))]).await;
-    let bearer = |secret: &str| {
-        spec(&format!(
-            r#"{{ "url": "https://files.example.com/mcp",
-                  "auth": {{ "bearer": {{ "secret": "{secret}" }} }} }}"#
-        ))
-    };
-    let needs_secret = bearer("files-token");
+async fn a_toolsets_token_is_kept_replaced_and_deleted_with_it() {
+    let f = Fixture::start(
+        "",
+        &[],
+        vec![
+            ("files", Script::new(&["read"])),
+            ("notes", Script::new(&["read"])),
+        ],
+    )
+    .await;
+    let url = r#""url": "https://files.example.com/mcp""#;
+    let with = |bearer: &str| spec(&format!(r#"{{ {url}, "auth": {{ "bearer": {bearer} }} }}"#));
+    let own = r#"{ "secret": "toolsets/files/bearer-token" }"#;
 
-    let (key, reason) = invalid(f.manager.add("files", &needs_secret).await.unwrap_err());
+    // The toolset's own secret, before it holds anything.
+    let (key, reason) = invalid(f.manager.add("files", &with(own)).await.unwrap_err());
     assert_eq!(key, KeyPath::root().key("auth").key("bearer"));
-    assert!(reason.contains("no secret \"files-token\""), "{reason}");
-    assert!(f.stored().await.is_empty());
-
-    // The same manager reads `secrets.toml` again: no restart.
-    write_secrets(&f.root, "files-token = \"s3cr3t-value-42\"\n");
-    f.manager.add("files", &needs_secret).await.unwrap();
-    assert_eq!(f.configured(), ["files"]);
-    assert_eq!(f.offered().await, ["files__read"]);
-    // Only the reference is stored.
-    let row = &f.store.toolsets().await.unwrap()[0];
-    assert!(row.spec.contains("files-token"), "{}", row.spec);
-    assert!(!row.spec.contains("s3cr3t-value-42"), "{}", row.spec);
-
-    // An edit that needs a secret that isn't there yet is refused too, then accepted.
-    let other = bearer("other-token");
-    let (key, _) = invalid(f.manager.update("files", &other, None).await.unwrap_err());
-    assert_eq!(key, KeyPath::root().key("auth").key("bearer"));
-    write_secrets(
-        &f.root,
-        "files-token = \"s3cr3t-value-42\"\nother-token = \"another-value-7\"\n",
+    assert!(
+        reason.contains("no secret \"toolsets/files/bearer-token\" in the secret store"),
+        "{reason}"
     );
-    f.manager.update("files", &other, None).await.unwrap();
+
+    f.manager
+        .add("files", &with(r#""first-token""#))
+        .await
+        .unwrap();
+    // Saving the reference keeps the token; a new value replaces it.
+    f.manager.update("files", &with(own), None).await.unwrap();
+    assert_eq!(f.token("files").await.as_deref(), Some("first-token"));
+    f.manager
+        .update("files", &with(r#""second-token""#), None)
+        .await
+        .unwrap();
+    assert_eq!(f.token("files").await.as_deref(), Some("second-token"));
+
+    // Renaming moves it, and the reference with it.
+    f.manager.rename("files", "Notes").await.unwrap();
+    assert_eq!(f.token("files").await, None);
+    assert_eq!(f.token("notes").await.as_deref(), Some("second-token"));
+    assert!(
+        f.stored_spec("Notes")
+            .await
+            .contains("toolsets/notes/bearer-token")
+    );
+    assert_eq!(f.configured(), ["Notes"]);
+
+    // Dropping the auth deletes it, and so does removing the toolset.
+    let plain = spec(&format!("{{ {url} }}"));
+    f.manager.update("Notes", &plain, None).await.unwrap();
+    assert_eq!(f.token("notes").await, None);
+    f.manager
+        .update("Notes", &with(r#""third-token""#), None)
+        .await
+        .unwrap();
+    f.manager.remove("notes").await.unwrap();
+    assert!(f.secrets.list(None).await.unwrap().is_empty());
 }
 
-const NEEDS_SECRET: &str = r#"{ "url": "https://bad.example.com/mcp",
-    "auth": { "bearer": { "secret": "bad-token" } } }"#;
+#[tokio::test]
+async fn a_stored_credential_never_follows_the_toolset_to_another_server() {
+    let f = Fixture::start("", &[], vec![("files", Script::new(&["read"]))]).await;
+    let at = |url: &str, bearer: &str| {
+        spec(&format!(
+            r#"{{ "url": "{url}", "auth": {{ "bearer": {bearer} }} }}"#
+        ))
+    };
+    let own = r#"{ "secret": "toolsets/files/bearer-token" }"#;
+    f.manager
+        .add("files", &at("https://files.example.com/mcp", r#""tok-1""#))
+        .await
+        .unwrap();
+
+    // Another path on the same server keeps the token.
+    f.manager
+        .update("files", &at("https://files.example.com/v2/mcp", own), None)
+        .await
+        .unwrap();
+    // Another host, scheme, or port takes the token typed again; nothing changes until then.
+    for url in [
+        "https://evil.example/mcp",
+        "http://files.example.com/mcp",
+        "https://files.example.com:8443/mcp",
+    ] {
+        let (key, reason) = invalid(
+            f.manager
+                .update("files", &at(url, own), None)
+                .await
+                .unwrap_err(),
+        );
+        assert_eq!(key, KeyPath::root().key("auth").key("bearer"), "{url}");
+        assert!(reason.contains("another server"), "{reason}");
+    }
+    assert!(
+        f.stored_spec("files")
+            .await
+            .contains("files.example.com/v2")
+    );
+    assert_eq!(f.token("files").await.as_deref(), Some("tok-1"));
+    f.manager
+        .update(
+            "files",
+            &at("https://other.example/mcp", r#""tok-2""#),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(f.token("files").await.as_deref(), Some("tok-2"));
+}
+
+#[tokio::test]
+async fn startup_moves_a_bearer_token_out_of_secrets_toml() {
+    let dir_toml = r#"{ "url": "https://files.example.com/mcp",
+        "auth": { "bearer": { "secret": "files-token" } } }"#;
+    let missing = r#"{ "url": "https://gone.example.com/mcp",
+        "auth": { "bearer": { "secret": "gone-token" } } }"#;
+    let f = Fixture::start_with(
+        "",
+        &[("files", dir_toml), ("gone", missing)],
+        &[],
+        Some("files-token = \"s3cr3t-value-42\"\n"),
+        vec![("files", Script::new(&["read"]))],
+    )
+    .await;
+    assert_eq!(f.configured(), ["files"]);
+    assert_eq!(f.token("files").await.as_deref(), Some("s3cr3t-value-42"));
+    let moved = f.stored_spec("files").await;
+    assert!(moved.contains("toolsets/files/bearer-token"), "{moved}");
+    assert!(!moved.contains("files-token"), "{moved}");
+    // One whose secret isn't in `secrets.toml` is left as it was, and fails.
+    assert!(f.stored_spec("gone").await.contains("gone-token"));
+    let failures = f.failures();
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].1.starts_with("auth.bearer: must be"),
+        "{failures:?}"
+    );
+}
+
+/// A spec whose bearer token is the toolset `name`'s own secret, which isn't stored.
+fn needs_secret(name: &str) -> String {
+    format!(
+        r#"{{ "url": "https://bad.example.com/mcp",
+            "auth": {{ "bearer": {{ "secret": "toolsets/{name}/bearer-token" }} }} }}"#
+    )
+}
+
+const NO_SECRET: &str = "auth.bearer: no secret \"toolsets/bad/bearer-token\" in the secret store";
 
 #[tokio::test]
 async fn startup_adds_what_validates_and_reports_the_rest_as_failed() {
     let giles_toml = "[toolset.files]\ncommand = \"/nonexistent/files\"\n";
+    let bad = needs_secret("bad");
     let f = Fixture::start(
         giles_toml,
         &[
             ("good", r#"{ "url": "https://good.example.com/mcp" }"#),
-            ("bad", NEEDS_SECRET),
+            ("bad", &bad),
             ("Files", r#"{ "url": "https://other.example.com/mcp" }"#),
             ("stdio", r#"{ "command": "/nonexistent/stdio" }"#),
             ("broken", r#"{ "url": 5 }"#),
@@ -435,11 +621,7 @@ async fn startup_adds_what_validates_and_reports_the_rest_as_failed() {
         reason("Files"),
         "the name is taken by `[toolset.files]` in giles.toml"
     );
-    assert!(
-        reason("bad").starts_with("auth.bearer: no secret \"bad-token\""),
-        "{}",
-        reason("bad")
-    );
+    assert!(reason("bad").starts_with(NO_SECRET), "{}", reason("bad"));
     assert!(
         reason("stdio").starts_with("url: a stored toolset is a remote server"),
         "{}",
@@ -488,12 +670,8 @@ async fn startup_adds_what_validates_and_reports_the_rest_as_failed() {
     assert_eq!(f.stored().await, ["bad", "broken", "good", "stdio"]);
 
     // Saving a failed toolset starts it, now that the secret is there.
-    write_secrets(&f.root, "bad-token = \"bad-token-value\"\n");
-    let view = f
-        .manager
-        .update("bad", &spec(NEEDS_SECRET), None)
-        .await
-        .unwrap();
+    f.set_token("bad", "bad-token-value").await;
+    let view = f.manager.update("bad", &spec(&bad), None).await.unwrap();
     assert_eq!(view.failure, None);
     assert_eq!(f.configured(), ["bad", "files", "good"]);
     assert_eq!(
@@ -569,7 +747,7 @@ async fn toolsets_of_giles_toml_are_read_only_and_keep_their_names() {
 async fn restarting_a_failed_stored_toolset_validates_it_again_and_starts_it() {
     let f = Fixture::start(
         "",
-        &[("bad", NEEDS_SECRET)],
+        &[("bad", &needs_secret("bad"))],
         vec![("bad", Script::new(&["later"]))],
     )
     .await;
@@ -578,16 +756,13 @@ async fn restarting_a_failed_stored_toolset_validates_it_again_and_starts_it() {
     // Still no secret: it stays failed, with the reason as it is now.
     let view = f.manager.retry("bad").await.unwrap();
     let reason = view.failure.expect("still failed");
-    assert!(
-        reason.starts_with("auth.bearer: no secret \"bad-token\""),
-        "{reason}"
-    );
+    assert!(reason.starts_with(NO_SECRET), "{reason}");
     assert_eq!(f.connector.connects("bad"), 0);
     assert!(f.configured().is_empty());
 
     // The secret is added: the restart is accepted, and the toolset starts. It runs in the
     // background, so wait for it.
-    write_secrets(&f.root, "bad-token = \"bad-token-value\"\n");
+    f.set_token("bad", "bad-token-value").await;
     assert!(f.manager.restart(Kind::Toolset, "bad"));
     for _ in 0..500 {
         if f.failures().is_empty() {
@@ -1163,7 +1338,7 @@ async fn a_failed_step_is_undone_and_the_toolset_runs_again_under_its_old_name()
 async fn a_failed_toolset_can_be_renamed_and_is_started_when_it_validates() {
     let f = Fixture::start_with_agents(
         PROVIDER,
-        &[("bad", NEEDS_SECRET)],
+        &[("bad", &needs_secret("bad"))],
         &[(
             "jeeves",
             "models = [\"anthropic/claude\"]\ntools = [\"bad__*\"]\n",
@@ -1179,7 +1354,9 @@ async fn a_failed_toolset_can_be_renamed_and_is_started_when_it_validates() {
     assert_eq!(renamed.agents.len(), 1);
     let reason = renamed.view.failure.expect("still failed");
     assert!(
-        reason.starts_with("auth.bearer: no secret \"bad-token\""),
+        reason.starts_with(
+            "auth.bearer: no secret \"toolsets/later/bearer-token\" in the secret store"
+        ),
         "{reason}"
     );
     assert_eq!(f.stored().await, ["later"]);
@@ -1197,7 +1374,7 @@ async fn a_failed_toolset_can_be_renamed_and_is_started_when_it_validates() {
     );
 
     // The secret arrives, and it starts under its new name.
-    write_secrets(&f.root, "bad-token = \"bad-token-value\"\n");
+    f.set_token("later", "bad-token-value").await;
     let view = f.manager.retry("later").await.unwrap();
     assert_eq!(view.failure, None);
     assert_eq!(f.configured(), ["later"]);
@@ -1206,12 +1383,12 @@ async fn a_failed_toolset_can_be_renamed_and_is_started_when_it_validates() {
     // A failed toolset that validates now is started by the rename itself.
     let g = Fixture::start(
         "",
-        &[("files", NEEDS_SECRET)],
+        &[("files", &needs_secret("files"))],
         vec![("notes", Script::new(&["read"]))],
     )
     .await;
     assert_eq!(g.failures().len(), 1);
-    write_secrets(&g.root, "bad-token = \"bad-token-value\"\n");
+    g.set_token("files", "bad-token-value").await;
     let renamed = g.manager.rename("files", "notes").await.unwrap();
     assert_eq!(renamed.view.failure, None);
     assert_eq!(g.configured(), ["notes"]);

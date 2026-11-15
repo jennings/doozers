@@ -5,8 +5,9 @@ Code: `crates/giles-core/src/secrets/` (`giles_core::secrets`), with its rows in
 [#29 Secrets storage](https://github.com/jennings/giles/issues/29).
 
 The secret store holds named credentials that the core injects into the components using them.
-Nothing reads from it yet. `{ secret = "name" }` references still resolve against `secrets.toml`
-([Configuration](config.md#secrets)) until the reference, management, and migration work lands.
+Stored remote toolsets keep their credentials in it ([Toolsets](toolsets.md#credentials)). In
+`giles.toml`, `{ secret = "name" }` references still resolve against `secrets.toml`
+([Configuration](config.md#secrets)) until the reference and migration work lands.
 
 ## Paths
 

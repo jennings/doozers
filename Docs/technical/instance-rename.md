@@ -197,9 +197,18 @@ ignoring case. The name as stored is the old name from then on. What differs fro
   the row is looked up ignoring case.
 - A stored toolset is remote, so it has no data directory to move; what changes is the row and the
   agents' `<old>__` globs. `new` must still have no data, as for any instance.
-- The row is renamed first, in its own transaction, before the agents' files are rewritten. A
-  failure later undoes the journal as above, and then `Store::toolset_restore` puts the row back as
-  it was, name, spec, and both times. If that fails too, the error lists it.
+- Its secrets move with it ([Toolsets](toolsets.md#credentials)). Before anything changes, the
+  rename lists the secrets the toolset owns (`toolsets/<old>/...` and every user's
+  `users/<user>/toolsets/<old>/...`). It reads that list from the database rows, which needs no key.
+  If there are any, or the spec refers to one, it opens the secret store with the key file
+  `core.secret_key_file` names. A new name that can't name a secret (one starting with `-`) is
+  refused (`RenameError::StoredToolsetName`), and so is a store that won't open
+  (`RenameError::Secrets`).
+- The secrets are copied to the new name's paths, then the row is renamed in its own transaction
+  with its spec's references moved, before the agents' files are rewritten. A failure later undoes
+  the journal as above, then `Store::toolset_restore` puts the row back as it was (name, spec, and
+  both times), and the copies are deleted. If that fails too, the error lists it. The old secrets
+  are deleted only once the whole rename succeeded.
 - A run that was killed after the row was renamed leaves the row with the new name and the agents'
   globs with the old. Run the command again: `old` is neither configured nor stored, a stored
   toolset has exactly `new` and none has `old`, so the run rewrites the agents' `<old>__` globs. If

@@ -1146,7 +1146,7 @@ fn stored_toolsets_start_or_are_reported_failed_and_giles_runs() {
         &[
             // Valid: started (and retried, as in the test above).
             ("stored-ok", unreachable),
-            // A token from the environment: a stored toolset's comes from `secrets.toml`.
+            // A token from the environment: a stored toolset's is in the secret store.
             (
                 "stored-bad",
                 r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "bearer": { "env": "TOKEN" } } }"#,
@@ -1173,7 +1173,7 @@ fn stored_toolsets_start_or_are_reported_failed_and_giles_runs() {
     assert!(!state.contains("failed"), "{stdout}");
     // The others are reported failed, with the reason.
     for (instance, reason) in [
-        ("stored-bad", "auth.bearer: must be { secret = \"<name>\" }"),
+        ("stored-bad", "auth.bearer: must be the credential itself"),
         ("web", "the name is taken by `[toolset.web]` in giles.toml"),
     ] {
         // The failed stored toolset is listed after the configured toolset of the same name.
@@ -1629,21 +1629,19 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
     }
 
     // A spec the daemon refuses is reported with its key, and nothing is stored.
-    let files_spec = "url = \"http://127.0.0.1:9/docs\"\ndeadline = \"90s\"\nparallel = true\n\n\
-                      [auth]\nbearer = { secret = \"files-token\" }\n";
-    let files = write_spec("files.toml", files_spec);
-    let (ok, stdout, stderr) = toolset(&["set", "files", "--file", files.as_str()]);
-    assert!(!ok && stdout.is_empty(), "{stdout}");
-    assert!(stderr.contains("auth.bearer: "), "{stderr}");
     for (text, expected) in [
-        // A stdio server is configured in giles.toml, and a stored token is a secret.
+        // A stdio server is configured in giles.toml, and a stored token is the toolset's own.
         (
             "command = \"/nonexistent/files\"\n",
             "url: a stored toolset is a remote server",
         ),
         (
             "url = \"http://127.0.0.1:9/docs\"\n\n[auth]\nbearer = { env = \"HOME\" }\n",
-            "auth.bearer: must be { secret = \"<name>\" }",
+            "auth.bearer: must be the credential itself",
+        ),
+        (
+            "url = \"http://127.0.0.1:9/docs\"\n\n[auth]\nbearer = { secret = \"files-token\" }\n",
+            "auth.bearer: must be the credential itself",
         ),
         ("ulr = \"http://127.0.0.1:9/docs\"\n", "ulr: unknown key"),
         ("url = \n", "invalid TOML at line 1"),
@@ -1660,25 +1658,23 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
     let (ok, stdout, _) = toolset(&["list"]);
     assert!(ok && !stdout.contains("files"), "{stdout}");
 
-    // Giles reads secrets.toml again, so the same spec is accepted once the secret exists.
-    fs::write(
-        home.join("secrets.toml"),
-        "files-token = \"s3cr3t-value-42\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(home.join("secrets.toml"), fs::Permissions::from_mode(0o600)).unwrap();
+    // The token itself is accepted, and goes to the secret store.
+    let files_spec = "url = \"http://127.0.0.1:9/docs\"\ndeadline = \"90s\"\nparallel = true\n\n\
+                      [auth]\nbearer = \"s3cr3t-value-42\"\n";
+    let files = write_spec("files.toml", files_spec);
     let (ok, stdout, stderr) = toolset(&["set", "files", "--file", files.as_str()]);
     assert!(ok, "{stderr}");
     assert_eq!(stdout, "Saved toolset `files`.\n");
 
-    // `show` prints the spec with the references as written, after the `updated_at` comment.
+    // `show` prints the spec with the reference to the stored token, after the `updated_at`
+    // comment.
     let (ok, shown, stderr) = toolset(&["show", "FILES"]);
     assert!(ok, "{stderr}");
     assert!(shown.starts_with("# updated_at = "), "{shown}");
     for expected in [
         "url = \"http://127.0.0.1:9/docs\"",
         "parallel = true",
-        "secret = \"files-token\"",
+        "secret = \"toolsets/files/bearer-token\"",
     ] {
         assert!(shown.contains(expected), "{expected} in:\n{shown}");
     }

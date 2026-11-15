@@ -47,7 +47,7 @@ pub use agent::{
 };
 pub use discovery::{discover_plugin, find_program};
 pub use error::{ConfigError, IgnoredToolsetTable, KeyPath, Position, Segment, UnknownKey};
-pub use giles::{CoreConfig, DEFAULT_HTTP_LISTEN, Identity, OwnerConfig};
+pub use giles::{CoreConfig, DEFAULT_HTTP_LISTEN, Identity, OwnerConfig, resolve_secret_key_file};
 pub use giles_types::Kind;
 pub use hash::ConfigHash;
 pub use instances::{

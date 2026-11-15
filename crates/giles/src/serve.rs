@@ -87,6 +87,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
     let toolset_manager = ToolsetManager::start(ToolsetManagerOptions {
         store: runtime.store.clone(),
         root: root.clone(),
+        secrets: runtime.secrets.clone(),
         config: runtime.registry.live_config().clone(),
         host: toolsets.clone(),
         agent_lock: agent_lock.clone(),

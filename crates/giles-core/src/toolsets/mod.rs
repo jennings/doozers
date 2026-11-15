@@ -17,6 +17,7 @@
 //! configuration and the host.
 
 mod cache;
+pub(crate) mod credentials;
 mod grants;
 mod host;
 mod launch;
