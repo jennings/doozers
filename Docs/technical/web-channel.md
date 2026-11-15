@@ -937,6 +937,36 @@ for what `ListPlugins` knows (state, last error, and tool count, built by the pl
 
   The page says that running conversations keep the old tool names.
 
+## Connections page
+
+In `connections.rs`: `web.install_connections(builder, manager)`, which `serve` calls before the
+toolset pages. It's for every logged-in user, not only `may_administer`, and each user sees and
+changes only their own sign-ins ([Each user's sign-in](toolsets.md#each-users-sign-in)). Every
+answer is `no-store`.
+
+| Route                                  | Does                                                           |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `GET /connections`                     | the toolsets with `auth.oauth`, and whether the user is signed in |
+| `GET /connections/<name>/sign-in?csrf=` | `check_csrf`, `begin_sign_in`, then 303 to the authorization server |
+| `GET /connections/<name>/callback`     | `finish_sign_in` for `<name>` with `code`, `state`, and `iss`; 303 back |
+| `POST /connections/<name>/sign-out`    | `check_csrf`, then `sign_out`; 303 back                        |
+
+- **GETs that leave Giles.** The sign-in and the callback are `GET`s, as the redirects are. The
+  pages' `form-action 'self'` would stop a form post that redirects to another origin. The sign-in
+  link carries the CSRF token as `?csrf=`. Otherwise another site, or a link in an agent's reply,
+  could start a sign-in that a server approving silently would finish, replacing the user's tokens.
+  Pages send `Referrer-Policy: no-referrer`, so the token doesn't leave with the redirect. The
+  callback finishes only a sign-in the same logged-in user started, by `state`, so a forged callback
+  signs no one in. The session cookie is `SameSite=Lax`, so it comes with the top-level redirect
+  back.
+- **The callback URL** is `WebChannel::link_base()` (`public_url`, else the listener's address) plus
+  `/connections/<name>/callback`, one per toolset, with the name as stored. The toolset's page shows
+  it as **Sign-in callback**, for the owner to register with the server's OAuth app. A rename
+  changes it.
+- **Errors.** An `error` from the authorization server is a 400 page naming it. A sign-in that can't
+  start or finish is a 502 page with the reason, and a toolset that isn't there or isn't running is
+  a 404.
+
 ## Templates and styles
 
 Templates are in `crates/giles-core/templates/web/`: pages `chats.html`, `chat.html`, `error.html`,

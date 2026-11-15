@@ -132,16 +132,27 @@ bearer = "<token>"
 | Key        | Default | Meaning                                                       |
 | ---------- | ------- | ------------------------------------------------------------- |
 | `url`      |         | The server's `https://` (or `http://`) URL                    |
-| `auth`     | none    | `{ bearer = "<token>" }`                                      |
+| `auth`     | none    | `{ bearer = "<token>" }`, or `{ oauth = { ... } }` below      |
 | `insecure` | `false` | Allow plain `http://` to a host other than this machine       |
 | `deadline` | `"5m"`  | How long one tool call may run                                |
 | `parallel` | `false` | The toolset's tools may run in parallel                       |
 | `skills`   | `[]`    | Absolute paths of skill directories the toolset offers        |
 
-Giles moves the token into its encrypted secret store and keeps only a reference in the spec. `show`
-prints that reference, `{ secret = "toolsets/<name>/bearer-token" }`, never the token. Delete the
-spec file once `set` succeeds, or pipe the spec through standard input so the token never lands in a
-file. To keep the stored token when you change other keys, leave the reference as `show` printed it.
+For a server that each user signs in to, set `auth.oauth` to the keys of the
+[web form](web.md#adding-a-server-that-each-user-signs-in-to). Each one is optional.
+
+```toml
+[auth.oauth]
+client_id = "<client id>"
+client_secret = "<client secret>"
+scopes = ["repo"]
+```
+
+Giles moves a token or client secret into its encrypted secret store and keeps only a reference in
+the spec. `show` prints that reference, `{ secret = "toolsets/<name>/bearer-token" }`, never the
+token. Delete the spec file once `set` succeeds, or pipe the spec through standard input so the
+token never lands in a file. To keep the stored token when you change other keys, leave the
+reference as `show` printed it.
 
 A server that Giles runs on this machine, a stdio server, is a
 [`[toolset.<name>]` table](configuration.md#toolsets) in `giles.toml`. `set` refuses a spec without

@@ -97,6 +97,7 @@ use tracing::{info, warn};
 
 use super::credentials;
 use super::host::ToolsetHost;
+use super::oauth::OAuthContext;
 use crate::admin::{PluginControl, PluginRunState, PluginRuntime};
 use crate::config::{
     Builtins, Config, InstanceName, KeyPath, Kind, LiveConfig, LoadOptions, Secret, Secrets,
@@ -106,8 +107,10 @@ use crate::paths::DataRoot;
 use crate::secrets::{SecretError, SecretPath, SecretProvider};
 
 mod rename;
+mod sign_in;
 
 pub use self::rename::{AgentGlobChange, GlobChange, RenamePreview, ToolsetRenamed};
+pub use self::sign_in::{SIGN_IN_TTL, SignInView};
 
 /// The name the web form for a new toolset has in its address, so no toolset can use it.
 pub const RESERVED_TOOLSET_NAME: &str = "new";
@@ -226,6 +229,9 @@ pub enum ToolsetManagerError {
     /// The secret store failed. The change may be half done, as for [`Store`](Self::Store).
     #[error("cannot keep the toolset's credentials: {0}")]
     Secrets(SecretError),
+    /// A user's sign-in to a toolset couldn't start or finish. Nothing was stored.
+    #[error("{0}")]
+    SignIn(String),
 }
 
 fn failed_message(step: &str, error: &str, undo_errors: &[String]) -> String {
@@ -308,6 +314,10 @@ pub struct ToolsetManager {
     store: Store,
     root: DataRoot,
     secrets: Arc<dyn SecretProvider>,
+    /// Users' sign-ins to the toolsets that sign each user in.
+    oauth: Arc<OAuthContext>,
+    /// The sign-ins started and not finished, by `state`.
+    pending: Mutex<BTreeMap<String, sign_in::Pending>>,
     config: LiveConfig,
     host: Arc<ToolsetHost>,
     /// Held by [`rename`](Self::rename) after `changing`, which keeps agents from being changed
@@ -353,10 +363,13 @@ impl ToolsetManager {
             host,
             agent_lock,
         } = options;
+        let oauth = Arc::new(OAuthContext::new(secrets.clone()));
         let manager = Arc::new_cyclic(|me| Self {
             store,
             root,
             secrets,
+            oauth,
+            pending: Mutex::default(),
             config,
             host,
             agent_lock,
@@ -455,7 +468,7 @@ impl ToolsetManager {
             .map_err(ToolsetManagerError::invalid)?;
         let json = to_json(&spec)?;
         // Left over from a toolset of the same name whose secrets couldn't all be deleted.
-        self.prune(name, &[]).await?;
+        self.prune(name, &[], false).await?;
         self.put_literals(&literals).await?;
         let row = match self
             .store
@@ -464,7 +477,7 @@ impl ToolsetManager {
         {
             Ok(row) => row,
             Err(error) => {
-                if let Err(undo) = self.prune(name, &[]).await {
+                if let Err(undo) = self.prune(name, &[], false).await {
                     warn!(toolset = %name, error = %undo, "cannot delete the secrets of a toolset that wasn't added");
                 }
                 return Err(error.into());
@@ -510,7 +523,7 @@ impl ToolsetManager {
             .flatten();
         let (spec, literals) = self.prepare(&old.name, spec)?;
         // A stored credential goes only to the server it was given for. Pointing the toolset at
-        // another server takes the credentials typed again.
+        // another server takes the credentials typed again, and drops the users' sign-ins.
         let old_url = ToolsetSpec::from_json(&old.spec)
             .ok()
             .and_then(|old| old.url);
@@ -537,8 +550,12 @@ impl ToolsetManager {
             .store
             .toolset_update(&old.name, &json, expected_updated_at, Timestamp::now())
             .await?;
-        self.prune(&row.name, &credentials::references(&spec))
-            .await?;
+        self.prune(
+            &row.name,
+            &credentials::references(&spec),
+            credentials::signs_users_in(&spec) && !other_server,
+        )
+        .await?;
         self.apply(&row.name, instance, running)
             .await
             .map_err(ToolsetManagerError::whole)?;
@@ -593,7 +610,7 @@ impl ToolsetManager {
         if !self.store.toolset_remove(&row.name).await? {
             return Err(ToolsetManagerError::NotFound);
         }
-        if let Err(error) = self.prune(&row.name, &[]).await {
+        if let Err(error) = self.prune(&row.name, &[], false).await {
             // The row is gone, so the toolset is; its secrets are deleted again when a toolset of
             // the name is added.
             warn!(toolset = %row.name, %error, "cannot delete a removed toolset's secrets");
@@ -846,10 +863,17 @@ impl ToolsetManager {
         Ok(())
     }
 
-    /// Deletes the secrets the toolset `name` owns, except those at the paths in `keep`.
-    async fn prune(&self, name: &str, keep: &[String]) -> Result<(), ToolsetManagerError> {
+    /// Deletes the secrets the toolset `name` owns, except those at the paths in `keep`, and the
+    /// users' tokens if `keep_tokens`.
+    async fn prune(
+        &self,
+        name: &str,
+        keep: &[String],
+        keep_tokens: bool,
+    ) -> Result<(), ToolsetManagerError> {
         for path in credentials::owned(self.secrets.as_ref(), name).await? {
-            if !keep.iter().any(|kept| kept == path.as_str()) {
+            let token = credentials::token_owner(&path).is_some();
+            if !(keep.iter().any(|kept| kept == path.as_str()) || keep_tokens && token) {
                 self.secrets.delete(&path).await?;
             }
         }

@@ -646,9 +646,9 @@ mod tests {
                 "remote toolset",
             ),
             (
-                json!({ "url": "https://x", "auth": { "oauth": {} } }),
-                "auth.oauth",
-                "only `bearer`",
+                json!({ "url": "https://x", "auth": { "oauth": { "client_secret": "s" } } }),
+                "auth.oauth.client_secret",
+                "needs `client_id`",
             ),
             (
                 json!({ "url": "https://x", "deadline": "0s" }),

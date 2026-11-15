@@ -168,6 +168,24 @@ impl McpToolset {
         connect(origin, span, transport, None, McpMedia::new(blobs)).await
     }
 
+    /// Connects to a remote server over streamable HTTP as one user, with `auth` holding their
+    /// OAuth sign-in (`server.bearer` is not sent). Otherwise as
+    /// [`connect_http`](Self::connect_http).
+    pub async fn connect_http_oauth(
+        instance: impl Into<String>,
+        server: &HttpServer,
+        auth: rmcp::transport::auth::AuthorizationManager,
+        blobs: giles_store::BlobStore,
+    ) -> Result<Self> {
+        let origin = Arc::new(Origin {
+            instance: instance.into(),
+            secrets: Vec::new(),
+        });
+        let span = span(&origin.instance);
+        let transport = server.oauth_transport(&origin, auth)?;
+        connect(origin, span, transport, None, McpMedia::new(blobs)).await
+    }
+
     /// Connects over an already open byte stream pair carrying newline-delimited JSON-RPC, as
     /// stdio does. For servers in the same process (tests, embedded servers). `media` says where
     /// media in tool results goes.
@@ -219,6 +237,11 @@ impl McpToolset {
             _ = exited.wait_for(Option::is_some) => {}
         }
         exit_status(exit, EXIT_GRACE).await
+    }
+
+    /// Whether the connection has ended.
+    pub fn is_closed(&self) -> bool {
+        *self.closed.borrow()
     }
 
     fn peer(&self) -> &Peer<RoleClient> {

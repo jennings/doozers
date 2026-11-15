@@ -62,6 +62,10 @@
 {%- endfor %}
 </dd>
 {%- endfor %}
+{%- if let Some(callback) = callback %}
+<dt>Sign-in callback</dt>
+<dd><code>{{ callback }}</code><div class="detail">Register this redirect URI with the server's OAuth app. Each user signs in on <a href="/connections">Connections</a>.</div></dd>
+{%- endif %}
 </dl>
 <h2>Tools</h2>
 {%- if tools.is_empty() %}

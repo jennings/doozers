@@ -71,6 +71,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
             ToolsetLauncher::new(
                 root.clone(),
                 config.core.secret_key_file.clone(),
+                runtime.secrets.clone(),
                 giles_exe.clone(),
                 sandbox.clone().map(drop),
                 runtime.blobs.clone(),
@@ -209,6 +210,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
                 manager,
             );
             let builder = web.install_routes(builder, runtime.routes.clone());
+            let builder = web.install_connections(builder, toolset_manager.clone());
             let builder = web.install_toolsets(
                 builder,
                 toolset_manager.clone(),

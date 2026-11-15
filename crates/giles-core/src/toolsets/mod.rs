@@ -23,6 +23,7 @@ mod host;
 mod launch;
 mod lifecycle;
 pub mod manager;
+pub(crate) mod oauth;
 
 #[cfg(test)]
 mod tests;
@@ -34,6 +35,7 @@ pub use self::host::ToolsetHost;
 pub use self::launch::{ResolvedProgram, ToolsetLauncher};
 pub use self::lifecycle::{HEALTHY_RESET, RESTART_BACKOFF_MAX, RESTART_BACKOFF_MIN};
 pub use self::manager::{
-    AgentGlobChange, GlobChange, RESERVED_TOOLSET_NAME, Removed, RenamePreview, ToolsetManager,
-    ToolsetManagerError, ToolsetManagerOptions, ToolsetRenamed, ToolsetSource, ToolsetView,
+    AgentGlobChange, GlobChange, RESERVED_TOOLSET_NAME, Removed, RenamePreview, SIGN_IN_TTL,
+    SignInView, ToolsetManager, ToolsetManagerError, ToolsetManagerOptions, ToolsetRenamed,
+    ToolsetSource, ToolsetView,
 };

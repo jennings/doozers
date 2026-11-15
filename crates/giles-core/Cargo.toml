@@ -46,7 +46,7 @@ prost-types.workspace = true
 # image features).
 qrcode = { version = "0.14.1", default-features = false, optional = true }
 reqwest.workspace = true
-rmcp = { version = "3.7.0", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "3.7.0", default-features = false, features = ["auth", "client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
 serde.workspace = true
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 serde_ignored = "0.1.14"

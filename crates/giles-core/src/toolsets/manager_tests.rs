@@ -539,6 +539,98 @@ async fn a_stored_credential_never_follows_the_toolset_to_another_server() {
         .await
         .unwrap();
     assert_eq!(f.token("files").await.as_deref(), Some("tok-2"));
+
+    // The users' sign-ins belong to the old server too.
+    let oauth = |url: &str| {
+        spec(&format!(
+            r#"{{ "url": "{url}", "auth": {{ "oauth": {{ "client_id": "giles" }} }} }}"#
+        ))
+    };
+    f.manager
+        .update("files", &oauth("https://other.example/mcp"), None)
+        .await
+        .unwrap();
+    let tokens = SecretPath::new("users/owner/toolsets/files/oauth-token").unwrap();
+    f.secrets
+        .put(&tokens, &crate::config::Secret::new("{}"), None)
+        .await
+        .unwrap();
+    f.manager
+        .update("files", &oauth("https://other.example/v2"), None)
+        .await
+        .unwrap();
+    assert!(f.secrets.get(&tokens).await.unwrap().is_some());
+    f.manager
+        .update("files", &oauth("https://third.example/mcp"), None)
+        .await
+        .unwrap();
+    assert!(f.secrets.get(&tokens).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn an_oauth_client_secret_and_the_users_tokens_live_and_die_with_the_toolset() {
+    let f = Fixture::start(
+        "",
+        &[],
+        vec![
+            ("files", Script::new(&["read"])),
+            ("notes", Script::new(&["read"])),
+        ],
+    )
+    .await;
+    let url = r#""url": "https://files.example.com/mcp""#;
+    let oauth = |secret: &str| {
+        spec(&format!(
+            r#"{{ {url}, "auth": {{ "oauth": {{ "client_id": "giles", "client_secret": {secret},
+                "scopes": ["files"] }} }} }}"#
+        ))
+    };
+    let secret_of = async |name: &str| {
+        let path = SecretPath::new(format!("toolsets/{name}/oauth-client-secret")).unwrap();
+        f.secrets
+            .get(&path)
+            .await
+            .unwrap()
+            .map(|secret| secret.expose().to_owned())
+    };
+    let tokens_of = async |name: &str| {
+        let path = SecretPath::new(format!("users/owner/toolsets/{name}/oauth-token")).unwrap();
+        f.secrets.get(&path).await.unwrap().is_some()
+    };
+
+    // A client secret belongs to a registered client.
+    let json = format!(r#"{{ {url}, "auth": {{ "oauth": {{ "client_secret": "s" }} }} }}"#);
+    let (key, _) = invalid(f.manager.add("files", &spec(&json)).await.unwrap_err());
+    assert_eq!(key.to_string(), "auth.oauth.client_secret");
+
+    f.manager.add("files", &oauth(r#""cs-1""#)).await.unwrap();
+    assert_eq!(secret_of("files").await.as_deref(), Some("cs-1"));
+    assert!(
+        f.stored_spec("files")
+            .await
+            .contains("toolsets/files/oauth-client-secret")
+    );
+    // A user signed in, as the sign-in does it.
+    let path = SecretPath::new("users/owner/toolsets/files/oauth-token").unwrap();
+    f.secrets
+        .put(&path, &crate::config::Secret::new("{}"), None)
+        .await
+        .unwrap();
+
+    // An edit that keeps OAuth keeps the users' tokens; a rename moves them with the secret.
+    let own = r#"{ "secret": "toolsets/files/oauth-client-secret" }"#;
+    f.manager.update("files", &oauth(own), None).await.unwrap();
+    assert!(tokens_of("files").await);
+    f.manager.rename("files", "notes").await.unwrap();
+    assert!(!tokens_of("files").await);
+    assert!(tokens_of("notes").await);
+    assert_eq!(secret_of("notes").await.as_deref(), Some("cs-1"));
+
+    // Changing to a bearer token deletes the client secret and every user's tokens.
+    let bearer = spec(&format!(r#"{{ {url}, "auth": {{ "bearer": "t-1" }} }}"#));
+    f.manager.update("notes", &bearer, None).await.unwrap();
+    assert!(!tokens_of("notes").await);
+    assert_eq!(secret_of("notes").await, None);
 }
 
 #[tokio::test]

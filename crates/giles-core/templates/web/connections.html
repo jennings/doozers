@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+
+{% block title %}Connections - Giles{% endblock %}
+
+{% block content %}
+{%- if admin %}
+{% include "web/admin_nav.html" %}
+{%- else %}
+<nav class="admin-nav"><a href="/">Chats</a> <a href="/jobs">Jobs</a> <a href="/connections">Connections</a></nav>
+{%- endif %}
+<h1>Connections</h1>
+{%- if let Some(notice) = notice %}
+<p class="notice" role="status">{{ notice }}</p>
+{%- endif %}
+<p>These MCP servers act as you: sign in to each with your own account, and an agent's calls to its tools on your behalf use your sign-in. Giles keeps the tokens encrypted and never shows them.</p>
+{%- if servers.is_empty() %}
+<p>No MCP server asks you to sign in.</p>
+{%- else %}
+<table class="admin-table">
+<thead><tr><th>MCP server</th><th>Your sign-in</th><th></th></tr></thead>
+<tbody>
+{%- for server in servers %}
+<tr id="connection-{{ server.name }}">
+<td>{{ server.name }}</td>
+{%- if let Some(error) = server.failure %}
+<td class="state-bad">not available: {{ error }}</td>
+<td></td>
+{%- else if let Some(since) = server.signed_in %}
+<td class="state-ok">signed in <span class="detail">(tokens updated {{ since }})</span></td>
+<td>
+<form class="inline-form" method="post" action="/connections/{{ server.name }}/sign-out">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button type="submit">Sign out</button>
+</form>
+</td>
+{%- else %}
+<td>not signed in</td>
+<td><a class="button" href="/connections/{{ server.name }}/sign-in?csrf={{ csrf }}">Sign in</a></td>
+{%- endif %}
+</tr>
+{%- endfor %}
+</tbody>
+</table>
+{%- endif %}
+{% endblock %}

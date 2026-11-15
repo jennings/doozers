@@ -20,8 +20,9 @@ for `PATH` lookups (tests).
 - **Stdio** (`command`): `resolve` finds the program, then `launch` starts it in its sandbox (below)
   and hands the command to `McpToolset::connect_stdio` with the `env` values as the secrets to
   scrub.
-- **Remote** (`url`): `McpToolset::connect_http` with the bearer token from `auth`, if any. Toolset
-  validation accepts only bearer tokens; OAuth client credentials are for remote channels.
+- **Remote** (`url`): `McpToolset::connect_http` with the bearer token from `auth`, if any. A remote
+  toolset with `auth.oauth` signs each user in instead ([Each user's sign-in](#each-users-sign-in)):
+  `connect_oauth` returns a `UserOAuthToolset`. OAuth client credentials are for remote channels.
 
 Errors are `giles_types::Error`, prefixed `toolset <instance>:`. `InvalidRequest` means retrying
 won't help (the host can't sandbox, an invalid spec, the sandbox trampoline failing at launch with
@@ -273,11 +274,12 @@ is in the toolset rows.
 ### Credentials
 
 `toolsets::credentials` owns the rule. A stored toolset `<name>` owns the secrets at
-`toolsets/<name>/...`, with `<name>` in lower case (names are unique ignoring case). Today that is
-`toolsets/<name>/bearer-token`.
+`toolsets/<name>/...`, with `<name>` in lower case (names are unique ignoring case):
+`toolsets/<name>/bearer-token` and `toolsets/<name>/oauth-client-secret`. It also owns each user's
+tokens, `users/<user>/toolsets/<name>/oauth-token`, which no spec refers to.
 
-- **In.** A spec given to `add` or `update` may hold `auth.bearer` as the token itself.
-  `take_literals` moves it out, to be stored at the toolset's path, and leaves
+- **In.** A spec given to `add` or `update` may hold `auth.bearer` or `auth.oauth.client_secret` as
+  the value itself. `take_literals` moves it out, to be stored at the toolset's path, and leaves
   `{ secret = "toolsets/<name>/bearer-token" }` in its place. A reference must name the toolset's
   own path. A reference to `secrets.toml`, to another toolset's secret, to a user's secret, or to
   the environment is an `Invalid` at `auth.bearer`. A web login therefore can't bind a secret it
@@ -285,15 +287,16 @@ is in the toolset rows.
 - **Another server.** An `update` whose URL has another scheme, host, or port than the stored one
   refuses a credential given as a reference (an `Invalid` at its key): it must be given as the value
   again. A stolen web session therefore can't point a toolset at its own server and collect the
-  stored token.
+  stored token. The users' OAuth tokens are deleted on such a change, since they were issued for the
+  old server.
 - **Validation.** `credential_values` reads the referenced secrets from the store, with the literals
   about to be stored on top, and hands them to `validate_toolset` as `Secrets::from_store`. A
   reference to a secret that isn't stored fails as `no secret "<path>" in the secret store`.
 - **Writes.** The literals are put before the row is written. `add` deletes them again if the row
   insert fails. After an `update`, owned secrets the spec no longer references are deleted, such as
-  the token when `auth` is dropped. `remove` deletes every owned secret, and a failure there is
-  logged, since the row is gone. `add` first deletes whatever a toolset of the same name left
-  behind.
+  the token when `auth` is dropped, and so are the users' tokens unless the spec still has
+  `auth.oauth`. `remove` deletes every owned secret, and a failure there is logged, since the row is
+  gone. `add` first deletes whatever a toolset of the same name left behind.
 - **Rename.** The plan computes where each owned secret moves (`credentials::moved`) and the spec
   with its references retargeted. The rename copies the secrets after rewriting the agents and
   before renaming the row (`Step::Copied`, undone by deleting the copies), then writes the
@@ -305,6 +308,67 @@ is in the toolset rows.
   row, or as a `{ secret = "<name>" }` reference to `secrets.toml`, is put at the toolset's path,
   and the row is rewritten to the reference. A reference whose secret `secrets.toml` lacks is left
   alone, and the toolset fails validation with the reason.
+
+### Each user's sign-in
+
+A stored toolset with `auth.oauth = { client_id, client_secret, scopes }` (each optional; a
+`client_secret` needs a `client_id`) signs each user in with the OAuth authorization code grant and
+PKCE, as the MCP authorization spec has it. Config loading parses it as `Auth::UserOAuth`; a remote
+plugin's `oauth` stays client credentials (`Auth::OAuth`). `toolsets::oauth` does the work through
+`rmcp`'s `auth` feature.
+
+- **HTTP.** Every OAuth request (discovery, registration, token) goes through `OAuthHttp`, built for
+  the MCP server's URL: `net::tls_client_builder` (bundled roots), a 30 s timeout, and 1 MiB bodies.
+  Redirects are followed (up to 5) only where `rmcp` asks, which it does for dynamic client
+  registration and never for a token request.
+- **Addresses.** The URLs these requests go to come from the MCP server, so `oauth::address` keeps
+  them off the network Giles runs in, with the rule `rmcp`'s own client has. Public addresses are
+  allowed. A loopback or private address is allowed only when the MCP server's URL names one (an IP
+  literal of that class, or `localhost`); what its host name resolves to never widens this.
+  Link-local (cloud instance metadata), unspecified, broadcast, multicast, and reserved addresses
+  are never allowed. The rule applies to IP-literal URLs, to every address a host name resolves to
+  (a filtering DNS resolver), and to each redirect. Proxy hosts from the environment aren't
+  filtered. An MCP server on a private network that is reached by a host name therefore can't send
+  Giles to a private authorization server; give its URL as the IP address.
+- **Tokens.** `UserTokens` is `rmcp`'s `CredentialStore` over the secret store. The secret at
+  `users/<user>/toolsets/<name>/oauth-token` is JSON: `rmcp`'s `StoredCredentials`, plus the issuer
+  and token endpoint of the authorization server at sign-in. It's written with the user as
+  `updated_by`. A refresh holds a lock per path (`acquire_refresh_guard`), so two connections of one
+  user don't both spend a rotating refresh token. A refresh token the server rejects
+  (`invalid_grant`) deletes the stored tokens, unless another refresh replaced them meanwhile, so
+  the user is shown as signed out.
+- **Pinned endpoints.** Every connection discovers the authorization server again, and refuses to
+  use the tokens unless the issuer and token endpoint are the ones stored with them. An MCP server
+  that changes hands, or answers discovery differently, can't make Giles send the refresh tokens and
+  the client secret to another token endpoint; the user is told to sign in again. A new sign-in
+  still trusts what the server names at that moment.
+- **Sign-in.** `ToolsetManager::begin_sign_in(name, user, redirect_uri)` finds the running toolset
+  (`redirect_uri` makes the callback URL from the toolset's name as stored), discovers the
+  authorization server (protected-resource metadata, then authorization server metadata), registers
+  a client if `client_id` is unset, and returns the authorization URL (`code_challenge_method=S256`,
+  `resource` = the server's URL, `state`). The started sign-in waits in memory under its `state` for
+  `SIGN_IN_TTL` (10 minutes): at most 4 per user, dropping that user's oldest, so no user can push
+  out another's, and 256 in all. `finish_sign_in(name, user, state, code, iss)` takes it back only
+  for the user who started it and only on that toolset's callback. A sign-in that comes back to
+  another toolset's callback is dropped: each toolset has its own callback, so a code from another
+  toolset's authorization server (a mix-up) can't be finished, whether or not the server sends
+  `iss`. It then exchanges the code, stores the tokens, and restarts the toolset in the host.
+  `sign_out` deletes the user's tokens and restarts it too. `sign_ins(user)` lists the toolsets with
+  `auth.oauth` and when the user's tokens were last stored. Neither half holds the manager's lock,
+  since both wait on the network.
+- **Connections.** `UserOAuthToolset::connect` tries the signed-in users in id order and keeps the
+  first connection that works as the lister: its tools, `list_changed` stream, and skills are the
+  toolset's, and its end is the toolset's end for the supervisor. With no one signed in, the
+  connection fails as `Unavailable` and the supervisor retries with its backoff until a sign-in
+  restarts it. A user's connection is `McpToolset::connect_http_oauth`: the transport is `rmcp`'s
+  `AuthClient` over an `AuthorizationManager` initialized from the user's tokens
+  (`initialize_from_store`, which drops tokens of another issuer), reconfigured with the client
+  secret if the tokens belong to the configured client. `AuthClient` reads the access token from the
+  store on every request, refreshes it within 30 s of expiry or after a 401, and retries once.
+- **Calls.** `call` goes over the requester's own connection: the lister's, an open one made
+  earlier, or a new one. A turn without a requester (a config job) and a requester who isn't signed
+  in get an `InvalidRequest`, which the agent loop turns into an error tool result; the turn goes
+  on. No call uses another user's token.
 
 ### One change
 

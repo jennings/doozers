@@ -348,6 +348,28 @@ field blank to keep the stored token, or type a new one to replace it. If you ch
 another server, type the token again. Giles never sends a stored token to a server it wasn't given
 for.
 
+### Adding a server that each user signs in to
+
+Some servers act as the person using them, such as one that reads your GitHub repositories. For
+those, choose **OAuth: each user signs in** under **Authentication**. Each user then signs in with
+their own account on the [Connections](#connections) page, and an agent's calls to the server use
+the sign-in of the person who asked.
+
+1. If the server needs a registered OAuth app, register one with the server's provider. Use the
+   **Sign-in callback** URL from the server's page in Giles as the redirect URI. It's
+   `<your Giles address>/connections/<name>/callback`, such as
+   `http://127.0.0.1:8080/connections/github/callback`. Renaming the server changes it.
+2. Open **New MCP server**, and enter the **Name** and **URL**.
+3. For **Authentication**, choose **OAuth: each user signs in**.
+4. Enter the app's **OAuth client ID** and **OAuth client secret**. Leave both blank if the server
+   registers clients itself.
+5. Optionally, enter **OAuth scopes**, separated by spaces.
+6. Select **Add**, then sign in on **Connections**.
+
+The server shows as failed until someone signs in. Its tools appear once the first user signs in. If
+you reach Giles through a domain name or a reverse proxy, set [`public_url`](#login-links) so the
+callback URL is the one your browser can open.
+
 The form has more settings, all optional:
 
 - **Allow insecure connections** lets Giles reach another machine over plain `http://`. It shows
@@ -373,6 +395,19 @@ the reason. Fix the cause and select **Restart**, or change its settings and sav
 **Remove MCP server**. Giles disconnects from the server and deletes its settings. The page lists
 the agents whose tools or ask-first list name the server's tools. Giles leaves those agents as they
 are.
+
+### Connections
+
+**Connections** lists the MCP servers that ask you to sign in with your own account. Select
+**Sign in** to go to the server's sign-in page. Once you approve, the server sends you back to
+Giles, and the page shows you as signed in.
+
+- Giles keeps your sign-in encrypted and refreshes it as needed. You don't have to sign in again
+  unless the server revokes it.
+- An agent's call to the server on your behalf uses your sign-in. Someone who hasn't signed in gets
+  an error in the conversation telling them to sign in, and so does a job you didn't start.
+- Select **Sign out** to delete your sign-in from Giles. To revoke Giles's access completely, also
+  remove it in your account settings on the server's website.
 
 ### Renaming an MCP server
 
