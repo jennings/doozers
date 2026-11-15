@@ -6,7 +6,9 @@ use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
-use giles_store::{InboxState, InstanceRows, NewInboxEvent, NewOutbox, SessionKey, SessionKind};
+use giles_store::{
+    InboxState, InstanceRows, NewInboxEvent, NewOutbox, OutboxTarget, SessionKey, SessionKind,
+};
 use giles_store::{Store, UsageRecord};
 use giles_types::{AgentId, ConversationId, EventId, NativeId, UserId};
 use serde_json::json;
@@ -147,7 +149,7 @@ impl Home {
         self.store
             .outbox_enqueue(NewOutbox {
                 instance: channel.into(),
-                recipient: NativeId::new("irc:libera:account:me").unwrap(),
+                target: OutboxTarget::Recipient(NativeId::new("irc:libera:account:me").unwrap()),
                 kind: "notice".into(),
                 user: None,
                 payload: json!({"markdown": "hi"}),

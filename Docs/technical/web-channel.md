@@ -418,15 +418,16 @@ but change only in `agent.toml` ([Scheduler](scheduler.md)).
   `dm`). `JobForm::spec` refuses a blank prompt, an invalid cron pattern or one that never matches
   again, and a time that isn't in the future; past `MAX_RUNTIME_JOBS_PER_USER` (20) jobs with the
   agent it's a 409. The row is a `RuntimeSpec` created by the user, as the `schedule` tool writes
-  it.
+  it, without a `conversation`, so it delivers to the user's default identity.
 - **Changing**: every route with a job id loads it with `own_job`, which answers 404 unless the user
   created it, so another user's job is never shown or changed. An edit writes a new spec
-  (`Store::job_update_spec`) that keeps the job's agent and `disabled`, with `changed_at` now.
-  Disable sets `disabled`; enable clears it and sets `changed_at`, and refuses (409) a one-shot job
-  whose time has passed, which the scheduler would otherwise delete at once without running. A spec
-  that can't be read can be replaced by an edit or deleted; disable and enable answer 409 for it.
-  After each change `WebApp` calls `JobChanges::notify` (`runtime.jobs`, passed to `WebApp::new`),
-  so the scheduler restarts the job's task ([Scheduler](scheduler.md#timing)).
+  (`Store::job_update_spec`) that keeps the job's agent, `disabled`, and `conversation`, with
+  `changed_at` now. Disable sets `disabled`; enable clears it and sets `changed_at`, and refuses
+  (409) a one-shot job whose time has passed, which the scheduler would otherwise delete at once
+  without running. A spec that can't be read can be replaced by an edit or deleted; disable and
+  enable answer 409 for it. After each change `WebApp` calls `JobChanges::notify` (`runtime.jobs`,
+  passed to `WebApp::new`), so the scheduler restarts the job's task
+  ([Scheduler](scheduler.md#timing)).
 - Every answer is `no-store` (a `map_response` route layer). A post without the CSRF token is a
   403. A form the page can't accept is shown again with why and what was typed. A store error is a
   logged 500.
@@ -1008,8 +1009,8 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   stores the spec the `schedule` tool would and notifies the scheduler; it refuses a blank prompt, a
   bad cron pattern, a past time, an agent the user may not use, a missing CSRF token, and a job past
   the cap, keeping what was typed. Edit, disable, enable, and delete change only the user's own jobs
-  (404 for another's), an edit keeps `disabled`, and a passed one-shot can't be enabled. `jobs.rs`
-  unit tests cover the next run inside active hours.
+  (404 for another's), an edit keeps `disabled` and `conversation`, and a passed one-shot can't be
+  enabled. `jobs.rs` unit tests cover the next run inside active hours.
 - History: the time prefix is cut from user messages and chat titles; a post shows once on reload
   while unacked, queued, started, and stored (`render::waiting` unit tests cover replayed and
   already-stored posts).

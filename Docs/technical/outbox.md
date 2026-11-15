@@ -1,19 +1,21 @@
 # Outbox
 
-`giles_core::outbox` delivers proactive sends: messages the core starts rather than replies in a
-conversation ([Plan](../PLAN.md) §6.11, §8.5). They're addressed to an identity, such as the owner's
-default identity (`[owner] default`, §1.1), and wait in the `outbox` table ([Storage](storage.md))
-until the channel owning that identity accepts them or they expire. So the reply of a job that fires
-before WhatsApp has reconnected isn't lost.
+`giles_core::outbox` delivers proactive sends: messages the core starts rather than replies to a
+turn ([Plan](../PLAN.md) §6.11, §8.5). Most are addressed to an identity, such as the owner's
+default identity (`[owner] default`, §1.1). A runtime job's reply is addressed to the conversation
+the job was scheduled in. They wait in the `outbox` table ([Storage](storage.md)) until the channel
+accepts them or they expire. So the reply of a job that fires before WhatsApp has reconnected isn't
+lost.
 
 | Item                    | What it is                                                              |
 | ----------------------- | ----------------------------------------------------------------------- |
 | `Outbox`                | `new(store, registry, clock)`, `enqueue`, `remove`, `start`, `closed`; cheap to clone |
-| `OutboxItem`            | `recipient: Identity`, `kind`, `user`, `markdown`, `attachments`, `expires_at` |
-| `OutboxItem::new`       | To an identity, no user, no attachments, default expiry                 |
+| `OutboxItem`            | `to: Destination`, `kind`, `user`, `markdown`, `attachments`, `expires_at` |
+| `Destination`           | `Identity(Identity)`, or `Conversation { instance, conversation }`      |
+| `OutboxItem::new`       | To a destination, no user, no attachments, default expiry               |
 | `OutboxItem::to_owner`  | To the owner's default identity, `user` = `owner`                       |
 | `OutboxKind`            | `JobReply`, `ApprovalPrompt`, `LoginCode`, `Notice` (`job_reply`, ...)  |
-| `OutboxError`           | `Unowned`, `CannotInitiate`, `MissingExpiry`, `Expired`, `Store`        |
+| `OutboxError`           | `Unowned`, `CannotInitiate`, `UnknownInstance`, `MissingExpiry`, `Expired`, `Store` |
 | `DEFAULT_EXPIRY`        | 24 hours                                                                |
 | `BACKOFF_INITIAL`, `BACKOFF_MAX`, `RETRY_AFTER_MAX` | 1 s, 60 s, 1 h                              |
 | `SEND_TIMEOUT`          | 60 s per send                                                           |
@@ -29,9 +31,11 @@ Rows enqueued before the sender starts just wait.
 
 `enqueue(item)` stores one row and wakes the sender, returning the row's `OutboxId`:
 
-- `recipient` is the whole identity, `<namespace>:<native id>` (the `recipient` column holds it as
-  written; the sender splits it at each attempt, since only a registered channel knows where its
-  namespace ends).
+- An identity is stored whole, `<namespace>:<native id>`, with `target = 'recipient'` (the
+  `recipient` column holds it as written; the sender splits it at each attempt, since only a
+  registered channel knows where its namespace ends).
+- A conversation is stored with `target = 'conversation'`, its id in `recipient`, and its channel
+  instance in `instance`.
 - `kind` is stored as `job_reply`, `approval_prompt`, `login_code`, or `notice`.
 - `payload` is `{"markdown": ..., "attachments": [MediaRef, ...]}` (`attachments` omitted when
   empty). Blobs referenced there must outlive the row; the blob sweep scans outbox payloads for
@@ -39,17 +43,24 @@ Rows enqueued before the sender starts just wait.
 - `expires_at`: approval prompts and login codes must set it (their approval's deadline, the code's
   expiry), else `MissingExpiry`; for the rest `None` means 24 hours after enqueueing. An expiry that
   isn't in the future is `Expired`.
-- `instance` is the channel instance the identity routes to at enqueue time (see below), for the
-  logs. When several stopped instances could own it, it's their names joined with `,`.
+- For an identity, `instance` is the channel instance it routes to at enqueue time (see below), for
+  the logs. When several stopped instances could own it, it's their names joined with `,`.
 
-Routing at enqueue also refuses rows nothing could ever deliver: `Unowned` when no configured
-channel can own the identity, `CannotInitiate` when its channel is registered with
-`can_initiate = false` (the built-in web channel, for one). Those are the caller's to report.
+Enqueueing also refuses rows nothing could ever deliver: `Unowned` when no configured channel can
+own the identity, `CannotInitiate` when its channel is registered with `can_initiate = false` (the
+built-in web channel, for one), and `UnknownInstance` when a conversation's channel instance isn't
+configured. Those are the caller's to report. A conversation's row doesn't need `can_initiate`: it's
+a reply into a conversation the channel already has, so it works on the web channel.
 
 ## Routing
 
-At each attempt the sender routes the identity again over the configured channel instances (sorted
-by name) and the channels registered for them now, so a restarted plugin's channel is picked up:
+A conversation's row goes to its `instance` as `SendTarget::Conversation`. It waits (retried with
+backoff) while no channel is registered for the instance, and is dropped once the instance is no
+longer configured.
+
+For an identity, at each attempt the sender routes it again over the configured channel instances
+(sorted by name) and the channels registered for them now, so a restarted plugin's channel is picked
+up:
 
 1. A registered channel owns the identity when its `ChannelInfo::identity_namespace` followed by `:`
    is a prefix of the identity and a non-empty native id is left: `irc:libera.chat:account:stephen`
@@ -66,8 +77,8 @@ by name) and the channels registered for them now, so a restarted plugin's chann
 
 One task, because rows aren't leased. Each pass:
 
-1. `outbox_expire(now)`: drops expired rows, each logged at `warn` with id, instance, recipient,
-   kind, attempts, and last error.
+1. `outbox_expire(now)`: drops expired rows, each logged at `warn` with id, instance, target, kind,
+   attempts, and last error.
 2. Up to 32 times, `outbox_due(now, 1)` with a fresh `now`: the earliest due row, fetched just
    before it's sent, so a row removed or expired while earlier ones were being sent is never sent.
    The row is sent (with a 60 s timeout), then
@@ -131,6 +142,7 @@ abandoning a hung send and keeping its row; rows removed or expired while an ear
 pass hangs never sent; expiry at the deadline (tried 1 ms before, dropped at it) and after 24 hours;
 missing and past expiries refused; approval prompts dropped at startup; a removed prompt never sent;
 routing between two IRC instances, including while both are stopped; and identities whose channel
-can't initiate (refused at enqueue, dropped when the channel turns out so).
-`plugin_host/remote_channel/tests.rs` checks that `CANCELLED`, `UNKNOWN`, and `DEADLINE_EXCEEDED`
-from `Send` are `Unavailable`.
+can't initiate (refused at enqueue, dropped when the channel turns out so); a reply into a
+conversation waiting for its channel, which can't initiate, and one on an unconfigured instance
+refused. `plugin_host/remote_channel/tests.rs` checks that `CANCELLED`, `UNKNOWN`, and
+`DEADLINE_EXCEEDED` from `Send` are `Unavailable`.

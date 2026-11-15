@@ -11,7 +11,8 @@ use giles_store::{
     SessionKey, SessionKind, Store,
 };
 use giles_types::{
-    AgentId, Block, CallContext, ConversationId, Message, MessageMeta, Role, Timestamp, UserId,
+    AgentId, Block, CallContext, ChannelConversation, ConversationId, ConversationKind,
+    ConversationRef, Message, MessageMeta, Role, Timestamp, UserId,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -202,13 +203,25 @@ async fn call_as(
     session: Session,
     job: bool,
 ) -> ToolOutput {
+    // The session's conversation, as the agent loop gives it.
+    let conversation = match (&session.channel, &session.conversation) {
+        (Some(channel), Some(id)) => Some(ChannelConversation {
+            channel: channel.clone(),
+            conversation: ConversationRef {
+                id: id.clone(),
+                kind: ConversationKind::Direct,
+                title: None,
+            },
+        }),
+        _ => None,
+    };
     tool.call(CoreCall {
         id: "t1".to_owned(),
         input,
         context: CallContext {
             agent: session.agent.clone(),
             requester,
-            conversation: None,
+            conversation,
         },
         turn: Arc::new(TurnContext {
             session,
@@ -1429,6 +1442,7 @@ fn schedule_input_is_parsed_strictly() {
             at: Some(at.parse().unwrap()),
             prompt: prompt.to_owned(),
             session: JobSession::Isolated,
+            conversation: None,
             disabled: false,
             changed_at: None,
         }))
@@ -1456,6 +1470,7 @@ fn schedule_input_is_parsed_strictly() {
             at: None,
             prompt: "Notes?".into(),
             session: JobSession::Dm,
+            conversation: None,
             disabled: false,
             changed_at: None,
         }))
@@ -1551,7 +1566,8 @@ async fn schedule_creates_lists_and_cancels_only_the_requesters_jobs() {
     assert_eq!(jobs[0].creator, owner());
     assert_eq!(
         jobs[0].spec,
-        json!({"at": "2026-10-22T17:00:00Z", "prompt": "Call the dentist.", "session": "isolated"})
+        json!({"at": "2026-10-22T17:00:00Z", "prompt": "Call the dentist.", "session": "isolated",
+               "conversation": {"channel": "fake", "id": "chat"}})
     );
     let repeating = call(
         &tool,

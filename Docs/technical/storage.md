@@ -151,7 +151,7 @@ table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, and `secret_ke
 | `summaries`    | `session_id`, `from_seq`, `through_seq`, `content` (text), `created_at`.               |
 | `search`       | FTS5 over the top-level `Text` blocks of `messages`, `rowid` = message id.            |
 | `inbox`        | `instance`, `event_id` (unique together), `session_id`, `user_id`, `payload` (JSON), `state` (`queued`, `started`, `done`, `unknown`), `received_at`. |
-| `outbox`       | `instance`, `recipient`, `kind`, `user_id`, `payload` (JSON), `attempts`, `last_error`, `created_at`, `next_attempt_at`, `expires_at`. |
+| `outbox`       | `instance`, `target` (`recipient` or `conversation`), `recipient` (an identity, or a conversation id on `instance`), `kind`, `user_id`, `payload` (JSON), `attempts`, `last_error`, `created_at`, `next_attempt_at`, `expires_at`. |
 | `jobs`         | Runtime jobs: `agent`, `creator`, `spec` (JSON), `created_at`; ids never reused.      |
 | `job_runs`     | (`agent`, `job`) to `last_run_at`; `job` is `config:<id>` or `runtime:<jobs.id>`.      |
 | `usage`        | `at`, `provider`, `model`, `agent`, `user_id`, `session_id`, four token counts, `fallback`. |
@@ -394,15 +394,16 @@ and the next attempt time. Only one sender loop may run, since rows aren't lease
 | `outbox_next_wakeup` | The earliest `next_attempt_at` or `expires_at`, for the sender's sleep. |
 | `outbox_retry`       | Records a failure: `attempts + 1`, `last_error`, next attempt time.    |
 | `outbox_delete`      | Delivered, or its approval was resolved.                               |
-| `outbox_expire`      | Deletes and returns expired rows, for logging instance, recipient, and kind. |
+| `outbox_expire`      | Deletes and returns expired rows, for logging instance, target, and kind.    |
 | `outbox_expire_kind` | Deletes and returns every row of a kind, due or not: at startup, the prompts of approvals that died with the old process. |
 
 ## Jobs
 
 Config jobs live in `agent.toml`; runtime jobs (from the `schedule` tool) are `jobs` rows with the
-agent, the creator, and the scheduler's JSON `spec`, which the store doesn't interpret. Their ids
-use `AUTOINCREMENT`, so a deleted job's id is never reused. `job_runs` keeps the last run of every
-job, keyed by agent and `JobKey`: `Config(id)` is stored as `config:<id>` and `Runtime(id)` as
+agent, the creator, and the scheduler's JSON `spec`, which the store doesn't interpret except for
+`conversation.channel` in an instance rename ([Instance names](#instance-names)). Their ids use
+`AUTOINCREMENT`, so a deleted job's id is never reused. `job_runs` keeps the last run of every job,
+keyed by agent and `JobKey`: `Config(id)` is stored as `config:<id>` and `Runtime(id)` as
 `runtime:<row id>`, so config and runtime ids can't collide. A trigger deletes a runtime job's
 `job_runs` row with the job.
 
@@ -431,7 +432,8 @@ Instance names (PLAN 7.2) are stored in different places for each kind, and the 
 take the kind and touch only that kind's places:
 
 - A channel is named in `sessions.channel`, `inbox.instance`, `outbox.instance`,
-  `workspaces.channel`, and `routes.channel`.
+  `workspaces.channel`, `routes.channel`, and the `conversation.channel` field of a runtime job's
+  `spec` JSON.
 - A provider is named in `usage.provider` and in the `provider` field of an assistant message's
   `meta` JSON.
 - An environment is named in `workspaces.environment`. `workspaces.channel` also names the channel
@@ -439,8 +441,7 @@ take the kind and touch only that kind's places:
 - A toolset is named in none of these. A stored toolset is a row of its own in `toolsets`.
 
 Nothing else holds one: `inbox.payload` and `outbox.payload` carry conversations and text but no
-instance name, `jobs.spec` carries a prompt and a schedule, and identities use the namespace the
-channel reports, not the instance name.
+instance name, and identities use the namespace the channel reports, not the instance name.
 
 `instance_rows(kind)` returns, per name, how many rows of that kind use it: sessions, inbox, and
 outbox rows, and workspaces for a channel, usage rows for a provider, workspaces for an environment,
@@ -455,11 +456,12 @@ name it; `giles channel rename` reads it to see that a name is used.
 transaction, runs `hook` inside it after the updates and before the commit, and returns the number
 of rows moved. Rows of another kind with the same name don't move. For a toolset it updates nothing
 and only runs the hook. It refuses with `Conflict` if any row of that kind already uses `new`, so
-two instances' data are never merged; routes that already name `new` don't count as data and are
-kept (`RenamedRows::routes` counts the routes moved). A failing hook rolls everything back and comes
-back as `Error::Hook`; the caller does its filesystem work in the hook, so that work and the rows
-succeed or fail together. The caller still has to undo that work if the commit itself fails.
-`messages.meta` is updated without a trigger on the column, so the search index is untouched.
+two instances' data are never merged (a runtime job whose conversation is on `new` counts, as
+`RenamedRows::jobs`); routes that already name `new` don't count as data and are kept
+(`RenamedRows::routes` counts the routes moved). A failing hook rolls everything back and comes back
+as `Error::Hook`; the caller does its filesystem work in the hook, so that work and the rows succeed
+or fail together. The caller still has to undo that work if the commit itself fails. `messages.meta`
+is updated without a trigger on the column, so the search index is untouched.
 
 ## Web sessions
 

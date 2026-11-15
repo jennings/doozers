@@ -103,13 +103,14 @@ fn format_report(root: &DataRoot, old: &str, new: &str, report: &RenameReport) -
             let _ = writeln!(
                 text,
                 "  database: {} sessions, {} inbox rows, {} outbox rows, {} workspaces, \
-                 {} usage rows, {} messages, {} routes",
+                 {} usage rows, {} messages, {} jobs, {} routes",
                 rows.sessions,
                 rows.inbox,
                 rows.outbox,
                 rows.workspaces,
                 rows.usage,
                 rows.messages,
+                rows.jobs,
                 rows.routes
             );
         }
@@ -182,6 +183,7 @@ mod tests {
                 workspaces: 2,
                 usage: 0,
                 messages: 0,
+                jobs: 1,
                 routes: 4,
             },
             config_table: true,
@@ -197,7 +199,7 @@ mod tests {
         let text = format_report(&root(), "libera", "libera-chat", &report);
         let expected = [
             "Renamed channel instance \"libera\" to \"libera-chat\".",
-            "  database: 3 sessions, 10 inbox rows, 0 outbox rows, 2 workspaces, 0 usage rows, 0 messages, 4 routes",
+            "  database: 3 sessions, 10 inbox rows, 0 outbox rows, 2 workspaces, 0 usage rows, 0 messages, 1 jobs, 4 routes",
             "  giles.toml: [channel.libera] -> [channel.libera-chat]",
             "  giles.toml: 2 [[routes]] rule(s) updated (Giles no longer reads them once they are imported)",
             "memory.db: 5 group memories moved to \"libera-chat\"",

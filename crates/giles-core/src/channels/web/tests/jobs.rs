@@ -79,6 +79,7 @@ async fn create(
         at,
         prompt: prompt.to_owned(),
         session: crate::config::JobSession::Isolated,
+        conversation: None,
         disabled: false,
         changed_at: None,
     };
@@ -344,6 +345,30 @@ async fn edit_disable_enable_and_delete_change_only_the_users_own_jobs() {
     assert_to_list(&post(&env, owner(), &path(mine, "delete"), "").await);
     assert_eq!(spec(&env, mine).await, None);
     assert!(seen.has_changed().unwrap());
+}
+
+#[tokio::test]
+async fn an_edit_keeps_the_conversation_the_job_was_scheduled_in() {
+    let env = env().await;
+    let job = create(&env, "bunter", "owner", "0 9 * * *", "Stand-up?").await;
+    let mut value = spec(&env, job).await.unwrap();
+    value["conversation"] = serde_json::json!({"channel": "discord", "id": "1234"});
+    env.store.job_update_spec(job, value).await.unwrap();
+
+    let edited = post(
+        &env,
+        owner(),
+        &format!("/jobs/{job}/edit"),
+        "repeat=cron&cron=0+8+*+*+*&prompt=Earlier.&session=isolated",
+    )
+    .await;
+    assert_to_list(&edited);
+    let value = spec(&env, job).await.unwrap();
+    assert_eq!(value["prompt"], "Earlier.");
+    assert_eq!(
+        value["conversation"],
+        serde_json::json!({"channel": "discord", "id": "1234"})
+    );
 }
 
 #[tokio::test]

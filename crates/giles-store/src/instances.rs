@@ -6,7 +6,9 @@
 //! don't share rows.
 //!
 //! - A channel is named in `sessions.channel`, `inbox.instance`, `outbox.instance`,
-//!   `workspaces.channel` (the owner of a conversation's workspace), and `routes.channel`.
+//!   `workspaces.channel` (the owner of a conversation's workspace), `routes.channel`, and the
+//!   `conversation.channel` field of a runtime job's `spec` JSON (the conversation it was
+//!   scheduled in).
 //! - A provider is named in `usage.provider` and in the `provider` field of each assistant
 //!   message's `meta` JSON.
 //! - An environment is named in `workspaces.environment`.
@@ -60,6 +62,8 @@ pub struct RenamedRows {
     pub usage: u64,
     /// Assistant messages whose `meta` named the provider instance.
     pub messages: u64,
+    /// Runtime jobs whose `spec` named the channel instance of their conversation.
+    pub jobs: u64,
     /// `routes` rows whose channel was the instance. Never counted in the conflict check: a route
     /// that already names the new name is a name, not data to merge.
     pub routes: u64,
@@ -74,6 +78,7 @@ impl RenamedRows {
             + self.workspaces
             + self.usage
             + self.messages
+            + self.jobs
             + self.routes
     }
 }
@@ -134,7 +139,7 @@ const ENVIRONMENT_COLUMNS: [NameColumn; 1] = [NameColumn {
 }];
 
 /// The columns that count as data for `kind`: where a rename of it looks for rows to refuse a
-/// merge, and what [`Store::instance_rows`] lists. Routes and messages aren't among them.
+/// merge, and what [`Store::instance_rows`] lists. Routes, messages, and jobs aren't among them.
 fn name_columns(kind: Kind) -> &'static [NameColumn] {
     match kind {
         Kind::Channel => &CHANNEL_COLUMNS,
@@ -150,7 +155,7 @@ fn count(conn: &Connection, sql: &str, name: &str) -> Result<u64> {
 }
 
 /// The number of rows that use `name` as an instance of `kind`, by table. Provider messages are
-/// counted by their `meta`.
+/// counted by their `meta`, and a channel's runtime jobs by their `spec`.
 fn rows_using(conn: &Connection, kind: Kind, name: &str) -> Result<RenamedRows> {
     let mut counts = InstanceRows::default();
     for NameColumn {
@@ -166,12 +171,22 @@ fn rows_using(conn: &Connection, kind: Kind, name: &str) -> Result<RenamedRows> 
         )?;
     }
     let mut rows = RenamedRows::from(counts);
-    if kind == Kind::Provider {
-        rows.messages = count(
-            conn,
-            "SELECT count(*) FROM messages WHERE meta ->> '$.provider' = ?1",
-            name,
-        )?;
+    match kind {
+        Kind::Provider => {
+            rows.messages = count(
+                conn,
+                "SELECT count(*) FROM messages WHERE meta ->> '$.provider' = ?1",
+                name,
+            )?;
+        }
+        Kind::Channel => {
+            rows.jobs = count(
+                conn,
+                "SELECT count(*) FROM jobs WHERE spec ->> '$.conversation.channel' = ?1",
+                name,
+            )?;
+        }
+        Kind::Toolset | Kind::Environment => {}
     }
     Ok(rows)
 }
@@ -259,14 +274,15 @@ impl Store {
             if existing.total() > 0 {
                 return Err(Error::conflict(format!(
                     "{new:?} already has data in the database ({} sessions, {} inbox rows, {} \
-                     outbox rows, {} workspaces, {} usage rows, {} messages); renaming doesn't \
-                     merge instances",
+                     outbox rows, {} workspaces, {} usage rows, {} messages, {} jobs); renaming \
+                     doesn't merge instances",
                     existing.sessions,
                     existing.inbox,
                     existing.outbox,
                     existing.workspaces,
                     existing.usage,
                     existing.messages,
+                    existing.jobs,
                 )));
             }
             let update = |table: &str, column: &str| -> Result<u64> {
@@ -287,7 +303,14 @@ impl Store {
             }
             let mut moved = RenamedRows::from(counts);
             match kind {
-                Kind::Channel => moved.routes = update("routes", "channel")?,
+                Kind::Channel => {
+                    moved.routes = update("routes", "channel")?;
+                    moved.jobs = conn.execute(
+                        "UPDATE jobs SET spec = json_set(spec, '$.conversation.channel', ?2)
+                         WHERE spec ->> '$.conversation.channel' = ?1",
+                        params![old, new],
+                    )? as u64;
+                }
                 Kind::Provider => {
                     // `messages` has no trigger on `meta`, so the search index is untouched.
                     moved.messages = conn.execute(
@@ -312,7 +335,9 @@ mod tests {
 
     use super::*;
     use crate::sessions::tests::{at, store};
-    use crate::{InboxState, NewInboxEvent, NewOutbox, SessionKey, SessionKind, UsageRecord};
+    use crate::{
+        InboxState, NewInboxEvent, NewOutbox, OutboxTarget, SessionKey, SessionKind, UsageRecord,
+    };
 
     async fn session(store: &Store, channel: &str, conversation: &str) -> crate::SessionId {
         let key = SessionKey {
@@ -349,7 +374,7 @@ mod tests {
         store
             .outbox_enqueue(NewOutbox {
                 instance: instance.into(),
-                recipient: NativeId::new("irc:libera:account:me").unwrap(),
+                target: OutboxTarget::Recipient(NativeId::new("irc:libera:account:me").unwrap()),
                 kind: "notice".into(),
                 user: None,
                 payload: json!({"markdown": "hi"}),
@@ -400,6 +425,24 @@ mod tests {
             })
             .await
             .unwrap();
+    }
+
+    /// A runtime job scheduled in a conversation on `channel`, or on the web jobs page (`None`).
+    async fn job(store: &Store, channel: Option<&str>) -> crate::RuntimeJobId {
+        let mut spec = json!({"cron": "0 9 * * *", "prompt": "p"});
+        if let Some(channel) = channel {
+            spec["conversation"] = json!({"channel": channel, "id": "#giles"});
+        }
+        store
+            .job_create(
+                AgentId::new("jeeves").unwrap(),
+                giles_types::UserId::new("owner").unwrap(),
+                spec,
+                at(1),
+            )
+            .await
+            .unwrap()
+            .id
     }
 
     async fn provider_of_messages(store: &Store) -> Vec<Option<String>> {
@@ -481,6 +524,9 @@ mod tests {
         inbox(&store, "oftc", "e1").await;
         outbox(&store, "libera").await;
         usage(&store, "other").await;
+        let libera_job = job(&store, Some("libera")).await;
+        let other_job = job(&store, Some("oftc")).await;
+        let web_job = job(&store, None).await;
 
         let moved = store
             .rename_instance(Kind::Channel, "libera", "libera-chat", |_| Ok(()))
@@ -492,8 +538,23 @@ mod tests {
                 sessions: 1,
                 inbox: 1,
                 outbox: 1,
+                jobs: 1,
                 ..Default::default()
             }
+        );
+        let spec = |id| {
+            let store = store.clone();
+            async move { store.job(id).await.unwrap().unwrap().spec }
+        };
+        assert_eq!(
+            spec(libera_job).await,
+            json!({"cron": "0 9 * * *", "prompt": "p",
+                   "conversation": {"channel": "libera-chat", "id": "#giles"}})
+        );
+        assert_eq!(spec(other_job).await["conversation"]["channel"], "oftc");
+        assert_eq!(
+            spec(web_job).await,
+            json!({"cron": "0 9 * * *", "prompt": "p"})
         );
 
         let rows = store.instance_rows(Kind::Channel).await.unwrap();
@@ -724,6 +785,7 @@ mod tests {
             (Kind::Channel, "session"),
             (Kind::Channel, "inbox"),
             (Kind::Channel, "outbox"),
+            (Kind::Channel, "job"),
             (Kind::Provider, "usage"),
             (Kind::Provider, "messages"),
         ] {
@@ -897,6 +959,9 @@ mod tests {
             }
             "inbox" => inbox(&store, "oftc", "e1").await,
             "outbox" => outbox(&store, "oftc").await,
+            "job" => {
+                job(&store, Some("oftc")).await;
+            }
             "usage" => usage(&store, "oftc").await,
             _ => messages(&store, s, "oftc").await,
         }

@@ -4,9 +4,10 @@
 //!
 //! Each job has a task that sleeps until its next time, then runs it ([`run`]): an `isolated`
 //! job in a fresh job session, a `dm` job as its own turn in the user's DM session, queued
-//! behind the turn running there ([`Sessions::hold`]). A reply of exactly `NO_REPLY` sends and
-//! stores nothing; any other reply goes to the user's default identity through [`JobDelivery`]
-//! (the outbox) and is appended to their DM session. Each run's start is recorded in
+//! behind the turn running there ([`Sessions::hold`]). A runtime job scheduled in a conversation
+//! uses that conversation as its DM. A reply of exactly `NO_REPLY` sends and stores nothing; any
+//! other reply goes through [`JobDelivery`] (the outbox) into that conversation, or else to the
+//! user's default identity, and is appended to the DM session. Each run's start is recorded in
 //! `job_runs`; times missed while the core was down are coalesced into one run at startup.
 
 mod job;
@@ -29,14 +30,14 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{debug, error, info, warn};
 
-pub use job::{JobDef, RuntimeSpec};
+pub use job::{JobConversation, JobDef, RuntimeSpec};
 pub use run::{JobReply, NO_REPLY, job_reply};
 pub use schedule::{When, in_active_hours};
 
 use crate::agent_loop::history::message_timezone;
 use crate::config::{Job, OwnerConfig};
 use crate::identity;
-use crate::outbox::{Outbox, OutboxItem, OutboxKind};
+use crate::outbox::{Destination, Outbox, OutboxItem, OutboxKind};
 use crate::registry::Registry;
 use crate::sessions::{Clock, Sessions, TurnRunner};
 use crate::workspaces::Workspaces;
@@ -48,7 +49,7 @@ pub const MAX_SLEEP: Duration = Duration::from_secs(60);
 /// How long the scheduler waits before reading the runtime jobs again after a database error.
 pub const RELOAD_RETRY: Duration = Duration::from_secs(30);
 
-/// What a job sends to its user's default identity.
+/// What a job sends to its user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DeliveryKind {
@@ -61,8 +62,10 @@ pub enum DeliveryKind {
 /// One proactive send of a job.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Delivery {
-    /// Who it goes to, at their default identity.
+    /// Who it goes to.
     pub user: UserId,
+    /// The conversation it goes into; `None`: the user's default identity.
+    pub conversation: Option<JobConversation>,
     /// What it is.
     pub kind: DeliveryKind,
     /// The message.
@@ -71,23 +74,24 @@ pub struct Delivery {
     pub expires_at: Option<Timestamp>,
 }
 
-/// Where jobs send their output: the outbox, which delivers to the user's
-/// default identity once its channel is up.
+/// Where jobs send their output: the outbox, which delivers into the job's conversation or to the
+/// user's default identity once the channel is up.
 #[async_trait]
 pub trait JobDelivery: Send + Sync {
     /// Queues `delivery`.
     ///
     /// # Errors
     ///
-    /// Why it can't be queued (no channel can reach the identity, a database error).
+    /// Why it can't be queued (no channel can reach the identity or the conversation, a database
+    /// error).
     async fn enqueue(&self, delivery: Delivery) -> Result<OutboxId, String>;
 
     /// Withdraws a queued send that hasn't gone out yet; nothing if it has.
     async fn remove(&self, id: OutboxId);
 }
 
-/// The daemon's [`JobDelivery`]: the outbox, to the owner's default identity (v1's only user
-/// with identities).
+/// The daemon's [`JobDelivery`]: the outbox, into the job's conversation, or else to the owner's
+/// default identity (v1's only user with identities).
 #[derive(Debug, Clone)]
 pub struct OutboxDelivery {
     outbox: Outbox,
@@ -95,7 +99,7 @@ pub struct OutboxDelivery {
 }
 
 impl OutboxDelivery {
-    /// Sends through `outbox` to `owner`'s default identity.
+    /// Sends through `outbox`, to `owner`'s default identity when there's no conversation.
     pub fn new(outbox: Outbox, owner: OwnerConfig) -> Self {
         Self { outbox, owner }
     }
@@ -104,14 +108,27 @@ impl OutboxDelivery {
 #[async_trait]
 impl JobDelivery for OutboxDelivery {
     async fn enqueue(&self, delivery: Delivery) -> Result<OutboxId, String> {
-        if delivery.user != identity::owner() {
-            return Err(format!("user {} has no identity", delivery.user));
-        }
         let kind = match delivery.kind {
             DeliveryKind::JobReply => OutboxKind::JobReply,
             DeliveryKind::ApprovalPrompt => OutboxKind::ApprovalPrompt,
         };
-        let mut item = OutboxItem::to_owner(&self.owner, kind, delivery.markdown);
+        let mut item = match delivery.conversation {
+            Some(conversation) => OutboxItem {
+                user: Some(delivery.user),
+                ..OutboxItem::new(
+                    Destination::Conversation {
+                        instance: conversation.channel,
+                        conversation: conversation.id,
+                    },
+                    kind,
+                    delivery.markdown,
+                )
+            },
+            None if delivery.user != identity::owner() => {
+                return Err(format!("user {} has no identity", delivery.user));
+            }
+            None => OutboxItem::to_owner(&self.owner, kind, delivery.markdown),
+        };
         item.expires_at = delivery.expires_at;
         self.outbox
             .enqueue(item)

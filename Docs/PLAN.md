@@ -439,8 +439,8 @@ conversation id): each WhatsApp chat, email thread, IRC query, and web chat has 
   every one of their DM sessions, `memory_recall` finds their other memories, and `memory_search`
   covers their transcripts on all channels.
 - A turn replies into its own session's conversation.
-- Jobs with `session = "dm"` run in the DM conversation on the delivery user's default identity
-  (section 6.11).
+- Jobs with `session = "dm"` run in the job's DM: the conversation a runtime job was scheduled in,
+  else the DM on the delivery user's default identity (section 6.11).
 - `/new` ends the current session and starts a fresh one for later messages. The old session stays
   in SQLite.
 - Optional idle reset per agent does the same automatically after a quiet period.
@@ -709,15 +709,18 @@ ask_to = "deliver_to"         # optional; without it, `ask` tools are denied (se
 
 - Config jobs live in `agent.toml`. Runtime jobs come from the core tool `schedule`, which lets the
   agent create, list, and cancel jobs for the requesting user ("remind me at 5"). Runtime jobs live
-  in SQLite, record their creator, run with the creator's role (section 6.4), and deliver to that
-  user. `schedule list` also shows config jobs, read-only.
+  in SQLite, record their creator and the conversation they were scheduled in, run with the
+  creator's role (section 6.4), and deliver to that user. `schedule list` also shows config jobs,
+  read-only.
+- A job's DM is the conversation a runtime job was scheduled in. Config jobs, runtime jobs made on
+  the web jobs page, and runtime jobs whose channel instance is gone use the user's DM on their
+  default identity instead.
 - `session = "isolated"` starts each run with a fresh context: the delivery user's core memories
-  and, optionally (`dm_excerpt = N`), the last N messages of the DM on their default identity.
-  `session = "dm"` runs in that DM's session as its own queued turn, never merged into user
-  messages.
+  and, optionally (`dm_excerpt = N`), the last N messages of the job's DM. `session = "dm"` runs in
+  the DM's session as its own queued turn, never merged into user messages.
 - Output: a reply of exactly `NO_REPLY` sends nothing and stores nothing. Anything else is delivered
-  to the user's default identity and appended to that DM's session as an assistant message, so a
-  reply to it has context.
+  into the conversation a runtime job was scheduled in, or else to the user's default identity, and
+  appended to the job's DM session as an assistant message, so a reply to it has context.
 - Each job's last run time is kept in the `job_runs` table, keyed by the job's `id`. Missed runs
   while the core was down are coalesced into one run at startup.
 - Timezone: the job's user, else the agent's `timezone`, else the default time zone in `giles.toml`
@@ -727,8 +730,9 @@ Every proactive send (job output, approval prompts, login codes) goes through th
 (section 11.4). It's retried with backoff until the channel accepts it, so output from a job that
 fires before WhatsApp or IMAP have reconnected isn't lost. Each row expires: approval prompts and
 login codes when the approval or code does, everything else after 24 hours. An expired row is
-dropped and logged with its instance, recipient, and kind. Proactive sends are addressed to an
-identity, not a conversation (section 8.5).
+dropped and logged with its instance, recipient, and kind. A proactive send is addressed to an
+identity (section 8.5), or, for a runtime job scheduled in a conversation, to that conversation on
+its channel instance (`SendRequest.conversation_id`, which works on channels that can't initiate).
 
 ## 7. Plugins
 

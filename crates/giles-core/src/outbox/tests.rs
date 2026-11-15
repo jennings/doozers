@@ -233,22 +233,23 @@ impl Harness {
         let conn = rusqlite::Connection::open(&self.db).unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT id, instance, recipient, kind, user_id, attempts, last_error, created_at,
-                    next_attempt_at, expires_at FROM outbox ORDER BY id",
+                "SELECT id, instance, target, recipient, kind, user_id, attempts, last_error,
+                    created_at, next_attempt_at, expires_at FROM outbox ORDER BY id",
             )
             .unwrap();
         stmt.query_map([], |r| {
             Ok(Row {
                 id: OutboxId::new(r.get(0)?),
                 instance: r.get(1)?,
-                recipient: r.get(2)?,
-                kind: r.get(3)?,
-                user: r.get(4)?,
-                attempts: r.get(5)?,
-                last_error: r.get(6)?,
-                created_at: r.get(7)?,
-                next_attempt_at: r.get(8)?,
-                expires_at: r.get(9)?,
+                target: r.get(2)?,
+                recipient: r.get(3)?,
+                kind: r.get(4)?,
+                user: r.get(5)?,
+                attempts: r.get(6)?,
+                last_error: r.get(7)?,
+                created_at: r.get(8)?,
+                next_attempt_at: r.get(9)?,
+                expires_at: r.get(10)?,
             })
         })
         .unwrap()
@@ -261,7 +262,19 @@ impl Harness {
     }
 
     fn to(identity: &str, kind: OutboxKind, markdown: &str) -> OutboxItem {
-        OutboxItem::new(Identity::new(identity).unwrap(), kind, markdown)
+        OutboxItem::new(
+            Destination::Identity(Identity::new(identity).unwrap()),
+            kind,
+            markdown,
+        )
+    }
+
+    fn into_conversation(instance: &str, conversation: &str, markdown: &str) -> OutboxItem {
+        let to = Destination::Conversation {
+            instance: instance.to_owned(),
+            conversation: ConversationId::new(conversation).unwrap(),
+        };
+        OutboxItem::new(to, OutboxKind::JobReply, markdown)
     }
 }
 
@@ -270,6 +283,7 @@ impl Harness {
 struct Row {
     id: OutboxId,
     instance: String,
+    target: String,
     recipient: String,
     kind: String,
     user: Option<String>,
@@ -315,6 +329,7 @@ async fn delivers_to_the_default_identity_on_enqueue() {
     let row = &rows[0];
     assert_eq!(row.id, id);
     assert_eq!(row.instance, "phone");
+    assert_eq!(row.target, "recipient");
     assert_eq!(row.recipient, OWNER_DEFAULT);
     assert_eq!(row.kind, "job_reply");
     assert_eq!(row.user.as_deref(), Some("owner"));
@@ -707,6 +722,45 @@ async fn refuses_identities_no_channel_can_reach() {
     assert!(matches!(
         harness.outbox.enqueue(item).await,
         Err(OutboxError::Unowned(identity)) if identity.as_str() == "email:me@example.com"
+    ));
+    assert!(harness.rows().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn replies_into_a_conversation_once_its_channel_is_up() {
+    let harness = Harness::new().await;
+    harness.start().await;
+    let item = Harness::into_conversation("chat", "chat-7", "Tea time.");
+    harness.outbox.enqueue(item).await.unwrap();
+    let row = harness.rows().remove(0);
+    assert_eq!(
+        (
+            row.instance.as_str(),
+            row.target.as_str(),
+            row.recipient.as_str()
+        ),
+        ("chat", "conversation", "chat-7")
+    );
+    tokio::time::sleep(secs(2)).await;
+    // A channel that can't start conversations can still reply in one.
+    let mut chat = harness.register("chat", "chat", false);
+    let sent = chat.next().await;
+    assert_eq!(
+        sent.target,
+        SendTarget::Conversation(ConversationId::new("chat-7").unwrap())
+    );
+    assert_eq!(sent.markdown, "Tea time.");
+    assert_eq!(chat.channel.attempts(), [secs(3)]);
+    harness.stop_when_empty().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn refuses_a_conversation_on_an_unconfigured_instance() {
+    let harness = Harness::new().await;
+    let item = Harness::into_conversation("gone", "c1", "hi");
+    assert!(matches!(
+        harness.outbox.enqueue(item).await,
+        Err(OutboxError::UnknownInstance(instance)) if instance == "gone"
     ));
     assert!(harness.rows().is_empty());
 }

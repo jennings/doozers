@@ -1,5 +1,6 @@
-//! One run of a job (PLAN sections 6.4, 6.11): find the user's DM, wait for it to be idle if
-//! the job says so, run the turn in a fresh job session or the DM, and deliver the reply.
+//! One run of a job (PLAN sections 6.4, 6.11): find the job's DM (the conversation a runtime job
+//! was scheduled in, else the user's DM on their default identity), wait for it to be idle if the
+//! job says so, run the turn in a fresh job session or the DM, and deliver the reply.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -12,7 +13,7 @@ use giles_types::{Block, Message, MessageMeta, Role, UserId};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use super::job::JobDef;
+use super::job::{JobConversation, JobDef};
 use super::{Context, Delivery, DeliveryKind, JobDelivery, in_active_hours};
 use crate::agent_loop::history::{job_message, message_timezone};
 use crate::approvals::{ApprovalTarget, PromptOutbox};
@@ -127,15 +128,15 @@ pub(super) async fn run(
 ) -> bool {
     let label = job.label();
     let user = job.creator.clone().unwrap_or_else(identity::owner);
-    let dm = match latest_dm(context, &job.agent, &user).await {
-        Ok(dm) => dm,
+    let home = match home(context, job, &user).await {
+        Ok(home) => home,
         Err(error) => {
             error!(job = %label, %error, "cannot find the user's DM; the job runs without it");
             None
         }
     };
     if job.idle_only
-        && let Some(dm) = &dm
+        && let Some(dm) = home.as_ref().and_then(|home| home.session.as_ref())
     {
         tokio::select! {
             biased;
@@ -173,7 +174,8 @@ pub(super) async fn run(
             }
         },
     };
-    let dm_key = dm.as_ref().and_then(Session::key);
+    let dm_key = home.as_ref().map(|home| home.key.clone());
+    let conversation = home.as_ref().and_then(|home| home.conversation.clone());
     let approvals = match (job.ask_to, &dm_key) {
         (Some(AskTo::DeliverTo), Some(key)) => Some(ApprovalTarget {
             key: key.clone(),
@@ -183,6 +185,7 @@ pub(super) async fn run(
                 context.delivery.clone(),
                 context.clock.clone(),
                 user.clone(),
+                conversation.clone(),
                 label.clone(),
             ))),
         }),
@@ -197,19 +200,71 @@ pub(super) async fn run(
         job,
         agent,
         user,
+        conversation,
         prompt,
         approvals,
         stop,
     };
-    match (job.session, dm_key) {
-        (JobSession::Dm, Some(key)) => run.in_dm(key).await,
+    match (job.session, home) {
+        (JobSession::Dm, Some(home)) => run.in_dm(home.key).await,
         (JobSession::Dm, None) => {
             info!(job = %label, "no DM with the user yet; the job runs in a session of its own");
             run.isolated(None).await;
         }
-        (JobSession::Isolated, _) => run.isolated(dm).await,
+        (JobSession::Isolated, home) => run.isolated(home).await,
     }
     true
+}
+
+/// A job's DM: the conversation it runs in or appends its reply to, and where approval replies
+/// come from.
+struct Home {
+    key: SessionKey,
+    /// Its latest session, if it has one (an isolated run's excerpt, `idle_only`).
+    session: Option<Session>,
+    /// The conversation a runtime job was scheduled in, which its reply goes into. `None` for
+    /// the user's DM on their default identity, whose reply goes to that identity.
+    conversation: Option<JobConversation>,
+}
+
+/// The job's DM: the conversation a runtime job was scheduled in, if its channel instance is still
+/// configured, else the user's DM on their default identity ([`latest_dm`]).
+async fn home(
+    context: &Context,
+    job: &JobDef,
+    user: &UserId,
+) -> Result<Option<Home>, giles_store::Error> {
+    if let Some(conversation) = &job.conversation {
+        if context
+            .registry
+            .config()
+            .channels
+            .contains_key(conversation.channel.as_str())
+        {
+            let key = conversation.key(&job.agent);
+            let session = context.store.find_open_session(key.clone()).await?;
+            return Ok(Some(Home {
+                key,
+                session,
+                conversation: Some(conversation.clone()),
+            }));
+        }
+        warn!(
+            job = %job.label(),
+            channel = conversation.channel,
+            "the job's conversation is on a channel instance that is no longer configured; \
+             it delivers to the user's default identity",
+        );
+    }
+    Ok(latest_dm(context, &job.agent, user)
+        .await?
+        .and_then(|session| {
+            Some(Home {
+                key: session.key()?,
+                session: Some(session),
+                conversation: None,
+            })
+        }))
 }
 
 /// The user's DM with `agent` on their default identity: the direct session with the newest
@@ -272,6 +327,8 @@ struct Run<'a> {
     job: &'a JobDef,
     agent: &'a AgentConfig,
     user: UserId,
+    /// The conversation the reply goes into; `None`: the user's default identity.
+    conversation: Option<JobConversation>,
     prompt: String,
     approvals: Option<ApprovalTarget>,
     /// Cancelled at shutdown and when the job is cancelled or deleted: ends the run's waits
@@ -323,10 +380,11 @@ impl Run<'_> {
     /// An isolated run: a fresh job session owned by the user (so their memory is in its
     /// prompt), with the DM's latest messages if the job asks; the reply is delivered and
     /// appended to the DM.
-    async fn isolated(self, dm: Option<Session>) {
+    async fn isolated(self, home: Option<Home>) {
         let label = self.label();
         let store = &self.context.store;
-        let excerpt = match (self.job.dm_excerpt, &dm) {
+        let dm = home.as_ref().and_then(|home| home.session.as_ref());
+        let excerpt = match (self.job.dm_excerpt, dm) {
             (Some(count), Some(dm)) => match store.recent_messages(dm.id, count).await {
                 Ok(messages) => excerpt(&messages),
                 Err(error) => {
@@ -379,8 +437,8 @@ impl Run<'_> {
             }
             Some(JobReply::Text(text)) => {
                 self.deliver(&text).await;
-                if let Some(key) = dm.as_ref().and_then(Session::key) {
-                    self.append_to_dm(key, text).await;
+                if let Some(home) = home {
+                    self.append_to_dm(home.key, text).await;
                 }
             }
             Some(JobReply::Empty) | None => {}
@@ -485,6 +543,7 @@ impl Run<'_> {
     async fn deliver(&self, text: &str) {
         let delivery = Delivery {
             user: self.user.clone(),
+            conversation: self.conversation.clone(),
             kind: DeliveryKind::JobReply,
             markdown: text.to_owned(),
             expires_at: None,
@@ -518,12 +577,14 @@ impl Run<'_> {
     }
 }
 
-/// Approval prompts of a job turn with `ask_to = "deliver_to"`: queued for the user's default
-/// identity, expiring with the approval, and withdrawn when it resolves first.
+/// Approval prompts of a job turn with `ask_to = "deliver_to"`: queued for the job's DM (its
+/// conversation, or the user's default identity), expiring with the approval, and withdrawn when
+/// it resolves first.
 pub(super) struct OutboxPrompts {
     delivery: Arc<dyn JobDelivery>,
     clock: Arc<dyn Clock>,
     user: UserId,
+    conversation: Option<JobConversation>,
     job: String,
     queued: Mutex<HashMap<String, OutboxId>>,
 }
@@ -533,12 +594,14 @@ impl OutboxPrompts {
         delivery: Arc<dyn JobDelivery>,
         clock: Arc<dyn Clock>,
         user: UserId,
+        conversation: Option<JobConversation>,
         job: String,
     ) -> Self {
         Self {
             delivery,
             clock,
             user,
+            conversation,
             job,
             queued: Mutex::default(),
         }
@@ -564,6 +627,7 @@ impl PromptOutbox for OutboxPrompts {
             .map_err(|error| error.to_string())?;
         let delivery = Delivery {
             user: self.user.clone(),
+            conversation: self.conversation.clone(),
             kind: DeliveryKind::ApprovalPrompt,
             markdown: format!("Scheduled job {}: {markdown}", self.job),
             expires_at: Some(expires_at),

@@ -56,7 +56,7 @@ pub use messages::{
     Appended, Entry, History, Slot, StoredMessage, StoredMessageId, Summary, SummaryId,
 };
 pub use migrate::{MEMORY_SCHEMA_VERSION, MigrationPlan, SCHEMA_VERSION};
-pub use outbox::{NewOutbox, OutboxEntry, OutboxId};
+pub use outbox::{NewOutbox, OutboxEntry, OutboxId, OutboxTarget};
 pub use routes::{NewRoute, RouteId, StoredRoute};
 pub use search::{SNIPPET_ELLIPSIS, SNIPPET_END, SNIPPET_START, SearchHit, SearchScope};
 pub use secrets::{SealedValue, SecretRecord, WrappedKey};

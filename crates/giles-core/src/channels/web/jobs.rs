@@ -14,10 +14,12 @@
 //! # Changes
 //!
 //! A job is a row in `jobs` with a [`RuntimeSpec`], the same as the `schedule` tool makes, with
-//! the same cap per user and agent ([`MAX_RUNTIME_JOBS_PER_USER`]). Every change notifies the
-//! scheduler ([`JobChanges`](crate::scheduler::JobChanges)), which restarts the job's task. An
-//! edit or a switch back on sets `changed_at`, so the scheduler doesn't make up the times the job
-//! missed before it. An edit keeps the job's agent and whether it is disabled.
+//! the same cap per user and agent ([`MAX_RUNTIME_JOBS_PER_USER`]), but without a conversation:
+//! it delivers to the user's default identity. Every change notifies the scheduler
+//! ([`JobChanges`](crate::scheduler::JobChanges)), which restarts the job's task. An edit or a
+//! switch back on sets `changed_at`, so the scheduler doesn't make up the times the job missed
+//! before it. An edit keeps the job's agent, whether it is disabled, and the conversation the
+//! `schedule` tool recorded.
 //!
 //! Every post is CSRF-checked; one that succeeds answers 303 to the list. A form the page can't
 //! accept is shown again with why (400; 409 at the cap). Every answer is `no-store`.
@@ -389,6 +391,7 @@ impl JobForm {
             at,
             prompt,
             session,
+            conversation: None,
             disabled: false,
             changed_at: None,
         })
@@ -624,7 +627,7 @@ async fn edit_page(State(app): State<WebApp>, user: WebUser, Path(id): Path<Stri
 }
 
 /// `POST /jobs/<id>/edit` (CSRF-checked): saves the edit, then 303 to the list. The job keeps its
-/// agent and whether it is disabled.
+/// agent, whether it is disabled, and the conversation it was scheduled in.
 async fn edit(
     State(app): State<WebApp>,
     user: WebUser,
@@ -653,8 +656,10 @@ async fn edit(
             );
         }
     };
-    spec.disabled =
-        serde_json::from_value::<RuntimeSpec>(job.spec.clone()).is_ok_and(|old| old.disabled);
+    if let Ok(old) = serde_json::from_value::<RuntimeSpec>(job.spec.clone()) {
+        spec.disabled = old.disabled;
+        spec.conversation = old.conversation;
+    }
     spec.changed_at = Some(now);
     save(&app, &job, &spec).await
 }
@@ -770,6 +775,7 @@ mod tests {
             key: JobKey::Config("check-in".into()),
             agent: AgentId::new("jeeves").unwrap(),
             creator: None,
+            conversation: None,
             since: None,
             disabled: false,
             when,

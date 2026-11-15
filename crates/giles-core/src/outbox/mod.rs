@@ -1,10 +1,11 @@
 //! The outbox: proactive sends (job replies, approval prompts of job turns, login codes,
-//! notices) addressed to an identity rather than a conversation (PLAN sections 6.11, 8.5).
-//! Design: `Docs/technical/outbox.md`.
+//! notices), addressed to an identity or to a conversation (PLAN sections 6.11, 8.5). Design:
+//! `Docs/technical/outbox.md`.
 //!
 //! [`Outbox::enqueue`] stores an [`OutboxItem`] in the `outbox` table and wakes the one sender
-//! loop ([`Outbox::start`]), which sends each due row with [`SendTarget::Recipient`] through the
-//! channel instance owning the identity's namespace, deletes it once the channel accepts it, and
+//! loop ([`Outbox::start`]), which sends each due row through its channel instance (with
+//! [`SendTarget::Recipient`] to the instance owning an identity's namespace, or with
+//! [`SendTarget::Conversation`] into a conversation), deletes it once the channel accepts it, and
 //! retries it with backoff while the channel is down or answers
 //! [`Unavailable`](giles_types::Error::Unavailable). Every row expires: approval prompts and login
 //! codes when their approval or code does, everything else [`DEFAULT_EXPIRY`] after it was
@@ -20,9 +21,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use giles_store::{NewOutbox, OutboxEntry, OutboxId, Store};
+use giles_store::{NewOutbox, OutboxEntry, OutboxId, OutboxTarget, Store};
 use giles_types::{
-    Channel, Error, MediaRef, NativeId, OutboundMessage, SendTarget, Timestamp, UserId,
+    Channel, ConversationId, Error, MediaRef, NativeId, OutboundMessage, SendTarget, Timestamp,
+    UserId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
@@ -96,12 +98,39 @@ impl fmt::Display for OutboxKind {
     }
 }
 
+/// Where an [`OutboxItem`] goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Destination {
+    /// An identity, `<namespace>:<native id>`, e.g. the owner's default identity (`[owner]
+    /// default`): the channel owning the namespace starts or continues a direct conversation.
+    Identity(Identity),
+    /// A conversation on a channel instance, replied into: a runtime job's reply to the
+    /// conversation it was scheduled in.
+    Conversation {
+        /// The channel instance.
+        instance: String,
+        /// The conversation on it.
+        conversation: ConversationId,
+    },
+}
+
+impl fmt::Display for Destination {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Identity(identity) => write!(f, "{identity}"),
+            Self::Conversation {
+                instance,
+                conversation,
+            } => write!(f, "conversation {conversation} on `{instance}`"),
+        }
+    }
+}
+
 /// A proactive send, for [`Outbox::enqueue`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutboxItem {
-    /// The identity it goes to, `<namespace>:<native id>`, e.g. the owner's default identity
-    /// (`[owner] default`).
-    pub recipient: Identity,
+    /// Where it goes.
+    pub to: Destination,
     /// What it is.
     pub kind: OutboxKind,
     /// The user it's for, if any.
@@ -116,11 +145,11 @@ pub struct OutboxItem {
 }
 
 impl OutboxItem {
-    /// `markdown` to `recipient`, for no particular user, with no attachments, expiring after
+    /// `markdown` to `to`, for no particular user, with no attachments, expiring after
     /// [`DEFAULT_EXPIRY`].
-    pub fn new(recipient: Identity, kind: OutboxKind, markdown: impl Into<String>) -> Self {
+    pub fn new(to: Destination, kind: OutboxKind, markdown: impl Into<String>) -> Self {
         Self {
-            recipient,
+            to,
             kind,
             user: None,
             markdown: markdown.into(),
@@ -138,7 +167,11 @@ impl OutboxItem {
     ) -> Self {
         Self {
             user: Some(owner()),
-            ..Self::new(owner_config.default.clone(), kind, markdown)
+            ..Self::new(
+                Destination::Identity(owner_config.default.clone()),
+                kind,
+                markdown,
+            )
         }
     }
 }
@@ -160,16 +193,19 @@ pub enum OutboxError {
         /// The identity.
         identity: Identity,
     },
+    /// The conversation is on a channel instance that isn't configured.
+    #[error("no channel instance `{0}` is configured")]
+    UnknownInstance(String),
     /// An approval prompt or login code came without `expires_at`.
     #[error("a {0} needs an expiry")]
     MissingExpiry(OutboxKind),
     /// `expires_at` isn't in the future.
-    #[error("the {kind} for `{identity}` expired before it was enqueued")]
+    #[error("the {kind} for {to} expired before it was enqueued")]
     Expired {
         /// What it is.
         kind: OutboxKind,
-        /// Its recipient.
-        identity: Identity,
+        /// Where it was going.
+        to: Destination,
     },
     /// The row couldn't be stored.
     #[error("cannot store the outbox row: {0}")]
@@ -226,13 +262,15 @@ impl Outbox {
     /// Stores `item` for delivery and wakes the sender. Returns the row's id, for
     /// [`remove`](Self::remove).
     ///
-    /// The row records the channel instance the identity routes to now (logged when the row is
-    /// sent, dropped, or expires); the sender routes again at each attempt.
+    /// For an identity, the row records the channel instance it routes to now (logged when the
+    /// row is sent, dropped, or expires); the sender routes again at each attempt. A
+    /// conversation's row is sent through its instance.
     ///
     /// # Errors
     ///
-    /// [`OutboxError`]: nothing can ever deliver it (no channel owns the identity, or its
-    /// channel can't initiate), its expiry is missing or past, or the database failed.
+    /// [`OutboxError`]: nothing can ever deliver it (no channel owns the identity, its channel
+    /// can't initiate, or the conversation's instance isn't configured), its expiry is missing or
+    /// past, or the database failed.
     pub async fn enqueue(&self, item: OutboxItem) -> Result<OutboxId, OutboxError> {
         let now = self.inner.clock.now();
         let expires_at = match item.expires_at {
@@ -243,21 +281,38 @@ impl Outbox {
         if expires_at <= now {
             return Err(OutboxError::Expired {
                 kind: item.kind,
-                identity: item.recipient,
+                to: item.to,
             });
         }
-        let instance = {
-            let channels = self.inner.channels();
-            match route(item.recipient.as_str(), &slots(&channels)) {
-                Route::Send { instance, .. } => instance.to_string(),
-                Route::Wait { instances } => join(&instances),
-                Route::CannotInitiate { instance } => {
-                    return Err(OutboxError::CannotInitiate {
-                        instance: instance.clone(),
-                        identity: item.recipient,
-                    });
+        let channels = self.inner.channels();
+        let (instance, target) = match &item.to {
+            Destination::Identity(identity) => {
+                let instance = match route(identity.as_str(), &slots(&channels)) {
+                    Route::Send { instance, .. } => instance.to_string(),
+                    Route::Wait { instances } => join(&instances),
+                    Route::CannotInitiate { instance } => {
+                        return Err(OutboxError::CannotInitiate {
+                            instance: instance.clone(),
+                            identity: identity.clone(),
+                        });
+                    }
+                    Route::Unowned => return Err(OutboxError::Unowned(identity.clone())),
+                };
+                let recipient =
+                    NativeId::new(identity.as_str()).expect("an identity is a non-empty string");
+                (instance, OutboxTarget::Recipient(recipient))
+            }
+            Destination::Conversation {
+                instance,
+                conversation,
+            } => {
+                if !channels.iter().any(|c| c.instance.as_str() == instance) {
+                    return Err(OutboxError::UnknownInstance(instance.clone()));
                 }
-                Route::Unowned => return Err(OutboxError::Unowned(item.recipient)),
+                (
+                    instance.clone(),
+                    OutboxTarget::Conversation(conversation.clone()),
+                )
             }
         };
         let payload = serde_json::to_value(Payload {
@@ -265,14 +320,12 @@ impl Outbox {
             attachments: item.attachments,
         })
         .map_err(giles_store::Error::from)?;
-        let recipient =
-            NativeId::new(item.recipient.as_str()).expect("an identity is a non-empty string");
         let id = self
             .inner
             .store
             .outbox_enqueue(NewOutbox {
                 instance: instance.clone(),
-                recipient,
+                target,
                 kind: item.kind.as_str().to_owned(),
                 user: item.user,
                 payload,
@@ -283,7 +336,7 @@ impl Outbox {
         debug!(
             id = %id,
             %instance,
-            recipient = %item.recipient,
+            to = %item.to,
             kind = %item.kind,
             "outbox row enqueued",
         );
@@ -323,7 +376,7 @@ impl Outbox {
             warn!(
                 id = %row.id,
                 instance = row.instance,
-                recipient = %row.recipient,
+                target = %row.target,
                 kind = row.kind,
                 attempts = row.attempts,
                 "approval prompt dropped undelivered: its approval ended with the previous process",
@@ -413,7 +466,7 @@ impl Inner {
             warn!(
                 id = %row.id,
                 instance = row.instance,
-                recipient = %row.recipient,
+                target = %row.target,
                 kind = row.kind,
                 attempts = row.attempts,
                 last_error = row.last_error.as_deref(),
@@ -448,7 +501,7 @@ impl Inner {
                 info!(
                     id = %row.id,
                     %instance,
-                    recipient = %row.recipient,
+                    target = %row.target,
                     kind = row.kind,
                     attempts = row.attempts + 1,
                     "outbox row delivered",
@@ -459,7 +512,7 @@ impl Inner {
                 warn!(
                     id = %row.id,
                     %instance,
-                    recipient = %row.recipient,
+                    target = %row.target,
                     kind = row.kind,
                     attempts = row.attempts + 1,
                     %error,
@@ -477,11 +530,11 @@ impl Inner {
                     Ok(attempts) => {
                         // The first failure is worth noting; the retries that follow aren't.
                         if attempts == 1 {
-                            info!(id = %row.id, %instance, recipient = %row.recipient,
+                            info!(id = %row.id, %instance, target = %row.target,
                                 kind = row.kind, attempts, %error, ?delay,
                                 "outbox send failed; will retry");
                         } else {
-                            debug!(id = %row.id, %instance, recipient = %row.recipient,
+                            debug!(id = %row.id, %instance, target = %row.target,
                                 kind = row.kind, attempts, %error, ?delay,
                                 "outbox send failed; will retry");
                         }
@@ -506,30 +559,23 @@ impl Inner {
                 return (row.instance.clone(), Outcome::Drop { error });
             }
         };
-        let identity = row.recipient.as_str();
         let channels = self.channels();
-        let (instance, recipient) = match route(identity, &slots(&channels)) {
-            Route::Send {
-                instance,
-                recipient,
-            } => (instance.to_string(), recipient.to_owned()),
-            Route::Wait { instances } => {
-                let error = format!("channel `{}` isn't running", join(&instances));
-                return (
-                    join(&instances),
-                    Outcome::Retry {
-                        error,
-                        retry_after: None,
-                    },
-                );
+        let (instance, target) = match &row.target {
+            OutboxTarget::Recipient(identity) => {
+                match route_identity(identity, &row.instance, &channels) {
+                    Ok(routed) => routed,
+                    Err(failed) => return failed,
+                }
             }
-            Route::CannotInitiate { instance } => {
-                let error = "the channel can't start conversations".to_owned();
-                return (instance.to_string(), Outcome::Drop { error });
-            }
-            Route::Unowned => {
-                let error = "no configured channel owns the identity".to_owned();
-                return (row.instance.clone(), Outcome::Drop { error });
+            OutboxTarget::Conversation(conversation) => {
+                if !channels.iter().any(|c| c.instance.as_str() == row.instance) {
+                    let error = "the channel instance isn't configured".to_owned();
+                    return (row.instance.clone(), Outcome::Drop { error });
+                }
+                (
+                    row.instance.clone(),
+                    SendTarget::Conversation(conversation.clone()),
+                )
             }
         };
         if wedged.contains(&instance) {
@@ -547,7 +593,8 @@ impl Inner {
             .find(|configured| configured.instance.as_str() == instance)
             .and_then(|configured| configured.channel.clone())
         else {
-            // `route` sends through registered channels only; this keeps the row if that changes.
+            // A conversation's instance whose plugin isn't up yet: wait for it. (`route` sends an
+            // identity's row through registered channels only; this keeps it if that changes.)
             let error = format!("channel `{instance}` isn't running");
             return (
                 instance,
@@ -558,9 +605,7 @@ impl Inner {
             );
         };
         let message = OutboundMessage {
-            target: SendTarget::Recipient(
-                NativeId::new(recipient).expect("route never returns an empty native id"),
-            ),
+            target,
             markdown: payload.markdown,
             attachments: payload.attachments,
             reply_to: None,
@@ -599,6 +644,44 @@ struct Configured {
     instance: InstanceName,
     component: String,
     channel: Option<Arc<dyn Channel>>,
+}
+
+/// Where an identity's row goes now: its instance and target. When it can't be sent now, the
+/// instance to log (`stored`, the row's, if routing found none) and what to do with the row.
+fn route_identity(
+    identity: &NativeId,
+    stored: &str,
+    channels: &[Configured],
+) -> Result<(String, SendTarget), (String, Outcome)> {
+    match route(identity.as_str(), &slots(channels)) {
+        Route::Send {
+            instance,
+            recipient,
+        } => Ok((
+            instance.to_string(),
+            SendTarget::Recipient(
+                NativeId::new(recipient).expect("route never returns an empty native id"),
+            ),
+        )),
+        Route::Wait { instances } => {
+            let error = format!("channel `{}` isn't running", join(&instances));
+            Err((
+                join(&instances),
+                Outcome::Retry {
+                    error,
+                    retry_after: None,
+                },
+            ))
+        }
+        Route::CannotInitiate { instance } => {
+            let error = "the channel can't start conversations".to_owned();
+            Err((instance.to_string(), Outcome::Drop { error }))
+        }
+        Route::Unowned => {
+            let error = "no configured channel owns the identity".to_owned();
+            Err((stored.to_owned(), Outcome::Drop { error }))
+        }
+    }
 }
 
 /// The routing view of [`Inner::channels`].
