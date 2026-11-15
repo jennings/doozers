@@ -35,16 +35,27 @@
 <label class="tool" id="insecure-field"{% if !form.plain_http() %} hidden{% endif %}><input type="checkbox" name="insecure"{% if form.insecure %} checked{% endif %}> Allow insecure connections</label>
 <span class="label">Authentication</span>
 <div class="field-row">
-<select name="bearer" aria-label="Whether the server needs a bearer token">
-<option value="none"{% if form.bearer == "none" %} selected{% endif %}>No authentication</option>
-<option value="token"{% if form.bearer == "token" %} selected{% endif %}>Bearer token</option>
+<select name="auth" aria-label="How Giles authenticates to the server">
+<option value="none"{% if form.auth == "none" %} selected{% endif %}>No authentication</option>
+<option value="token"{% if form.auth == "token" %} selected{% endif %}>Bearer token</option>
+<option value="oauth"{% if form.auth == "oauth" %} selected{% endif %}>OAuth: each user signs in</option>
 </select>
-<input type="password" name="bearer_token" autocomplete="off" aria-label="Bearer token" placeholder="{% if form.bearer_stored %}stored; leave blank to keep it{% else %}token{% endif %}">
+<input type="password" name="bearer_token" autocomplete="off" aria-label="Bearer token" placeholder="{% if form.bearer_stored %}stored; leave blank to keep it{% else %}bearer token{% endif %}">
 {%- if form.bearer_stored %}
 <input type="hidden" name="bearer_stored" value="1">
 {%- endif %}
 </div>
-<p class="detail">Giles keeps the token encrypted and never shows it again. To change it, type the new one.</p>
+<p class="detail">For a bearer token, Giles keeps the token encrypted and never shows it again. To change it, type the new one.</p>
+<label for="oauth_client_id">OAuth client ID</label>
+<input id="oauth_client_id" name="oauth_client_id" value="{{ form.oauth_client_id }}" autocomplete="off">
+<label for="oauth_client_secret">OAuth client secret</label>
+<input type="password" id="oauth_client_secret" name="oauth_client_secret" autocomplete="off" placeholder="{% if form.oauth_secret_stored %}stored; leave blank to keep it{% else %}none{% endif %}">
+{%- if form.oauth_secret_stored %}
+<input type="hidden" name="oauth_secret_stored" value="1">
+{%- endif %}
+<label for="oauth_scopes">OAuth scopes</label>
+<input id="oauth_scopes" name="oauth_scopes" value="{{ form.oauth_scopes }}" placeholder="repo read:org">
+<p class="detail">For OAuth, each user signs in with their own account on the Connections page. Enter the client ID and secret of the OAuth app you registered with the server, or leave them blank if the server registers clients itself. Scopes are optional, separated by spaces.</p>
 <label for="deadline">Deadline</label>
 <input id="deadline" name="deadline" value="{{ form.deadline }}" placeholder="5m">
 <p class="detail">Optional. How long one tool call may run, such as <code>90s</code>. The default is <code>5m</code>.</p>

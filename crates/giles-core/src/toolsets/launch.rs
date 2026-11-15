@@ -11,14 +11,16 @@ use tokio::process::Command;
 use tracing::{info, warn};
 
 use super::grants::{self, Plan, Protect};
+use super::oauth::{OAuthContext, UserOAuthToolset};
 use crate::config::{
     Auth, InstanceName, Kind, NetworkGrant, Remote, StdioServer, ToolsetInstance, ToolsetTransport,
-    find_program,
+    UserOAuth, find_program,
 };
 use crate::mcp::{HttpServer, McpMedia, McpToolset};
 use crate::paths::DataRoot;
 use crate::plugin_host::{prepare_data_dir, write_private};
 use crate::sandbox::{self, Network, Spec};
+use crate::secrets::SecretProvider;
 
 /// Looks up an environment variable of the operator's environment (for `PATH`).
 type EnvFn = dyn Fn(&str) -> Option<OsString> + Send + Sync;
@@ -29,6 +31,8 @@ type EnvFn = dyn Fn(&str) -> Option<OsString> + Send + Sync;
 pub struct ToolsetLauncher {
     root: DataRoot,
     secret_key_file: PathBuf,
+    /// Each user's OAuth sign-in to a remote server.
+    oauth: Arc<OAuthContext>,
     trampoline: PathBuf,
     sandbox: std::result::Result<(), String>,
     blobs: BlobStore,
@@ -58,13 +62,14 @@ pub struct ResolvedProgram {
 impl ToolsetLauncher {
     /// A launcher for `root` whose sandbox trampoline is `trampoline` (the `giles` binary, run as
     /// `giles sandbox-exec`). No server is granted `secret_key_file`, the secret store's key
-    /// file, or a directory holding it. `sandbox` is the host's sandbox check ([`sandbox::check_host`],
+    /// file, or a directory holding it. Users' OAuth tokens for remote servers are in `secrets`. `sandbox` is the host's sandbox check ([`sandbox::check_host`],
     /// run once by `serve`): an error refuses every sandboxed server with that message. Media
     /// the servers' tools return is stored in `blobs`. Programs are looked up on the process's
     /// `PATH`.
     pub fn new(
         root: DataRoot,
         secret_key_file: PathBuf,
+        secrets: Arc<dyn SecretProvider>,
         trampoline: PathBuf,
         sandbox: std::result::Result<(), String>,
         blobs: BlobStore,
@@ -72,6 +77,7 @@ impl ToolsetLauncher {
         Self {
             root,
             secret_key_file,
+            oauth: Arc::new(OAuthContext::new(secrets)),
             trampoline,
             sandbox,
             blobs,
@@ -137,6 +143,28 @@ impl ToolsetLauncher {
                 connect_remote(&instance.name, remote, self.blobs.clone()).await
             }
         }
+    }
+
+    /// Connects to the remote server `remote` of `instance`, which signs each user in with
+    /// `oauth`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unavailable`] if no user has signed in yet, or none's connection works.
+    pub(crate) async fn connect_oauth(
+        &self,
+        instance: &InstanceName,
+        remote: &Remote,
+        oauth: &UserOAuth,
+    ) -> Result<UserOAuthToolset> {
+        UserOAuthToolset::connect(
+            instance,
+            remote,
+            oauth,
+            self.oauth.clone(),
+            self.blobs.clone(),
+        )
+        .await
     }
 
     /// Launches the stdio server `server` of `instance` as `resolved`.
@@ -270,11 +298,12 @@ async fn connect_remote(
     server.bearer = match &remote.auth {
         None => None,
         Some(Auth::Bearer(token)) => Some(token.clone()),
-        // Config loading refuses OAuth for toolsets.
+        // A toolset that signs users in is connected by `connect_oauth`, and config loading
+        // refuses client credentials for toolsets.
         Some(_) => {
             return Err(invalid(
                 instance,
-                "remote toolsets support only bearer tokens",
+                "connect with each user's sign-in, not with one token",
             ));
         }
     };

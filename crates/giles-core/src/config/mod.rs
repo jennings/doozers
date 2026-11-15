@@ -54,7 +54,7 @@ pub use instances::{
     Auth, ChannelInstance, ChannelRuntime, DEFAULT_DELETE_AFTER, DEFAULT_MAX_BLOB,
     DEFAULT_STOP_AFTER, DEFAULT_TOOL_DEADLINE, EnvironmentInstance, EnvironmentRuntime, Launch,
     OAuthClientCredentials, ProviderInstance, Remote, Sandbox, StdioServer, ToolsetInstance,
-    ToolsetSpec, ToolsetTransport,
+    ToolsetSpec, ToolsetTransport, UserOAuth,
 };
 pub use live::{
     AgentExists, InstanceExists, LiveConfig, NoSuchAgent, NoSuchToolset, RenameToolsetError,

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use giles_types::{Error, Result};
 use rmcp::transport::StreamableHttpClientTransport;
+use rmcp::transport::auth::{AuthClient, AuthorizationManager};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use url::Url;
 
@@ -46,22 +47,43 @@ impl HttpServer {
         &self,
         origin: &Origin,
     ) -> Result<StreamableHttpClientTransport<reqwest::Client>> {
-        if !matches!(self.url.scheme(), "http" | "https") {
-            return Err(Error::InvalidRequest(origin.message(format_args!(
-                "the url must be http or https, not {}",
-                self.url.scheme()
-            ))));
-        }
-        let client = crate::net::tls_client_builder()?
-            .connect_timeout(self.connect_timeout)
-            .build()
-            .map_err(Error::other)?;
+        let client = self.client(origin)?;
         let mut config = StreamableHttpClientTransportConfig::with_uri(self.url.as_str());
         if let Some(bearer) = &self.bearer {
             // `reqwest` sends it with `bearer_auth`, which marks the header sensitive.
             config = config.auth_header(bearer.expose());
         }
         Ok(StreamableHttpClientTransport::with_client(client, config))
+    }
+
+    /// The `rmcp` transport for this server with a user's OAuth sign-in instead of `bearer`: the
+    /// client of [`transport`](Self::transport), with `auth` adding the user's access token to
+    /// every request. `auth` reads the token from its credential store each time, refreshing it
+    /// when it is about to expire or the server rejects it.
+    pub(crate) fn oauth_transport(
+        &self,
+        origin: &Origin,
+        auth: AuthorizationManager,
+    ) -> Result<StreamableHttpClientTransport<AuthClient<reqwest::Client>>> {
+        let client = self.client(origin)?;
+        let config = StreamableHttpClientTransportConfig::with_uri(self.url.as_str());
+        Ok(StreamableHttpClientTransport::with_client(
+            AuthClient::new(client, auth),
+            config,
+        ))
+    }
+
+    fn client(&self, origin: &Origin) -> Result<reqwest::Client> {
+        if !matches!(self.url.scheme(), "http" | "https") {
+            return Err(Error::InvalidRequest(origin.message(format_args!(
+                "the url must be http or https, not {}",
+                self.url.scheme()
+            ))));
+        }
+        crate::net::tls_client_builder()?
+            .connect_timeout(self.connect_timeout)
+            .build()
+            .map_err(Error::other)
     }
 }
 

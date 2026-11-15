@@ -165,8 +165,26 @@ pub struct Remote {
 pub enum Auth {
     /// A static bearer token.
     Bearer(Secret),
-    /// OAuth 2.0 client credentials; remote channels only.
+    /// OAuth 2.0 client credentials; remote channels and environments only.
     OAuth(Box<OAuthClientCredentials>),
+    /// OAuth 2.1 authorization code sign-in, each user with their own account; remote toolsets
+    /// only.
+    UserOAuth(Box<UserOAuth>),
+}
+
+/// `auth = { oauth = { ... } }` of a remote toolset: each user signs in to the server with their
+/// own account (the authorization code grant with PKCE), and the core sends that user's token on
+/// their calls. The server's authorization endpoints are discovered from its URL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct UserOAuth {
+    /// The client id registered with the authorization server. `None` to register a client
+    /// dynamically, if the server allows it.
+    pub client_id: Option<String>,
+    /// The client secret, for a confidential client. Needs `client_id`.
+    pub client_secret: Option<Secret>,
+    /// Scopes to request; the server's choice if empty.
+    pub scopes: Vec<String>,
 }
 
 /// OAuth 2.0 client credentials grant settings.
@@ -577,7 +595,7 @@ impl Ctx<'_> {
                     &address,
                     raw.auth,
                     raw.insecure,
-                    true,
+                    false,
                 )?)
             }
             (Component::Plugin { binary, .. }, None) => {
@@ -645,7 +663,7 @@ impl Ctx<'_> {
                     &address,
                     raw.auth,
                     raw.insecure,
-                    true,
+                    false,
                 )?)
             }
             None => {
@@ -698,14 +716,7 @@ impl Ctx<'_> {
             self.forbid(&path, "idle_stop", raw.idle_stop.is_some(), why)?;
             self.forbid(&path, "sandbox", raw.sandbox.is_some(), why)?;
             self.forbid(&path, "unsandboxed", raw.unsandboxed.is_some(), why)?;
-            ToolsetTransport::Http(self.remote(
-                &path,
-                "url",
-                &url,
-                raw.auth,
-                raw.insecure,
-                false,
-            )?)
+            ToolsetTransport::Http(self.remote(&path, "url", &url, raw.auth, raw.insecure, true)?)
         } else {
             let why = "without `url`";
             self.forbid(&path, "auth", raw.auth.is_some(), why)?;
@@ -798,8 +809,8 @@ impl Ctx<'_> {
         Ok(command)
     }
 
-    /// A remote component's `address` or `url`, and `auth`. `oauth` says whether OAuth client
-    /// credentials are supported (remote channels) or only bearer tokens (remote toolsets).
+    /// A remote component's `address` or `url`, and `auth`. `user_sign_in` says what `oauth` is:
+    /// client credentials (remote plugins) or each user's sign-in (remote toolsets).
     fn remote(
         &self,
         path: &KeyPath,
@@ -807,13 +818,13 @@ impl Ctx<'_> {
         text: &str,
         auth: Option<toml::Value>,
         insecure: Option<bool>,
-        oauth: bool,
+        user_sign_in: bool,
     ) -> Result<Remote, ConfigError> {
         let insecure = insecure.unwrap_or(false);
         let url =
             parse_remote_url(text, insecure).map_err(|reason| self.err(path.key(key), reason))?;
         let auth = auth
-            .map(|auth| self.auth(&path.key("auth"), &auth, oauth))
+            .map(|auth| self.auth(&path.key("auth"), &auth, user_sign_in))
             .transpose()?;
         Ok(Remote {
             url,
@@ -822,17 +833,20 @@ impl Ctx<'_> {
         })
     }
 
-    /// `auth = { bearer = <credential> }` or
-    /// `auth = { oauth = { token_url, client_id, client_secret = <credential>, scopes } }`.
+    /// `auth = { bearer = <credential> }` or `auth = { oauth = { ... } }`: for a remote plugin
+    /// `{ token_url, client_id, client_secret = <credential>, scopes }` (client credentials), for
+    /// a remote toolset (`user_sign_in`) `{ client_id, client_secret = <credential>, scopes }`,
+    /// all optional (each user's sign-in).
     ///
     /// Exactly one of `bearer` and `oauth` must be there: without a method, ignoring the table
     /// would silently leave the remote unauthenticated. Other keys are unknown and ignored.
-    fn auth(&self, path: &KeyPath, auth: &toml::Value, oauth: bool) -> Result<Auth, ConfigError> {
-        let shape = if oauth {
-            "must be { bearer = ... } or { oauth = { ... } }"
-        } else {
-            "must be { bearer = ... }"
-        };
+    fn auth(
+        &self,
+        path: &KeyPath,
+        auth: &toml::Value,
+        user_sign_in: bool,
+    ) -> Result<Auth, ConfigError> {
+        let shape = "must be { bearer = ... } or { oauth = { ... } }";
         let table = auth
             .as_table()
             .ok_or_else(|| self.err(path.clone(), shape))?;
@@ -856,8 +870,62 @@ impl Ctx<'_> {
         let at = path.key(method);
         match method.as_str() {
             "bearer" => Ok(Auth::Bearer(self.resolver.value(self.file, &at, value)?)),
-            "oauth" if oauth => Ok(Auth::OAuth(Box::new(self.oauth(&at, value)?))),
-            _ => Err(self.err(at, "remote toolsets support only `bearer` auth")),
+            _ if user_sign_in => Ok(Auth::UserOAuth(Box::new(self.user_oauth(&at, value)?))),
+            _ => Ok(Auth::OAuth(Box::new(self.oauth(&at, value)?))),
+        }
+    }
+
+    /// A remote toolset's `oauth = { client_id, client_secret, scopes }`, each optional.
+    fn user_oauth(&self, path: &KeyPath, value: &toml::Value) -> Result<UserOAuth, ConfigError> {
+        let table = value
+            .as_table()
+            .ok_or_else(|| self.err(path.clone(), "must be a table"))?;
+        self.unknown.borrow_mut().extend(
+            table
+                .keys()
+                .filter(|key| !matches!(key.as_str(), "client_id" | "client_secret" | "scopes"))
+                .map(|key| path.key(key)),
+        );
+        let client_id = match table.get("client_id") {
+            None => None,
+            Some(toml::Value::String(id)) if !id.is_empty() => Some(id.clone()),
+            Some(_) => return Err(self.err(path.key("client_id"), "must be a non-empty string")),
+        };
+        let client_secret = table
+            .get("client_secret")
+            .map(|value| {
+                self.resolver
+                    .value(self.file, &path.key("client_secret"), value)
+            })
+            .transpose()?;
+        if client_secret.is_some() && client_id.is_none() {
+            return Err(self.err(
+                path.key("client_secret"),
+                "needs `client_id`: a client secret belongs to a registered client",
+            ));
+        }
+        let scopes = self.scopes(path, table)?;
+        Ok(UserOAuth {
+            client_id,
+            client_secret,
+            scopes,
+        })
+    }
+
+    /// `scopes`, an array of strings; empty if absent.
+    fn scopes(&self, path: &KeyPath, table: &toml::Table) -> Result<Vec<String>, ConfigError> {
+        match table.get("scopes") {
+            None => Ok(Vec::new()),
+            Some(toml::Value::Array(items)) => items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    item.as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| self.err(path.key("scopes").index(i), "must be a string"))
+                })
+                .collect(),
+            Some(_) => Err(self.err(path.key("scopes"), "must be an array of strings")),
         }
     }
 
@@ -898,19 +966,7 @@ impl Ctx<'_> {
                 .value(self.file, &path.key("client_secret"), value)?,
             None => return Err(self.err(path.clone(), "missing field `client_secret`")),
         };
-        let scopes = match table.get("scopes") {
-            None => Vec::new(),
-            Some(toml::Value::Array(items)) => items
-                .iter()
-                .enumerate()
-                .map(|(i, item)| {
-                    item.as_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| self.err(path.key("scopes").index(i), "must be a string"))
-                })
-                .collect::<Result<_, _>>()?,
-            Some(_) => return Err(self.err(path.key("scopes"), "must be an array of strings")),
-        };
+        let scopes = self.scopes(path, table)?;
         Ok(OAuthClientCredentials {
             token_url,
             client_id,

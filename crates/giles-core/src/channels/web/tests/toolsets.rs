@@ -126,19 +126,6 @@ impl Env {
             crate::scheduler::JobChanges::default(),
             self.shutdown.clone(),
         );
-        let host = Arc::new(
-            ToolsetHost::start(
-                ToolsetLauncher::new(
-                    root.clone(),
-                    root.secret_key_file(),
-                    PathBuf::from("/nonexistent/giles"),
-                    Err("there is no sandbox in tests".to_owned()),
-                    self.blobs.clone(),
-                ),
-                &registry,
-            )
-            .await,
-        );
         let secrets = crate::secrets::LocalSecrets::open(
             self.store.clone(),
             &crate::secrets::KeyFile::new(root, &root.secret_key_file()),
@@ -147,6 +134,20 @@ impl Env {
         .await
         .unwrap();
         let secrets: Arc<dyn crate::secrets::SecretProvider> = Arc::new(secrets);
+        let host = Arc::new(
+            ToolsetHost::start(
+                ToolsetLauncher::new(
+                    root.clone(),
+                    root.secret_key_file(),
+                    secrets.clone(),
+                    PathBuf::from("/nonexistent/giles"),
+                    Err("there is no sandbox in tests".to_owned()),
+                    self.blobs.clone(),
+                ),
+                &registry,
+            )
+            .await,
+        );
         let manager = ToolsetManager::start(ToolsetManagerOptions {
             store: self.store.clone(),
             root: root.clone(),
@@ -170,6 +171,7 @@ impl Env {
 impl Toolsets {
     fn router(&self, user: Option<WebUser>) -> axum::Router {
         let builder = self.app.install(RouterBuilder::new());
+        let builder = self.app.install_connections(builder, self.manager.clone());
         let app = self
             .app
             .install_toolsets(
@@ -338,6 +340,7 @@ async fn every_change_needs_the_csrf_token() {
         "/admin/mcp-servers/box/remove",
         "/admin/mcp-servers/box/rename",
         "/admin/mcp-servers/box/restart",
+        "/connections/box/sign-out",
     ] {
         for (headers, body) in [
             // No token, a wrong token in the form, and a wrong one in the header.
@@ -495,7 +498,7 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
                 ("name", "box"),
                 ("url", "http://mcp.example.com/mcp"),
                 ("insecure", "on"),
-                ("bearer", "token"),
+                ("auth", "token"),
                 ("bearer_token", "s3cr3t-value"),
                 ("deadline", "90s"),
                 ("parallel", "on"),
@@ -533,7 +536,7 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
                 ("name", "remote"),
                 ("url", "https://mcp.example.com/mcp"),
                 ("insecure", "on"),
-                ("bearer", "none"),
+                ("auth", "none"),
                 ("bearer_token", "ignored"),
             ],
         )
@@ -583,7 +586,7 @@ async fn an_invalid_form_keeps_its_values_and_names_the_key() {
             &[
                 ("name", "box"),
                 ("url", "https://mcp.example.com/mcp"),
-                ("bearer", "token"),
+                ("auth", "token"),
                 ("bearer_token", ""),
                 ("deadline", "90s"),
                 ("parallel", "on"),
@@ -614,7 +617,7 @@ async fn an_invalid_form_keeps_its_values_and_names_the_key() {
         form.retain(|(key, _)| *key != field);
         form.push((field, value));
         // A token typed into a form that is refused isn't shown again.
-        form.extend([("bearer", "token"), ("bearer_token", "typed-token-31")]);
+        form.extend([("auth", "token"), ("bearer_token", "typed-token-31")]);
         let (status, html, _) = t.post("/admin/mcp-servers", &form).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{field}");
         assert!(html.contains(error), "{error}\n{html}");
@@ -862,7 +865,7 @@ async fn values_are_escaped() {
             &[
                 ("name", XSS),
                 ("url", XSS),
-                ("bearer", "token"),
+                ("auth", "token"),
                 ("bearer_token", XSS),
                 ("deadline", XSS),
                 ("skills", XSS),
@@ -930,7 +933,7 @@ async fn a_token_never_appears_in_the_html() {
             &[
                 ("name", "remote"),
                 ("url", "https://mcp.example.com/mcp"),
-                ("bearer", "token"),
+                ("auth", "token"),
                 ("bearer_token", "tok-9f8e7d"),
             ],
         )
@@ -971,7 +974,7 @@ async fn a_token_never_appears_in_the_html() {
                 &[
                     ("updated_at", updated.as_str()),
                     ("url", "https://mcp.example.com/plain"),
-                    ("bearer", "token"),
+                    ("auth", "token"),
                     ("bearer_stored", "1"),
                     ("bearer_token", typed),
                 ],
@@ -1125,7 +1128,7 @@ async fn a_stored_toolset_that_failed_shows_why_and_can_be_fixed() {
             &[
                 ("updated_at", updated.as_str()),
                 ("url", "https://mcp.example.com/mcp"),
-                ("bearer", "token"),
+                ("auth", "token"),
                 ("bearer_token", "fixed"),
             ],
         )
@@ -1389,4 +1392,74 @@ async fn a_toolset_of_giles_toml_cannot_be_renamed() {
             .keys()
             .any(|n| n.as_str() == "files")
     );
+}
+
+#[tokio::test]
+async fn the_connections_page_signs_the_user_in_and_out() {
+    let env = env().await;
+    let t = env.toolsets("").await;
+    t.manager
+        .add(
+            "notes",
+            &spec(r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "oauth": { "client_id": "giles" } } }"#),
+        )
+        .await
+        .unwrap();
+    t.manager.add("box", &spec(BOX)).await.unwrap();
+
+    // Only the server that signs users in is listed, with a link that starts the sign-in.
+    let (status, html) = t.get("/connections").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        html.contains(&format!(
+            r#"<a class="button" href="/connections/notes/sign-in?csrf={CSRF}">Sign in</a>"#
+        )),
+        "{html}"
+    );
+    // Without the token, or with another, another site can't start a sign-in.
+    for path in [
+        "/connections/notes/sign-in",
+        "/connections/notes/sign-in?csrf=wrong",
+    ] {
+        let response = call(t.router(Some(owner())), Method::GET, path, &[], None).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+    assert!(!html.contains("box"), "{html}");
+    // Its page shows the callback to register with the server.
+    let (_, html) = t.get("/admin/mcp-servers/notes").await;
+    assert!(
+        html.contains("/connections/notes/callback</code>"),
+        "{html}"
+    );
+    assert!(html.contains("OAuth: each user signs in"), "{html}");
+
+    // Signed in: the page says so, and offers a sign-out that needs the CSRF token.
+    let path = crate::secrets::SecretPath::new("users/owner/toolsets/notes/oauth-token").unwrap();
+    t.secrets
+        .put(&path, &crate::config::Secret::new("{}"), None)
+        .await
+        .unwrap();
+    let (_, html) = t.get("/connections").await;
+    assert!(html.contains("signed in"), "{html}");
+    assert!(
+        html.contains(r#"action="/connections/notes/sign-out""#),
+        "{html}"
+    );
+    let (status, _, location) = t.post("/connections/notes/sign-out", &[]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location.as_deref(), Some("/connections?signed_out=notes"));
+    assert!(t.secrets.get(&path).await.unwrap().is_none());
+
+    // A callback with the server's refusal, or with a state no sign-in has, signs no one in.
+    let (status, html) = t
+        .get("/connections/notes/callback?error=access_denied")
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(html.contains("access_denied"), "{html}");
+    let (status, html) = t
+        .get("/connections/notes/callback?code=c&state=made-up")
+        .await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(html.contains("expired"), "{html}");
+    assert!(t.secrets.get(&path).await.unwrap().is_none());
 }

@@ -6,6 +6,12 @@
 //! and to no other secret, so a web form can't bind a secret it didn't set. A spec given to the
 //! manager may hold a credential as a literal string instead: [`take_literals`] moves it out, to
 //! be stored at the toolset's own path, and leaves the reference in its place.
+//!
+//! A toolset with `auth.oauth` also has each user's tokens, at
+//! `users/<user>/toolsets/<name>/oauth-token`: secrets of the user's own space, which the core
+//! writes when the user signs in and when a token is refreshed. No spec refers to them.
+
+use giles_types::UserId;
 
 use crate::config::{KeyPath, Secret, ToolsetError, ToolsetSpec};
 use crate::secrets::{SecretError, SecretPath, SecretProvider};
@@ -13,8 +19,17 @@ use crate::secrets::{SecretError, SecretPath, SecretProvider};
 /// The leaf of a toolset's static bearer token.
 pub(crate) const BEARER_TOKEN: &str = "bearer-token";
 
+/// The leaf of a toolset's OAuth client secret.
+pub(crate) const OAUTH_CLIENT_SECRET: &str = "oauth-client-secret";
+
+/// The leaf of a user's OAuth tokens for a toolset.
+pub(crate) const OAUTH_TOKEN: &str = "oauth-token";
+
 /// Where in `auth` a credential sits, and the leaf of the path it's stored at.
-const SLOTS: &[(&[&str], &str)] = &[(&["bearer"], BEARER_TOKEN)];
+const SLOTS: &[(&[&str], &str)] = &[
+    (&["bearer"], BEARER_TOKEN),
+    (&["oauth", "client_secret"], OAUTH_CLIENT_SECRET),
+];
 
 /// The first segment of every toolset's own secrets.
 const TOOLSETS: &str = "toolsets";
@@ -36,6 +51,41 @@ pub(crate) fn toolset_path(name: &str, leaf: &str) -> Result<SecretPath, String>
              secret; rename the toolset"
         )
     })
+}
+
+/// `users/<user>/toolsets/<name>/oauth-token`: the user's OAuth tokens for the toolset `name`.
+///
+/// # Errors
+///
+/// The reason, if the user id or the toolset name can't be a path segment.
+pub(crate) fn user_token_path(user: &UserId, name: &str) -> Result<SecretPath, String> {
+    SecretPath::new(format!(
+        "users/{}/{TOOLSETS}/{}/{OAUTH_TOKEN}",
+        user.as_str(),
+        segment(name)
+    ))
+    .map_err(|_| {
+        format!(
+            "the user `{user}` can't keep a token for the toolset `{name}`: a user id or toolset \
+             name must be lower case letters, digits, `-`, `_`, and `.` to name a secret"
+        )
+    })
+}
+
+/// Whether `path` is a user's OAuth tokens for a toolset, and whose.
+pub(crate) fn token_owner(path: &SecretPath) -> Option<UserId> {
+    match path.as_str().split('/').collect::<Vec<_>>()[..] {
+        ["users", user, TOOLSETS, _, OAUTH_TOKEN] => UserId::new(user).ok(),
+        _ => None,
+    }
+}
+
+/// Whether `spec` signs each user in (`auth.oauth`).
+pub(crate) fn signs_users_in(spec: &ToolsetSpec) -> bool {
+    spec.auth
+        .as_ref()
+        .and_then(toml::Value::as_table)
+        .is_some_and(|auth| auth.contains_key("oauth"))
 }
 
 /// The key of the slot `keys` in a spec, under `auth`.
@@ -253,6 +303,21 @@ mod tests {
             assert_eq!(err.key.to_string(), "auth.bearer", "{bad}");
         }
         assert!(take_literals("-x", &mut spec(r#"{ "bearer": "t" }"#)).is_err());
+    }
+
+    #[test]
+    fn an_oauth_client_secret_is_a_credential_too() {
+        let mut spec = spec(r#"{ "oauth": { "client_id": "giles", "client_secret": "cs-1" } }"#);
+        let taken = take_literals("Files", &mut spec).unwrap();
+        assert_eq!(taken[0].0.as_str(), "toolsets/files/oauth-client-secret");
+        assert_eq!(references(&spec), ["toolsets/files/oauth-client-secret"]);
+        assert!(signs_users_in(&spec));
+        let user = UserId::new("owner").unwrap();
+        let path = user_token_path(&user, "Files").unwrap();
+        assert_eq!(path.as_str(), "users/owner/toolsets/files/oauth-token");
+        assert_eq!(token_owner(&path), Some(user));
+        assert_eq!(token_owner(&taken[0].0), None);
+        assert!(user_token_path(&UserId::new("Bob").unwrap(), "files").is_err());
     }
 
     #[test]

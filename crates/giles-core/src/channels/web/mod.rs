@@ -12,6 +12,7 @@ mod admin;
 mod agents;
 mod auth;
 mod config;
+mod connections;
 mod hub;
 mod jobs;
 mod links;
@@ -320,6 +321,11 @@ impl WebChannel {
             url: format!("{}/login/{token}", lock(&self.link_base)),
             expires_at,
         })
+    }
+
+    /// The origin absolute links to the web UI start with: `public_url`, or the listener's.
+    pub(crate) fn link_base(&self) -> String {
+        lock(&self.link_base).clone()
     }
 
     /// Whether `web:<user>` is one of the owner's identities: a cookie login's sender.

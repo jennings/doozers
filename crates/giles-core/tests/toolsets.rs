@@ -32,6 +32,8 @@ use futures::StreamExt as _;
 use giles_core::config::{Builtins, Config, Kind, LoadOptions};
 use giles_core::paths::DataRoot;
 use giles_core::sandbox::{self, SandboxError, Spec};
+use giles_core::secrets::{KeyFile, LocalSecrets};
+use giles_core::sessions::SystemClock;
 use giles_core::toolsets::ToolsetLauncher;
 use giles_store::{BlobMeta, BlobStore, Store};
 use giles_types::{
@@ -191,12 +193,21 @@ impl Home {
         BlobStore::open(self.root.blobs_dir(), db).await.unwrap()
     }
 
-    fn launcher(&self, sandbox: Result<(), String>, blobs: BlobStore) -> ToolsetLauncher {
+    async fn launcher(&self, sandbox: Result<(), String>, blobs: BlobStore) -> ToolsetLauncher {
         let path = self.path();
         let exe = std::env::current_exe().unwrap();
+        let db = Store::open(self.root.database_file()).await.unwrap();
+        let secrets = LocalSecrets::open(
+            db,
+            &KeyFile::new(&self.root, &self.root.secret_key_file()),
+            Arc::new(SystemClock),
+        )
+        .await
+        .unwrap();
         ToolsetLauncher::new(
             self.root.clone(),
             self.root.secret_key_file(),
+            Arc::new(secrets),
             exe,
             sandbox,
             blobs,
@@ -347,7 +358,7 @@ async fn sandboxed_stdio_server(log: &Log) {
     let config = home.config();
     let host = sandbox::check_host().map(|_| ()).map_err(|e| e.to_string());
     let blobs = home.blobs().await;
-    let launcher = home.launcher(host.clone(), blobs.clone());
+    let launcher = home.launcher(host.clone(), blobs.clone()).await;
 
     if let Err(reason) = host {
         // No sandbox on this host (a Linux kernel without Landlock): nothing runs.
@@ -428,7 +439,9 @@ async fn unsandboxed_stdio_server(log: &Log) {
     let config = home.config();
     // Even a host without a sandbox runs it.
     let blobs = home.blobs().await;
-    let launcher = home.launcher(Err("no sandbox here".to_owned()), blobs.clone());
+    let launcher = home
+        .launcher(Err("no sandbox here".to_owned()), blobs.clone())
+        .await;
     let toolset = launcher.connect(&config.toolsets["loose"]).await.unwrap();
     assert_eq!(tool_names(&toolset).await, TOOLS);
     media_reaches_the_server(&home, "loose", &toolset, &blobs).await;
@@ -516,7 +529,7 @@ async fn remote_server_with_a_bearer_token(_log: &Log) {
         ],
     );
     let no_sandbox = Err("remote servers need no sandbox".to_owned());
-    let launcher = home.launcher(no_sandbox, home.blobs().await);
+    let launcher = home.launcher(no_sandbox, home.blobs().await).await;
     let toolset = launcher.connect(&config.toolsets["remote"]).await.unwrap();
     assert_eq!(tool_names(&toolset).await, TOOLS);
     match launcher.connect(&config.toolsets["wrong"]).await {

@@ -192,6 +192,12 @@ impl super::Launcher {
                         LaunchError::Auth("the bearer token is not a valid header value".into())
                     })?
                 }
+                // Config loading allows it only for remote toolsets.
+                Some(Auth::UserOAuth(_)) => {
+                    return Err(LaunchError::Auth(
+                        "a remote plugin can't use each user's OAuth sign-in".into(),
+                    ));
+                }
                 Some(Auth::OAuth(credentials)) => {
                     secrets.push(credentials.client_secret.clone());
                     let scrubbed = |error: String| {

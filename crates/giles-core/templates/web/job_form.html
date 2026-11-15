@@ -6,7 +6,7 @@
 {%- if admin %}
 {% include "web/admin_nav.html" %}
 {%- else %}
-<nav class="admin-nav"><a href="/">Chats</a> <a href="/jobs">Jobs</a></nav>
+<nav class="admin-nav"><a href="/">Chats</a> <a href="/jobs">Jobs</a> <a href="/connections">Connections</a></nav>
 {%- endif %}
 <h1>{{ title }}</h1>
 {%- if let Some(error) = error %}

@@ -16,7 +16,7 @@ use super::cache::{ToolCache, file_digest};
 use super::launch::ToolsetLauncher;
 use super::lifecycle::{Connection, Connector, Control, Managed, Report};
 use crate::admin::{PluginControl, PluginRuntime};
-use crate::config::{InstanceName, Kind, ToolsetInstance, ToolsetTransport};
+use crate::config::{Auth, InstanceName, Kind, ToolsetInstance, ToolsetTransport};
 use crate::registry::{Registry, RegistryError};
 
 /// The configured toolsets of a running core (PLAN section 7.5): each is registered at boot
@@ -356,11 +356,33 @@ impl Connector for LaunchConnector {
                     .await?;
                 (toolset, source, Some(resolved.program))
             }
-            ToolsetTransport::Http(remote) => (
-                self.launcher.connect(instance).await?,
-                remote.url.to_string(),
-                None,
-            ),
+            ToolsetTransport::Http(remote) => {
+                if let Some(Auth::UserOAuth(oauth)) = &remote.auth {
+                    let toolset = self
+                        .launcher
+                        .connect_oauth(&instance.name, remote, oauth)
+                        .await?;
+                    let server_version = toolset.server_version();
+                    let toolset = Arc::new(toolset);
+                    let watched = toolset.clone();
+                    return Ok(Connection {
+                        toolset,
+                        source: remote.url.to_string(),
+                        server_version,
+                        binary: None,
+                        closed: async move {
+                            watched.closed().await;
+                            None
+                        }
+                        .boxed(),
+                    });
+                }
+                (
+                    self.launcher.connect(instance).await?,
+                    remote.url.to_string(),
+                    None,
+                )
+            }
         };
         let server_version = toolset.server_version();
         let toolset = Arc::new(toolset);
