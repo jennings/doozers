@@ -329,7 +329,9 @@ async fn creating_an_agent_writes_files_that_load_and_makes_it_usable_at_once() 
 
     let soul = "You are Butler.\nBe brief.";
     let fields = format!(
-        "&name=The%20Butler&tools=memory_add%2C+load_skill&ask=memory_add&timezone=Europe%2FLondon&soul={}",
+        "&name=The%20Butler&tools=memory_add%2C+load_skill&ask=memory_add&timezone=Europe%2FLondon\
+         &compaction_model=fake%2Flisted-b&max_iterations=40&max_iterations_jobs=&busy_mode=queue\
+         &memory_cap=3000&approval_timeout=2m&idle_reset=1d&soul={}",
         soul.replace(' ', "+").replace('\n', "%0A")
     );
     let (status, _, location) = env
@@ -369,6 +371,21 @@ async fn creating_an_agent_writes_files_that_load_and_makes_it_usable_at_once() 
         butler.timezone.as_ref().unwrap().iana_name(),
         Some("Europe/London")
     );
+    assert_eq!(
+        butler.compaction_model.as_ref().unwrap().to_string(),
+        "fake/listed-b"
+    );
+    assert_eq!(butler.max_iterations, Some(40));
+    assert_eq!(
+        butler.max_iterations_jobs,
+        crate::config::DEFAULT_MAX_ITERATIONS_JOBS
+    );
+    assert_eq!(butler.busy_mode, crate::config::BusyMode::Queue);
+    assert_eq!(butler.memory_cap, 3000);
+    assert_eq!(butler.approval_timeout, Duration::from_secs(2 * 60));
+    assert_eq!(butler.idle_reset, Some(Duration::from_secs(24 * 60 * 60)));
+    let toml = std::fs::read_to_string(dir.join("agent.toml")).unwrap();
+    assert!(!toml.contains("max_iterations_jobs"), "{toml}");
 
     // Running: listed, with a page, and a chat can be started with it.
     assert!(env.registry.config().agents.contains_key(&butler.id));
@@ -626,6 +643,20 @@ async fn an_invalid_form_is_shown_again_and_writes_nothing() {
             "&timezone=Mars%2FOlympus",
             StatusCode::BAD_REQUEST,
             "timezone",
+        ),
+        (
+            "butler",
+            "fake/m",
+            "&max_iterations=12.5",
+            StatusCode::BAD_REQUEST,
+            "max_iterations: must be a number of at least 1",
+        ),
+        (
+            "butler",
+            "fake/m",
+            "&idle_reset=forever",
+            StatusCode::BAD_REQUEST,
+            "idle_reset: invalid duration",
         ),
         (
             "butler",

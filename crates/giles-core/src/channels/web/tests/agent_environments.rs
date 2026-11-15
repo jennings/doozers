@@ -1,7 +1,7 @@
 //! Router-level tests of the Environments field of the agent forms, over a configuration with two
 //! environments, `box` (with a description) and `far`.
 
-use super::agent_edit::{JEEVES, jeeves_fields, version_of};
+use super::agent_edit::{JEEVES, JEEVES_ADVANCED, jeeves_fields, version_of};
 use super::agents::guest;
 use super::*;
 
@@ -202,7 +202,7 @@ async fn a_hand_written_order_survives_a_save_and_new_names_follow_it() {
             &version_of(&html),
             "Jeeves",
             "fake%2Ftest-model",
-            &format!("&tool%3Abash=on{boxes}&soul=You+are+Jeeves.%0ABe+brief.%0A"),
+            &format!("&tool%3Abash=on{boxes}{JEEVES_ADVANCED}&soul=You+are+Jeeves.%0ABe+brief.%0A"),
         )
     };
     let (status, _, _) = env

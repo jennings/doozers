@@ -576,6 +576,16 @@ than the admin service: there are no agent RPCs yet (PLAN section 8.7).
 - `CreateForm` (`agents.rs`) starts `soul` as `agents::DEFAULT_SOUL`, so the first `GET` shows it
   and a post with no `soul` field gets it; a `soul` that was posted empty stays empty, also when the
   form is shown again after an error.
+- **The "Advanced" section.** Both forms share `admin_agent_fields.html`, which ends in a
+  `<details>` holding `compaction_model`, `max_iterations`, `max_iterations_jobs`, `busy_mode`,
+  `memory_cap`, `approval_timeout`, and `idle_reset` (`agents::AdvancedSettings`, posted as
+  `AdvancedForm`, flattened into `CreateForm` and `EditForm`). It is rendered `open` when any of its
+  fields has a value, which includes every post refused for one of them (an empty field is never
+  invalid). An empty field is an unset key; `busy_mode` is a `<select>` whose first option,
+  "Default", posts empty. The handlers parse the three number fields as `u32` before calling the
+  manager (anything else is a 400 with `<key>: must be a number of at least 1`); the rest, and `0`,
+  are checked by `Config::validate_agent` like any other key, so their messages are the startup
+  ones.
 - `AgentManager::create` (one at a time, under a lock): builds `agent.toml` with the TOML serializer
   (`agents::agent_toml`, unset values left out), validates it with `Config::validate_agent` (the
   startup checks), refuses `RESERVED_AGENT_IDS` (`new`, the form's address) and an id taken ignoring
@@ -601,25 +611,25 @@ the path must be a configured agent, exactly (anything else, `..` included, is a
 no id field.
 
 - **What the form is rendered from.** The files on disk, not the running configuration: `agent.toml`
-  is read with `toml_edit` for `name`, `models`, `tools`, `ask`, `environments`, `timezone` (a key
-  that isn't a string or list of strings shows empty), and `SOUL.md` (CRLF shown as LF).
-  `AgentForm::version` is the SHA-256 of both files (name, whether it exists, length, and bytes of
-  each), carried in a hidden field. `read_text` refuses what the form must not write through: a
-  symbolic link (the rename would replace the link), anything but a regular file, more than
-  `MAX_EDIT_FILE_BYTES` (1 MiB), text that isn't UTF-8, and TOML that doesn't parse
-  (`EditError::Unsupported`, a 409 page on `GET`).
+  is read with `toml_edit` for `name`, `models`, `tools`, `ask`, `environments`, `timezone`, and the
+  "Advanced" keys (a key that isn't a string, list of strings, or for the number keys an integer
+  that fits a `u32`, shows empty), and `SOUL.md` (CRLF shown as LF). `AgentForm::version` is the
+  SHA-256 of both files (name, whether it exists, length, and bytes of each), carried in a hidden
+  field. `read_text` refuses what the form must not write through: a symbolic link (the rename would
+  replace the link), anything but a regular file, more than `MAX_EDIT_FILE_BYTES` (1 MiB), text that
+  isn't UTF-8, and TOML that doesn't parse (`EditError::Unsupported`, a 409 page on `GET`).
 - **`edited_toml`.** A pure function from the text and the edit to the new text, with `toml_edit`. A
   managed key whose value already equals the field is not touched (so an unchanged form gives the
   file back byte for byte, and the text is returned as is rather than re-serialized when nothing
   changed); a changed one gets a new value that copies the decor of the old one (the space and the
   comment after it), keeping its place; a missing one is appended to the top-level table
-  (`toml_edit` prints key-values before sub-tables, so never inside `[[jobs]]`); an empty one
-  (`name`, `tools`, `ask`, `environments`, `timezone`) is removed. `environments` is compared as a
-  set (`set_members`): the names that stay keep the file's order and new ones follow them, so a
-  hand-written order survives a save that changes nothing. `models` is always written, even empty,
-  so validation says "at least one model". Removing a key takes its leading comment with it, except
-  at the first key of the file (a header: kept) and up to the last blank line above the key
-  (standalone notes: kept); what is kept moves to the next key's decor.
+  (`toml_edit` prints key-values before sub-tables, so never inside `[[jobs]]`); an empty one (every
+  key but `models`) is removed. The number keys are written as TOML integers. `environments` is
+  compared as a set (`set_members`): the names that stay keep the file's order and new ones follow
+  them, so a hand-written order survives a save that changes nothing. `models` is always written,
+  even empty, so validation says "at least one model". Removing a key takes its leading comment with
+  it, except at the first key of the file (a header: kept) and up to the last blank line above the
+  key (standalone notes: kept); what is kept moves to the next key's decor.
 - **Line ends.** `toml_edit` reads every `\r\n` as `\n`, so `edited_toml` edits a file with CRLF
   line ends as LF and writes the result back with CRLF; the rest of the file keeps its line ends.
 - **`edit`** (under the manager's one lock, shared with creation and removal): reads the files and

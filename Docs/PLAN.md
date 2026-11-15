@@ -1246,25 +1246,26 @@ The web UI's agent pages (list an agent's configuration and files, create, edit,
 agent) are owner-only admin pages, but have no RPCs yet: they call the core's agent management
 in-process. A created agent is written as `agent.toml` and `SOUL.md`, validated like startup config,
 and added to the running configuration without a reload; nothing else changes until a restart. An
-edit changes only the keys the form manages (`name`, `models`, `tools`, `ask`, `timezone`) and
-`SOUL.md`, in place: everything else in `agent.toml` (comments, jobs, limits, any other key) stays
-as the owner wrote it. The result is validated like startup config before anything is replaced, both
-files are replaced or neither, and the edit is refused if the files changed on disk since the form
-was opened. The edited agent replaces the old one in the running configuration: chats started
-afterwards use it, and a session already running keeps the tools and `system` it started with
-(section 6.3). Removing an agent moves `agents/<agent>/` to `trash/agents/<agent>-<UTC time>/`
-(nothing is deleted, and the trash is neither read nor backed up), takes the agent out of the
-running configuration, stops its config jobs, and deletes its runtime jobs. It is refused while a
-stored route names the agent (the page lists the routes) or while the agent is working (a chat turn
-running or messages queued, or a job run in progress); the agent is taken out of the running
-configuration before its files move and checked again, and put back if work appears or the move
-fails. Its sessions, messages, and usage stay in the database, inert; creating an agent with the
-same id again reattaches them. Web chats can be started with a chosen agent, which routes them to it
-ahead of the stored routes. Who sees which agent file is one per-viewer check: the owner sees all of
-them, and `memory.db` is listed by size, not contents. Memories have their own page per agent
-(`/admin/agents/<agent>/memory`), under the visibility rules of section 6.7: each signed-in user
-sees and edits their own private memories and the shared ones (writing shared ones only as the
-owner), and the owner also sees and edits each group conversation's memories there.
+edit changes only the keys the form manages (`name`, `models`, `tools`, `ask`, `environments`,
+`timezone`, and the limits and policies of its "Advanced" section) and `SOUL.md`, in place:
+everything else in `agent.toml` (comments, jobs, any other key) stays as the owner wrote it. The
+result is validated like startup config before anything is replaced, both files are replaced or
+neither, and the edit is refused if the files changed on disk since the form was opened. The edited
+agent replaces the old one in the running configuration: chats started afterwards use it, and a
+session already running keeps the tools and `system` it started with (section 6.3). Removing an
+agent moves `agents/<agent>/` to `trash/agents/<agent>-<UTC time>/` (nothing is deleted, and the
+trash is neither read nor backed up), takes the agent out of the running configuration, stops its
+config jobs, and deletes its runtime jobs. It is refused while a stored route names the agent (the
+page lists the routes) or while the agent is working (a chat turn running or messages queued, or a
+job run in progress); the agent is taken out of the running configuration before its files move and
+checked again, and put back if work appears or the move fails. Its sessions, messages, and usage
+stay in the database, inert; creating an agent with the same id again reattaches them. Web chats can
+be started with a chosen agent, which routes them to it ahead of the stored routes. Who sees which
+agent file is one per-viewer check: the owner sees all of them, and `memory.db` is listed by size,
+not contents. Memories have their own page per agent (`/admin/agents/<agent>/memory`), under the
+visibility rules of section 6.7: each signed-in user sees and edits their own private memories and
+the shared ones (writing shared ones only as the owner), and the owner also sees and edits each
+group conversation's memories there.
 
 The route pages (list, add, edit, remove, and reorder the routes of section 6.1) are owner-only
 admin pages too, also without RPCs: they call the core's route management in-process, and a change

@@ -26,6 +26,10 @@ cron = "0 8 * * *"
 prompt_file = "prompts/morning.md"
 "#;
 
+/// The "Advanced" fields of `jeeves`' form as a browser posts them back for [`JEEVES`].
+pub(super) const JEEVES_ADVANCED: &str = "&compaction_model=fake%2Fsummarizer&max_iterations=50&max_iterations_jobs=&busy_mode=queue\
+     &memory_cap=4000&approval_timeout=&idle_reset=";
+
 impl Env {
     pub(super) fn jeeves_dir(&self) -> std::path::PathBuf {
         self.root().agents_dir().join("jeeves")
@@ -260,7 +264,7 @@ async fn an_edit_changes_only_what_the_form_manages_and_applies_to_new_chats_at_
         "Jeeves%20II",
         "fake%2Ftest-model%2C+fake%2Fother",
         &format!(
-            "&tool%3Amemory_add=on&tool%3Amemory_search=on&ask=memory_search&timezone=Europe%2FLondon&soul={}",
+            "&tool%3Amemory_add=on&tool%3Amemory_search=on&ask=memory_search&timezone=Europe%2FLondon{JEEVES_ADVANCED}&soul={}",
             soul.replace(' ', "+").replace("\r\n", "%0D%0A")
         ),
     );
@@ -361,18 +365,27 @@ async fn emptied_optional_fields_remove_their_keys() {
                 &version,
                 "",
                 "fake%2Ftest-model",
-                "&tools=&ask=&timezone=&soul=",
+                "&tools=&ask=&timezone=&compaction_model=&max_iterations=&busy_mode=&memory_cap=\
+                 &soul=",
             ),
         )
         .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     let toml = env.read_jeeves("agent.toml");
     let parsed: toml::Table = toml::from_str(&toml).unwrap();
-    for key in ["name", "tools", "ask", "timezone"] {
+    for key in [
+        "name",
+        "tools",
+        "ask",
+        "timezone",
+        "compaction_model",
+        "max_iterations",
+        "busy_mode",
+        "memory_cap",
+    ] {
         assert!(!parsed.contains_key(key), "{key} in\n{toml}");
     }
     assert_eq!(parsed["models"][0].as_str(), Some("fake/test-model"));
-    assert_eq!(parsed["busy_mode"].as_str(), Some("queue"));
     assert_eq!(parsed["jobs"].as_array().unwrap().len(), 1);
     assert!(
         toml.contains("# Jeeves, the household agent."),
@@ -381,6 +394,77 @@ async fn emptied_optional_fields_remove_their_keys() {
     assert_eq!(env.read_jeeves("SOUL.md"), "");
     let running = &env.registry.config().agents[&AgentId::new("jeeves").unwrap()];
     assert_eq!((running.name.as_deref(), running.tools.len()), (None, 0));
+    assert_eq!(running.max_iterations, None);
+    assert_eq!(running.busy_mode, crate::config::BusyMode::Steer);
+    assert_eq!(running.memory_cap, crate::config::DEFAULT_MEMORY_CAP);
+    assert!(running.compaction_model.is_none());
+}
+
+#[tokio::test]
+async fn the_advanced_settings_are_shown_from_the_file_and_saved_and_applied_at_once() {
+    let env = env().await;
+    env.hand_write_jeeves();
+    let manager = env.manager().await;
+    // An agent with none set: the section starts closed.
+    let (_, html) = env.edit_page(&manager, "bunter").await;
+    assert!(
+        html.contains("<details>\n<summary>Advanced</summary>"),
+        "{html}"
+    );
+
+    // With some set: open, filled in from the file.
+    let (_, html) = env.edit_page(&manager, "jeeves").await;
+    for expected in [
+        "<details open>\n<summary>Advanced</summary>",
+        r#"name="compaction_model" value="fake/summarizer""#,
+        r#"name="max_iterations" value="50""#,
+        r#"name="max_iterations_jobs" value="""#,
+        r#"<option value="queue" selected>"#,
+        r#"name="memory_cap" value="4000""#,
+        r#"name="approval_timeout" value="""#,
+        r#"name="idle_reset" value="""#,
+    ] {
+        assert!(html.contains(expected), "{expected}\n{html}");
+    }
+
+    let fields = jeeves_fields(
+        &version_of(&html),
+        "Jeeves",
+        "fake%2Ftest-model",
+        "&tool%3Amemory_add=on&compaction_model=fake%2Fother&max_iterations=+30+\
+         &max_iterations_jobs=10&busy_mode=steer&memory_cap=5000&approval_timeout=5m\
+         &idle_reset=12h&soul=You+are+Jeeves.%0ABe+brief.%0A",
+    );
+    let (status, html, _) = env.edit_post(&manager, "jeeves", &fields).await;
+    assert_eq!(status, StatusCode::SEE_OTHER, "{html}");
+    let toml = env.read_jeeves("agent.toml");
+    for line in [
+        "compaction_model = \"fake/other\"",
+        "max_iterations = 30",
+        "max_iterations_jobs = 10",
+        "busy_mode = \"steer\"",
+        "memory_cap = 5000",
+        "approval_timeout = \"5m\"",
+        "idle_reset = \"12h\"",
+    ] {
+        assert!(toml.lines().any(|l| l == line), "{line} in\n{toml}");
+    }
+    // New keys go to the top level, not into the job.
+    let parsed: toml::Table = toml::from_str(&toml).unwrap();
+    assert_eq!(parsed["idle_reset"].as_str(), Some("12h"), "{toml}");
+    assert_eq!(parsed["jobs"][0].as_table().unwrap().len(), 3, "{toml}");
+
+    let running = &env.registry.config().agents[&AgentId::new("jeeves").unwrap()];
+    assert_eq!(
+        running.compaction_model.as_ref().unwrap().to_string(),
+        "fake/other"
+    );
+    assert_eq!(running.max_iterations, Some(30));
+    assert_eq!(running.max_iterations_jobs, 10);
+    assert_eq!(running.busy_mode, crate::config::BusyMode::Steer);
+    assert_eq!(running.memory_cap, 5000);
+    assert_eq!(running.approval_timeout, Duration::from_secs(5 * 60));
+    assert_eq!(running.idle_reset, Some(Duration::from_secs(12 * 60 * 60)));
 }
 
 #[tokio::test]
@@ -411,6 +495,37 @@ async fn an_invalid_edit_is_shown_again_with_the_input_and_leaves_the_files_alon
             &format!("&soul={too_long}"),
             "SOUL.md is too long",
         ),
+        (
+            "fake%2Fm",
+            "&max_iterations=lots&soul=hello",
+            "max_iterations: must be a number of at least 1",
+        ),
+        (
+            "fake%2Fm",
+            "&memory_cap=-5&soul=hello",
+            "memory_cap: must be a number of at least 1",
+        ),
+        (
+            "fake%2Fm",
+            "&max_iterations_jobs=0&soul=hello",
+            "max_iterations_jobs: must be at least 1",
+        ),
+        (
+            "fake%2Fm",
+            "&approval_timeout=soon&soul=hello",
+            "approval_timeout: invalid duration",
+        ),
+        (
+            "fake%2Fm",
+            "&idle_reset=0s&soul=hello",
+            "idle_reset: must be longer than 0s",
+        ),
+        ("fake%2Fm", "&busy_mode=sometimes&soul=hello", "busy_mode"),
+        (
+            "fake%2Fm",
+            "&compaction_model=nope%2Fm&soul=hello",
+            "compaction_model: no provider instance",
+        ),
     ];
     for (models, rest, message) in cases {
         let (status, html, _) = env
@@ -422,6 +537,23 @@ async fn an_invalid_edit_is_shown_again_with_the_input_and_leaves_the_files_alon
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{message}\n{html}");
         assert!(html.contains(message), "{message}\n{html}");
+        // A problem in the "Advanced" section opens it, so the field is in sight.
+        let advanced = [
+            "compaction_model",
+            "max_iterations",
+            "max_iterations_jobs",
+            "busy_mode",
+            "memory_cap",
+            "approval_timeout",
+            "idle_reset",
+        ]
+        .iter()
+        .any(|key| rest.contains(&format!("&{key}=")));
+        assert_eq!(
+            html.contains("<details open>"),
+            advanced,
+            "{message}\n{html}"
+        );
         // What was typed comes back, escaped, with the same version, and no paths.
         assert!(html.contains("&#34;&#62;&#60;script&#62;"), "{html}");
         assert!(!html.contains("\"><script>"), "{html}");
@@ -529,7 +661,9 @@ async fn an_edit_that_changes_nothing_writes_nothing_and_a_hand_edited_file_is_a
                 &version,
                 "Jeeves",
                 "fake%2Ftest-model",
-                "&tools=memory_add&soul=You+are+Jeeves.%0D%0ABe+brief.%0D%0A",
+                &format!(
+                    "&tools=memory_add{JEEVES_ADVANCED}&soul=You+are+Jeeves.%0D%0ABe+brief.%0D%0A"
+                ),
             ),
         )
         .await;

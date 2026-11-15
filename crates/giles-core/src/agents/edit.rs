@@ -3,13 +3,12 @@
 //! running configuration ([`LiveConfig`](crate::config::LiveConfig)), so the next session uses it.
 //! A session that is running keeps the tools and `system` it started with (PLAN section 6.3).
 //!
-//! The form manages `name`, `models`, `tools`, `ask`, `environments`, and `timezone`, and
-//! `SOUL.md`. Everything
-//! else in `agent.toml` is the owner's and stays as written: [`edited_toml`] changes only those
-//! keys in the text, with `toml_edit`, so comments, `[[jobs]]`, `busy_mode`, `memory_cap`,
-//! `compaction_model`, and any key a later version adds survive, and a key whose value the form
-//! doesn't change is not even rewritten. A key whose field was emptied is removed, as a new agent
-//! has no key for an empty field.
+//! The form manages `name`, `models`, `tools`, `ask`, `environments`, and `timezone`, the settings
+//! of its "Advanced" section ([`AdvancedSettings`]), and `SOUL.md`. Everything else in
+//! `agent.toml` is the owner's and stays as written: [`edited_toml`] changes only those keys in the
+//! text, with `toml_edit`, so comments, `[[jobs]]`, and any key a later version adds survive, and a
+//! key whose value the form doesn't change is not even rewritten. A key whose field was emptied is
+//! removed, as a new agent has no key for an empty field.
 //!
 //! [`AgentManager::edit`], under the manager's lock:
 //!
@@ -36,7 +35,7 @@ use giles_types::AgentId;
 use sha2::{Digest, Sha256};
 use toml_edit::{Array, DocumentMut, Item, Table, Value};
 
-use super::create::MAX_SOUL_BYTES;
+use super::create::{AdvancedSettings, MAX_SOUL_BYTES};
 use super::manager::AgentManager;
 use crate::config::{AgentConfig, ConfigError};
 
@@ -66,6 +65,8 @@ pub struct AgentForm {
     pub environments: Vec<String>,
     /// `timezone`, empty if unset.
     pub timezone: String,
+    /// The settings of the form's "Advanced" section.
+    pub advanced: AdvancedSettings,
     /// `SOUL.md` with `\n` line ends; empty if there is none.
     pub soul: String,
     /// A hash of the two files as they were read. The form posts it back, and the edit is
@@ -92,6 +93,8 @@ pub struct AgentEdit {
     pub environments: Vec<String>,
     /// An IANA time zone; empty for none.
     pub timezone: String,
+    /// The settings of the form's "Advanced" section.
+    pub advanced: AdvancedSettings,
     /// `SOUL.md`.
     pub soul: String,
     /// [`AgentForm::version`] of the form.
@@ -196,6 +199,7 @@ struct Managed {
     ask: Vec<String>,
     environments: Vec<String>,
     timezone: String,
+    advanced: AdvancedSettings,
 }
 
 fn parse_toml(source: &str) -> Result<DocumentMut, EditError> {
@@ -207,8 +211,8 @@ fn parse_toml(source: &str) -> Result<DocumentMut, EditError> {
     })
 }
 
-/// The managed settings of `source`; a key that isn't a string (or list of strings) shows empty,
-/// and the edit replaces it.
+/// The managed settings of `source`; a key that isn't a string (or list of strings, or a whole
+/// number that fits a `u32`) shows empty, and the edit replaces it.
 fn managed_of(source: &str) -> Result<Managed, EditError> {
     let doc = parse_toml(source)?;
     let string = |key: &str| {
@@ -228,6 +232,11 @@ fn managed_of(source: &str) -> Result<Managed, EditError> {
             })
             .unwrap_or_default()
     };
+    let whole = |key: &str| {
+        doc.get(key)
+            .and_then(Item::as_integer)
+            .and_then(|n| u32::try_from(n).ok())
+    };
     Ok(Managed {
         name: string("name"),
         models: list("models"),
@@ -235,15 +244,24 @@ fn managed_of(source: &str) -> Result<Managed, EditError> {
         ask: list("ask"),
         environments: list("environments"),
         timezone: string("timezone"),
+        advanced: AdvancedSettings {
+            compaction_model: string("compaction_model"),
+            max_iterations: whole("max_iterations"),
+            max_iterations_jobs: whole("max_iterations_jobs"),
+            busy_mode: string("busy_mode"),
+            memory_cap: whole("memory_cap"),
+            approval_timeout: string("approval_timeout"),
+            idle_reset: string("idle_reset"),
+        },
     })
 }
 
 /// `source` with the managed keys set as `edit` says and nothing else touched: a key whose value
 /// is already what `edit` wants is left exactly as written; a changed one gets its new value
 /// keeping its position, key, and the comment after it; a missing one is added after the others
-/// of the file's top level; an emptied one (`name`, `tools`, `ask`, `environments`, `timezone`)
-/// is removed. `models` is always written, even empty, so validation reports the empty list.
-/// `environments` is a set: the names that stay keep the file's order.
+/// of the file's top level; an emptied one (every key but `models`) is removed. `models` is always
+/// written, even empty, so validation reports the empty list. `environments` is a set: the names
+/// that stay keep the file's order.
 ///
 /// # Errors
 ///
@@ -262,6 +280,7 @@ pub fn edited_toml(source: &str, edit: &AgentEdit) -> Result<String, EditError> 
     let mut doc = parse_toml(text)?;
     let root = doc.as_table_mut();
     // `models` first: the top level always has a key left for the comment at its top to move to.
+    let advanced = &edit.advanced;
     let changed = [
         set_list(root, "models", &edit.models, true),
         set_string(root, "name", edit.name.trim()),
@@ -269,6 +288,13 @@ pub fn edited_toml(source: &str, edit: &AgentEdit) -> Result<String, EditError> 
         set_list(root, "ask", &edit.ask, false),
         set_members(root, "environments", &edit.environments),
         set_string(root, "timezone", edit.timezone.trim()),
+        set_string(root, "compaction_model", advanced.compaction_model.trim()),
+        set_whole(root, "max_iterations", advanced.max_iterations),
+        set_whole(root, "max_iterations_jobs", advanced.max_iterations_jobs),
+        set_string(root, "busy_mode", advanced.busy_mode.trim()),
+        set_whole(root, "memory_cap", advanced.memory_cap),
+        set_string(root, "approval_timeout", advanced.approval_timeout.trim()),
+        set_string(root, "idle_reset", advanced.idle_reset.trim()),
     ];
     // Untouched, the text stays as it is: serializing the document would, for one, add the final
     // newline a hand-written file may lack.
@@ -291,6 +317,19 @@ fn set_string(table: &mut Table, key: &str, value: &str) -> bool {
     } else {
         false
     }
+}
+
+/// Sets `key` to the whole number `value`, or removes it if `value` is `None`. Whether it changed
+/// anything.
+fn set_whole(table: &mut Table, key: &str, value: Option<u32>) -> bool {
+    let Some(value) = value.map(i64::from) else {
+        return remove_key(table, key);
+    };
+    if table.get(key).and_then(Item::as_integer) == Some(value) {
+        return false;
+    }
+    replace(table, key, Value::from(value));
+    true
 }
 
 /// Sets `key` to the list `values`, or removes it if `values` is empty (unless `keep_empty`).
@@ -599,6 +638,7 @@ impl AgentManager {
             ask: managed.ask,
             environments: managed.environments,
             timezone: managed.timezone,
+            advanced: managed.advanced,
             soul: files
                 .soul
                 .as_deref()
@@ -700,6 +740,7 @@ prompt = "Summarize the week."
             ask: managed.ask,
             environments: managed.environments,
             timezone: managed.timezone,
+            advanced: managed.advanced,
             soul: String::new(),
             version: String::new(),
         }
@@ -823,6 +864,35 @@ prompt = "Summarize the week."
             "{edited}"
         );
         assert_eq!(parsed["jobs"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn whole_numbers_are_replaced_in_place_and_the_advanced_settings_added_and_removed() {
+        let source = "models = [\"a/b\"]\nmax_iterations = 50   # a cap\nbusy_mode = \"queue\"\n\
+                      memory_cap = 4000\n";
+        let mut edit = edit_of(source);
+        assert_eq!(edit.advanced.max_iterations, Some(50));
+        assert_eq!(edit.advanced.memory_cap, Some(4000));
+        edit.advanced.max_iterations = Some(30);
+        edit.advanced.busy_mode.clear();
+        edit.advanced.idle_reset = "6h".into();
+        assert_eq!(
+            edited_toml(source, &edit).unwrap(),
+            "models = [\"a/b\"]\nmax_iterations = 30   # a cap\nmemory_cap = 4000\n\
+             idle_reset = \"6h\"\n"
+        );
+
+        // A number that isn't a cap shows empty, and the edit replaces it.
+        for value in ["-1", "4294967296", "\"50\"", "5.0"] {
+            let source = format!("models = [\"a/b\"]\nmax_iterations = {value}\n");
+            let edit = edit_of(&source);
+            assert_eq!(edit.advanced.max_iterations, None, "{value}");
+            assert_eq!(
+                edited_toml(&source, &edit).unwrap(),
+                "models = [\"a/b\"]\n",
+                "{value}"
+            );
+        }
     }
 
     #[test]

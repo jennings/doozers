@@ -12,8 +12,8 @@ pub mod remove;
 pub mod tool_picker;
 
 pub use create::{
-    CreateError, DEFAULT_SOUL, MAX_SOUL_BYTES, NewAgent, RESERVED_AGENT_IDS, agent_id_from_name,
-    agent_toml, split_list,
+    AdvancedSettings, CreateError, DEFAULT_SOUL, MAX_SOUL_BYTES, NewAgent, RESERVED_AGENT_IDS,
+    agent_id_from_name, agent_toml, split_list,
 };
 pub use edit::{AgentEdit, AgentForm, EditError, MAX_EDIT_FILE_BYTES, edited_toml};
 pub use environment_picker::{EnvironmentChoice, EnvironmentNotes, EnvironmentPicker};

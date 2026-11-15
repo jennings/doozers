@@ -29,7 +29,7 @@
 <textarea id="soul" name="soul" rows="12">
 {{ form.soul }}</textarea>
 <p class="detail">Who the agent is: its instructions, in Markdown.</p>
-<p class="detail">Saving changes only the settings above and <code>SOUL.md</code>. Everything else in <code>agent.toml</code> stays as written: comments, jobs, limits, and any other setting. A setting you empty is removed from the file. The change applies to chats started afterwards; a chat already going keeps the tools and instructions it started with.</p>
+<p class="detail">Saving changes only the settings above and <code>SOUL.md</code>. Everything else in <code>agent.toml</code> stays as written: comments, jobs, and any other setting. A setting you empty is removed from the file. The change applies to chats started afterwards; a chat already going keeps the tools and instructions it started with.</p>
 <button type="submit">Save</button>
 </form>
 {% endblock %}
