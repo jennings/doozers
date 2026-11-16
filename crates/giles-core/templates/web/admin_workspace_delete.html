@@ -3,6 +3,8 @@
 {% block title %}Delete {{ id }} - Workspaces - Giles{% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/workspaces#workspace-{{ id }}">Workspaces</a>
+<section class="card confirm">
 <h1>Delete workspace <code>{{ id }}</code>?</h1>
 <dl class="facts">
 <dt>Environment</dt>
@@ -21,17 +23,19 @@ job run (session {{ job }})
 <dd>{{ description }}</dd>
 {%- endif %}
 </dl>
-{%- if in_use %}
-<p class="state-warn">A running turn is using this workspace. Deleting it stops the command the turn is running and ends its background processes, then deletes the workspace.</p>
-{%- endif %}
-<p>Deleting the workspace does this:</p>
 <ul>
 <li>Removes everything in it, files included. This can't be undone.</li>
 <li>Tells the agent on its next workspace call that an operator deleted it. The agent can create another workspace.</li>
 </ul>
-<form class="inline-form" method="post" action="/admin/workspaces/{{ id }}/delete">
+{%- if in_use %}
+<p class="banner banner-warn" role="alert">A running turn is using this workspace. Deleting it stops the command the turn is running and ends its background processes, then deletes the workspace.</p>
+{%- endif %}
+<div class="form-actions">
+<form method="post" action="/admin/workspaces/{{ id }}/delete">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<button type="submit">Delete workspace</button>
+<button type="submit" class="button-danger-solid">Delete workspace</button>
 </form>
-<a href="/admin/workspaces#workspace-{{ id }}">Cancel</a>
+<a class="button button-quiet" href="/admin/workspaces#workspace-{{ id }}">Cancel</a>
+</div>
+</section>
 {% endblock %}
