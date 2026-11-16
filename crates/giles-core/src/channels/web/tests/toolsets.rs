@@ -1412,7 +1412,7 @@ async fn the_connections_page_signs_the_user_in_and_out() {
     assert_eq!(status, StatusCode::OK);
     assert!(
         html.contains(&format!(
-            r#"<a class="button" href="/connections/notes/sign-in?csrf={CSRF}">Sign in</a>"#
+            r#"<a class="button button-small button-primary" href="/connections/notes/sign-in?csrf={CSRF}">Sign in</a>"#
         )),
         "{html}"
     );
@@ -1440,7 +1440,10 @@ async fn the_connections_page_signs_the_user_in_and_out() {
         .await
         .unwrap();
     let (_, html) = t.get("/connections").await;
-    assert!(html.contains("signed in"), "{html}");
+    assert!(
+        html.contains(r#"<span class="pill pill-ok">Signed in</span>"#),
+        "{html}"
+    );
     assert!(
         html.contains(r#"action="/connections/notes/sign-out""#),
         "{html}"
