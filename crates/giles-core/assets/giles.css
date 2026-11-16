@@ -576,6 +576,44 @@ button,
   align-items: start;
 }
 
+.card-grid-narrow {
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+}
+
+/* Small facts in a row above a list, such as each environment's free space. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.chip {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+/* A card's "show more", such as a workspace's details from its environment. */
+.disclosure {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+
+  & > summary {
+    color: var(--link);
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+
+  &[open] > summary {
+    margin-bottom: 10px;
+  }
+
+  & .facts {
+    font-size: 0.8125rem;
+  }
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -740,7 +778,7 @@ dialog.confirm {
 /* Pills and banners ----------------------------------------------------------------------------- */
 
 .pill {
-  display: inline-flex;
+  display: inline-block;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.75rem;
@@ -748,17 +786,26 @@ dialog.confirm {
   white-space: nowrap;
 }
 
+/* A state word from the server ("running", "failed") starts with a capital in its pill. */
+.pill::first-letter {
+  text-transform: uppercase;
+}
+
+/* The tones. The admin pages' state classes map onto them: ok, unknown (neutral), warn and bad
+   (both orange). */
 .pill-ok {
   background: var(--info-bg);
   color: var(--ok-text);
 }
 
-.pill-neutral {
+.pill-neutral,
+.pill-unknown {
   background: var(--neutral-bg);
   color: var(--neutral-text);
 }
 
-.pill-warn {
+.pill-warn,
+.pill-bad {
   background: var(--warn-pill-bg);
   color: var(--warn-text);
 }

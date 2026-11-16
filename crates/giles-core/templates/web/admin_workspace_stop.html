@@ -3,12 +3,17 @@
 {% block title %}Stop {{ id }} - Workspaces - Giles{% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/workspaces#workspace-{{ id }}">Workspaces</a>
+<section class="card confirm">
 <h1>Stop workspace <code>{{ id }}</code>?</h1>
-<p class="state-warn">A running turn is using this workspace. Stopping it ends the command the turn is running and its background processes.</p>
 <p>The files stay. The agent's next workspace call starts the workspace again and is told that it was stopped.</p>
-<form class="inline-form" method="post" action="/admin/workspaces/{{ id }}/stop">
+<p class="banner banner-warn" role="alert">A running turn is using this workspace. Stopping it ends the command the turn is running and its background processes.</p>
+<div class="form-actions">
+<form method="post" action="/admin/workspaces/{{ id }}/stop">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<button type="submit">Stop workspace</button>
+<button type="submit" class="button-danger-solid">Stop workspace</button>
 </form>
-<a href="/admin/workspaces#workspace-{{ id }}">Cancel</a>
+<a class="button button-quiet" href="/admin/workspaces#workspace-{{ id }}">Cancel</a>
+</div>
+</section>
 {% endblock %}

@@ -230,7 +230,10 @@ async fn the_page_lists_a_workspace_with_what_its_environment_says_now() {
         page.contains(r#"<a href="/admin/workspaces" aria-current="page">Workspaces</a>"#),
         "{page}"
     );
-    assert!(!page.contains(r#"state-warn">In use"#), "{page}");
+    assert!(
+        !page.contains(r#"<span class="pill pill-warn">In use</span>"#),
+        "{page}"
+    );
 
     // After a stop, the page says so.
     wk.fake.report_space(None, None);
@@ -301,7 +304,9 @@ async fn an_environment_that_is_down_or_failing_shows_unknown_and_is_named() {
         "{page}"
     );
     assert!(
-        page.contains("<dt>Details</dt>\n<dd>\nunknown\n</dd>"),
+        page.contains(
+            "<summary>Details from the environment</summary>\n<p class=\"muted\">unknown</p>"
+        ),
         "{page}"
     );
     // What Giles stored still shows.
@@ -371,7 +376,10 @@ async fn stopping_a_workspace_a_turn_is_using_asks_first() {
         .unwrap();
 
     let page = wk.page().await;
-    assert!(page.contains(r#"state-warn">In use"#), "{page}");
+    assert!(
+        page.contains(r#"<span class="pill pill-warn">In use</span>"#),
+        "{page}"
+    );
     assert!(page.contains("yes, a running turn is using it"), "{page}");
     // The button leads to the confirmation instead of posting.
     assert!(

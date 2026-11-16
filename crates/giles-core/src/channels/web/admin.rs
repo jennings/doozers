@@ -133,24 +133,32 @@ struct Linking {
     expires: Option<Time>,
 }
 
-/// A channel's last status: a short text, a CSS class, and the linking challenge if any.
+/// A channel's last status: a short text, the same as a word for its pill and the details, a CSS
+/// class, and the linking challenge if any.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StatusView {
     text: String,
+    word: &'static str,
+    detail: Option<String>,
     class: &'static str,
     linking: Option<Linking>,
 }
 
 fn status_view(status: Option<&ChannelStatus>) -> StatusView {
-    let view = |text: &str, class| StatusView {
+    let view = |text: &str, word, class| StatusView {
         text: text.to_owned(),
+        word,
+        detail: None,
         class,
         linking: None,
     };
     match status.and_then(|s| s.state.as_ref()) {
-        None => view("no status yet", "unknown"),
-        Some(ChannelState::Connected(_)) => view("connected", "ok"),
-        Some(ChannelState::Error(message)) => view(&format!("error: {message}"), "bad"),
+        None => view("no status yet", "No status yet", "unknown"),
+        Some(ChannelState::Connected(_)) => view("connected", "Connected", "ok"),
+        Some(ChannelState::Error(message)) => StatusView {
+            detail: Some(message.clone()),
+            ..view(&format!("error: {message}"), "Error", "bad")
+        },
         Some(ChannelState::NeedsAuth(NeedsAuth {
             challenge,
             expires_at,
@@ -192,6 +200,12 @@ fn status_view(status: Option<&ChannelStatus>) -> StatusView {
             };
             StatusView {
                 text: text.to_owned(),
+                word: if text == "needs linking" {
+                    "Needs linking"
+                } else {
+                    "Needs login"
+                },
+                detail: None,
                 class: "warn",
                 linking: Some(linking),
             }

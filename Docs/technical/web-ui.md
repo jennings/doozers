@@ -378,7 +378,11 @@ buttons (Disable, Up, Down) with the danger action last.
 
 - `.card`: surface fill, 1 px border, radius 12 px, 18 px 20 px padding, a column with a 14 px gap.
   `.card-head` puts the card title on the left and its buttons on the right.
-- `.card-grid`: a grid of cards (Plugins, Workspaces, Channels).
+- `.card-grid`: a grid of cards at least 420 px wide (Plugins, Workspaces). `.card-grid-narrow`
+  makes them at least 300 px (Channels).
+- `.chips` is a row of `.chip`s: small bordered facts above a list, such as each environment's free
+  space.
+- `details.disclosure` is a card's "show more" below a top border, with a link-colored summary.
 - `.stats` holds `.stat` cards, each with a `.stat-label` (12 px, uppercase, faint) and a
   `.stat-value` (22 px, display font).
 - `.confirm`: a card with the warn border, at most 620 px wide.
@@ -409,9 +413,10 @@ A table sits in `.table-wrap`: a card with no padding that scrolls sideways. The
 
 ### Pills and banners
 
-- `.pill` is 12 px, weight 600, radius 999 px, and 4 px 10 px padding. Add `.pill-ok` (running,
-  signed in), `.pill-neutral` (stopped, not signed in, starting), or `.pill-warn` (failed, in use,
-  waiting).
+- `.pill` is 12 px, weight 600, radius 999 px, and 4 px 10 px padding. Its first letter is a
+  capital, so a server's state word ("running") reads "Running". Add `.pill-ok` (running, signed
+  in), `.pill-neutral` (stopped, not signed in), or `.pill-warn` (failed, in use, waiting). The
+  admin pages' state classes map onto these: `.pill-unknown` is neutral and `.pill-bad` is warn.
 - `.banner` is 14 px text, radius 10 px, and 12 px 16 px padding:
   - `.banner-info` (`role="status"`): the result of an action.
   - `.banner-warn`: something the owner should fix, such as leftover `[[routes]]` in giles.toml.

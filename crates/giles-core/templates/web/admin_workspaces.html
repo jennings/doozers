@@ -4,30 +4,33 @@
 
 {% block content %}
 <h1>Workspaces</h1>
-<p>A workspace is where an agent runs commands and keeps files when it has an environment. Here you see each one with what its environment says about it now, and you can stop or delete it. Stopping keeps the files, and the agent's next command starts the workspace again. Deleting removes everything in it, and the agent is told on its next workspace call that an operator deleted it.</p>
+<p class="lede">Where an agent runs commands and keeps files when it has an environment. Stopping keeps the files, and the agent's next command starts the workspace again. Deleting removes everything in it, and the agent is told on its next workspace call that an operator deleted it.</p>
 {%- if !environments.is_empty() %}
-<dl class="facts">
+<div class="chips">
 {%- for environment in environments %}
-<dt>Environment <code>{{ environment.name }}</code></dt>
-<dd>
+<span class="chip">Environment <code>{{ environment.name }}</code> ·
 {%- if let Some(problem) = environment.problem %}
-<span class="state-warn">{{ problem }}.</span> What comes from it shows as unknown.
+<span class="warn-text">{{ problem }}.</span> What comes from it shows as unknown.
 {%- else if let Some(free) = environment.free %}
 {{ free }} free
 {%- else %}
 free space unknown
 {%- endif %}
-</dd>
+</span>
 {%- endfor %}
-</dl>
+</div>
 {%- endif %}
 
 {%- if workspaces.is_empty() %}
 <p>No workspaces. An agent creates one when it first needs one.</p>
 {%- else %}
+<div class="card-grid">
 {%- for workspace in workspaces %}
-<div class="admin-item" id="workspace-{{ workspace.id }}">
-<h3><code>{{ workspace.id }}</code> <span class="state-{{ workspace.state_class }}">{{ workspace.state }}</span>{% if workspace.in_use %} <span class="state-warn">In use</span>{% endif %}</h3>
+<article class="card" id="workspace-{{ workspace.id }}">
+<div class="card-head">
+<h2><code>{{ workspace.id }}</code></h2>
+<span class="actions"><span class="pill pill-{{ workspace.state_class }}">{{ workspace.state }}</span>{% if workspace.in_use %} <span class="pill pill-warn">In use</span>{% endif %}</span>
+</div>
 <dl class="facts">
 <dt>Environment</dt>
 <dd><code>{{ workspace.environment }}</code></dd>
@@ -56,11 +59,12 @@ job run (session {{ job }})
 <dt>Working directory</dt>
 <dd><code>{{ workspace.working_directory }}</code></dd>
 {%- endif %}
-<dt>Details</dt>
-<dd>
+</dl>
+<details class="disclosure">
+<summary>Details from the environment</summary>
 {%- if let Some(details) = workspace.details %}
 {%- if details.is_empty() %}
-<span class="detail">none</span>
+<p class="muted">none</p>
 {%- else %}
 <dl class="facts">
 {%- for detail in details %}
@@ -70,19 +74,21 @@ job run (session {{ job }})
 </dl>
 {%- endif %}
 {%- else %}
-unknown
+<p class="muted">unknown</p>
 {%- endif %}
-</dd>
-</dl>
+</details>
 {%- if workspace.can_act %}
+<div class="actions">
 {%- if workspace.in_use %}
-<a class="button" href="/admin/workspaces/{{ workspace.id }}/stop" aria-label="Stop workspace {{ workspace.id }}">Stop</a>
+<a class="button button-small" href="/admin/workspaces/{{ workspace.id }}/stop" aria-label="Stop workspace {{ workspace.id }}">Stop</a>
 {%- else %}
-<form class="inline-form" method="post" action="/admin/workspaces/{{ workspace.id }}/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" aria-label="Stop workspace {{ workspace.id }}">Stop</button></form>
+<form method="post" action="/admin/workspaces/{{ workspace.id }}/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small" aria-label="Stop workspace {{ workspace.id }}">Stop</button></form>
 {%- endif %}
-<a class="button" href="/admin/workspaces/{{ workspace.id }}/delete" aria-label="Delete workspace {{ workspace.id }}">Delete</a>
-{%- endif %}
+<a class="button button-small button-danger" href="/admin/workspaces/{{ workspace.id }}/delete" aria-label="Delete workspace {{ workspace.id }}">Delete</a>
 </div>
+{%- endif %}
+</article>
 {%- endfor %}
+</div>
 {%- endif %}
 {% endblock %}
