@@ -10,39 +10,55 @@
 
 {% block content %}
 <h1>Status</h1>
-<dl class="facts">
-<dt>Version</dt>
-<dd>giles {{ version }}</dd>
+<div class="stats">
+<div class="card stat">
+<span class="stat-label">Version</span>
+<span class="stat-value">giles {{ version }}</span>
+</div>
 {%- if let Some(started) = started %}
-<dt>Running since</dt>
-<dd><time datetime="{{ started.iso }}">{{ started.text }}</time></dd>
+<div class="card stat">
+<span class="stat-label">Running since</span>
+<span class="stat-value"><time datetime="{{ started.iso }}">{{ started.text }}</time></span>
+</div>
 {%- endif %}
-<dt>Plugin sandbox</dt>
-<dd class="{% if sandbox_ok %}state-ok{% else %}state-bad{% endif %}">{{ sandbox }}</dd>
+<div class="card stat">
+<span class="stat-label">Plugin sandbox</span>
+<span class="stat-value {% if sandbox_ok %}ok{% else %}warn{% endif %}">{{ sandbox }}</span>
+</div>
+</div>
 {%- if let Some(error) = config_error %}
-<dt>Configuration error</dt>
-<dd class="state-bad">{{ error }}</dd>
+<div class="banner banner-error" role="alert">
+<strong>Configuration error</strong>
+<span>{{ error }}</span>
+</div>
 {%- endif %}
-</dl>
 
+<section class="section">
 <h2>Channels</h2>
 {%- if channels.is_empty() %}
 <p>No channels are configured.</p>
-{%- endif %}
+{%- else %}
+<div class="card-grid card-grid-narrow">
 {%- for channel in channels %}
-<section class="admin-item" id="channel-{{ channel.instance }}">
-<h3>{{ channel.instance }} <span class="detail">{{ channel.component }}, {{ channel.runtime }}</span></h3>
-<p class="state-{{ channel.status.class }}">{{ channel.status.text }}
-{%- if let Some(since) = channel.since %} <span class="detail">since <time datetime="{{ since.iso }}">{{ since.text }}</time></span>{% endif -%}
+<section class="card{% if channel.status.linking.is_some() %} highlight{% endif %}" id="channel-{{ channel.instance }}">
+<h3>{{ channel.instance }} <span class="subtitle">{{ channel.component }}, {{ channel.runtime }}</span></h3>
+<p><span class="pill pill-{{ channel.status.class }}">{{ channel.status.word }}</span>
+{%- if let Some(since) = channel.since %} <span class="muted">since <time datetime="{{ since.iso }}">{{ since.text }}</time></span>{% endif -%}
 </p>
+{%- if let Some(detail) = channel.status.detail %}
+<p class="warn-text">{{ detail }}</p>
+{%- endif %}
 {%- if let Some(linking) = channel.status.linking %}
 <div class="linking">
 {%- if let Some(qr) = linking.qr %}
 {{ qr|safe }}
+{%- endif %}
+<div>
+{%- if linking.qr.is_some() %}
 <p>Scan this QR code with the app you're linking (WhatsApp: <em>Linked devices</em>, <em>Link a device</em>). The page reloads every {{ refresh_secs }} seconds to show the newest code.</p>
 {%- endif %}
 {%- if let Some(error) = linking.qr_error %}
-<p class="state-bad">{{ error }}</p>
+<p class="warn-text">{{ error }}</p>
 {%- endif %}
 {%- if let Some(code) = linking.pair_code %}
 <p>Enter this code in the app you're linking:</p>
@@ -58,24 +74,32 @@
 </p>
 {%- endif %}
 {%- if let Some(expires) = linking.expires %}
-<p class="detail">Valid until <time datetime="{{ expires.iso }}">{{ expires.text }}</time>.</p>
+<p class="muted">Valid until <time datetime="{{ expires.iso }}">{{ expires.text }}</time>.</p>
 {%- endif %}
+</div>
 </div>
 {%- endif %}
 </section>
 {%- endfor %}
+</div>
+{%- endif %}
+</section>
 
+<section class="section">
 <h2>Plugins</h2>
 {%- if plugins.is_empty() %}
 <p>No plugins are configured.</p>
 {%- else %}
-<table class="admin-table">
+<div class="table-wrap">
+<table class="table">
 <thead><tr><th>Instance</th><th>Kind</th><th>State</th><th>Tools</th></tr></thead>
 <tbody>
 {%- for plugin in plugins %}
-<tr><td><a href="/admin/plugins#plugin-{{ plugin.route_kind }}-{{ plugin.instance }}">{{ plugin.instance }}</a></td><td>{{ plugin.kind }}</td><td class="state-{{ plugin.class }}">{{ plugin.state_word }}</td><td>{% if let Some(tools) = plugin.tools %}{{ tools }}{% endif %}</td></tr>
+<tr><td><a href="/admin/plugins#plugin-{{ plugin.route_kind }}-{{ plugin.instance }}">{{ plugin.instance }}</a></td><td class="secondary">{{ plugin.kind }}</td><td><span class="pill pill-{{ plugin.class }}">{{ plugin.state_word }}</span></td><td class="secondary">{% if let Some(tools) = plugin.tools %}{{ tools }}{% endif %}</td></tr>
 {%- endfor %}
 </tbody>
 </table>
+</div>
 {%- endif %}
+</section>
 {% endblock %}

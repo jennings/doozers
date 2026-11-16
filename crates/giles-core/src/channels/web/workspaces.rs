@@ -155,7 +155,7 @@ fn workspace_row(view: WorkspaceView, config: &Config, web_instance: &str) -> Wo
     let (state, state_class) = match (&record.state, &view.live) {
         (WorkspaceState::Creating, _) => ("being created", "warn"),
         (_, Live::Known(w)) if w.state == PluginState::Running => ("running", "ok"),
-        (_, Live::Known(_)) => ("stopped", "warn"),
+        (_, Live::Known(_)) => ("stopped", "neutral"),
         (_, Live::Missing) => ("missing from its environment", "bad"),
         (_, Live::Unknown) => ("unknown", "warn"),
     };
