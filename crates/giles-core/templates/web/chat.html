@@ -7,14 +7,44 @@
 {% block pane %}
 <section class="chat-pane" aria-label="Chat" hx-headers='{"X-CSRF-Token": "{{ csrf }}"}' hx-ext="sse" sse-connect="/chats/{{ chat }}/events?after={{ cursor }}">
 <header class="chat-head">
+{%- if archived %}
+<a class="all-chats" href="/chats/archived">Archived chats</a>
+{%- else %}
 <a class="all-chats" href="/">All chats</a>
+{%- endif %}
 <h2>{{ title }}</h2>
 {%- if let Some(agent) = agent %}
 <span class="muted">with {{ agent }}</span>
 {%- endif %}
+{%- if stored %}
+<div class="chat-actions">
+{%- if archived %}
+<form method="post" action="/chats/{{ chat }}/unarchive"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small">Unarchive</button></form>
+{%- else %}
+<form method="post" action="/chats/{{ chat }}/archive"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small">Archive</button></form>
+{%- endif %}
+<button type="button" class="button-small button-danger" command="show-modal" commandfor="delete-chat">Delete</button>
+</div>
+{%- endif %}
 </header>
+{%- if stored %}
+<dialog id="delete-chat" class="card confirm" closedby="any" aria-labelledby="delete-chat-title">
+<h2 id="delete-chat-title">Delete this chat?</h2>
+<p>Its messages and the agent's workspace for it are removed. This can't be undone.</p>
+<div class="form-actions">
+<form method="post" action="/chats/{{ chat }}/delete">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button type="submit" class="button-danger-solid">Delete chat</button>
+</form>
+<form method="dialog"><button class="button-quiet">Cancel</button></form>
+</div>
+</dialog>
+{%- endif %}
 <div class="chat-column">
 <p id="chat-notice" class="banner banner-warn" hidden></p>
+{%- if archived %}
+<p class="banner banner-info" role="status">This chat is archived. Sending a message moves it back to your chats.</p>
+{%- endif %}
 <div id="messages" class="messages" sse-swap="message" hx-swap="beforeend">
 {%- if truncated %}
 <p class="chat-notice">Older messages aren't shown.</p>

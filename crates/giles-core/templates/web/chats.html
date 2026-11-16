@@ -1,11 +1,11 @@
 {% extends "web/chats_base.html" %}
 
-{% block title %}Chats - Giles{% endblock %}
+{% block title %}{% if list.archived %}Archived chats{% else %}Chats{% endif %} - Giles{% endblock %}
 
 {% block main_class %}chats{% endblock %}
 
 {% block pane %}
 <section class="chat-pane" aria-label="Chat">
-<p class="chat-empty">Pick a chat or start one.</p>
+<p class="chat-empty">{% if list.archived %}Pick a chat.{% else %}Pick a chat or start one.{% endif %}</p>
 </section>
 {% endblock %}

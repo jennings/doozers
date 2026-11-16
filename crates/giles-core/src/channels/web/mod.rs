@@ -11,6 +11,7 @@
 mod admin;
 mod agents;
 mod auth;
+mod chat_actions;
 mod config;
 mod connections;
 mod hub;
@@ -55,6 +56,7 @@ pub use admin::ADMIN_REFRESH_SECS;
 pub use auth::{
     CSRF_FIELD, CSRF_HEADER, CsrfRejected, SESSION_COOKIE, WEB_SESSION_TTL, WebUser, check_csrf,
 };
+pub use chat_actions::ChatActivity;
 pub use config::{ProxyConfig, ProxyListen, WebConfig};
 pub use links::LOGIN_LINK_TTL;
 pub use pages::WebApp;

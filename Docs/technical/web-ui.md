@@ -57,15 +57,17 @@ The implementation differs from the boards on purpose in four ways:
 How much an action asks first depends on what it costs:
 
 - **One click.** A cheap or reversible action runs at once: Disable and Enable a job, Up and Down on
-  a route, Restart, Sign out, Stop an idle workspace. A few deletions that the owner expects to be
-  immediate (Delete job, Remove route, Forget memory) are one click too. The user docs say so.
+  a route, Restart, Sign out, Stop an idle workspace, Archive and Unarchive a chat. A few deletions
+  that the owner expects to be immediate (Delete job, Remove route, Forget memory) are one click
+  too. The user docs say so.
 - **A confirmation page.** An action whose consequences the server has to work out first goes
   through a page: Remove agent (its routes, jobs, and trash path), Remove and Rename MCP server (the
   agents it touches), Delete workspace, and Stop a workspace that is in use. The page is a GET. It
   shows a confirmation card that asks a question, lists what happens, warns about anything in
   progress, and has the danger button (a POST) and a Cancel link back.
 - **A dialog.** A confirmation that needs nothing beyond the page already shown is a `<dialog>`, not
-  a page and not `window.confirm()`. Open it with an invoker button and close it with HTML:
+  a page and not `window.confirm()`, such as Delete chat. Open it with an invoker button and close
+  it with HTML:
 
   ```html
   <button type="button" class="button button-danger" command="show-modal" commandfor="delete-x">Delete</button>
@@ -195,16 +197,22 @@ at most 620 px wide with the warn border. In it: an `h1` that asks a question ("
 `ws-7f3a9c`?"), what happens, a warning banner if something is in progress, then the solid danger
 button and Cancel.
 
-**Chats** (`/` and `/chats/<id>`): two panes beside the sidebar.
+**Chats** (`/`, `/chats/archived`, and `/chats/<id>`): two panes beside the sidebar.
 
 - The list pane is at least 280 px wide on the pane background, with a right border and 24 px 16 px
-  padding. It holds the `h1` "Chats" (22 px) with **New chat**, the "Chat with" picker card, and the
-  list. Each item is a block link with radius 8 px: the title (14 px, 600), then the agent and the
-  time in a 12 px muted row. The open chat's item has the selected fill and `aria-current="page"`.
+  padding. It holds the `h1` "Chats" (22 px) with **New chat**, the "Chat with" picker card, the
+  list, and an "Archived chats" link at the foot. Each item is a block link with radius 8 px: the
+  title (14 px, 600), then the agent and the time in a 12 px muted row. The open chat's item has the
+  selected fill and `aria-current="page"`.
+- The archived list pane has a "Chats" back link and the `h1` "Archived chats" instead, without
+  **New chat** or the picker. An archived chat shows beside it.
 - The chat pane has a header with a bottom border (18 px 28 px): the chat title as an `h2` at 20 px,
-  then "with Jeeves" muted. The messages and the compose form sit in a centered column at most 880
-  px wide.
-- With no chat open, the chat pane shows a muted "Pick a chat or start one" message.
+  then "with Jeeves" muted, then, pushed to the end, small **Archive** (or **Unarchive**) and
+  **Delete** buttons once the chat has something stored. Delete opens the confirmation dialog. The
+  messages and the compose form sit in a centered column at most 880 px wide. An archived chat has
+  an info banner at the top of the column.
+- With no chat open, the chat pane shows a muted "Pick a chat or start one" message ("Pick a chat"
+  beside the archived list).
 - On narrow screens only one pane shows. `/` shows the list, and a chat shows the chat with an "All
   chats" link in its header.
 
@@ -392,7 +400,8 @@ view, except the chat page's approvals. Inside a table, every action is a `butto
   (`::details-content`).
 - `.stats` holds `.stat` cards, each with a `.stat-label` (12 px, uppercase, faint) and a
   `.stat-value` (22 px, display font). Below 760 px they become one card of label and value lines.
-- `.confirm`: a card with the warn border, at most 620 px wide.
+- `.confirm`: a card with the warn border, at most 620 px wide. As a `<dialog>` it has the scrim
+  backdrop, and it's hidden while closed, since `.card` sets `display`.
 - `.subtitle`: the quieter second half of a heading, such as "giles-channel-irc, wasm" after a
   plugin's name.
 - `.highlight`: a card with the accent border, for one that needs attention now (a channel waiting
@@ -455,10 +464,11 @@ whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
 
 ### Chat
 
-- `.chats` is the two-pane grid: `.chat-list-pane` (with the `.agent-picker` card and the
-  `.chat-list` of `.chat-item-title` and `.chat-item-meta`) and `.chat-pane` (with the `.chat-head`,
-  then a `.chat-column` of `.messages` and the compose form, or `.chat-empty`). The container has
-  `.has-chat` when a chat is open, which picks the pane narrow screens show.
+- `.chats` is the two-pane grid: `.chat-list-pane` (with the `.agent-picker` card, the `.chat-list`
+  of `.chat-item-title` and `.chat-item-meta`, and the `.archived-link`) and `.chat-pane` (with the
+  `.chat-head` and its `.chat-actions`, then a `.chat-column` of `.messages` and the compose form,
+  or `.chat-empty`). The container has `.has-chat` when a chat is open, which picks the pane narrow
+  screens show.
 - `.chat-notice` is a centered muted line among the messages, such as "Older messages aren't shown."
 - `.msg.user`: right aligned, at most 75% wide, accent fill, white text, radius 14 14 4 14.
 - `.msg.assistant`: left aligned, at most 80% wide, surface fill and border, radius 14 14 14 4.

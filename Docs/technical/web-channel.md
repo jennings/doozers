@@ -26,10 +26,14 @@ the live-output hook.
 
 | Route                          | Does                                                             |
 | ------------------------------ | ---------------------------------------------------------------- |
-| `GET /`                        | The user's chats on this instance, most recently active first, and the agent picker. |
+| `GET /`                        | The user's chats on this instance that aren't archived, most recently active first, and the agent picker. |
+| `GET /chats/archived`          | The user's archived chats, most recently active first.           |
 | `GET /chats/new`               | 303 to `/chats/<new id>`; nothing is stored until a message. `?agent=<id>`: a chat with that agent. |
-| `GET /chats/<id>`              | The chat list, then the chat: transcript, live messages, pending prompts, and the form. Its title is its first message's, from the list. |
-| `POST /chats/<id>/messages`    | Posts `text` as the user (CSRF-checked).                         |
+| `GET /chats/<id>`              | The chat list it is in, then the chat: transcript, live messages, pending prompts, and the form. Its title is its first message's, from the list. |
+| `POST /chats/<id>/messages`    | Unarchives the chat, then posts `text` as the user (CSRF-checked). |
+| `POST /chats/<id>/archive`     | Archives the user's chat (CSRF-checked), 303 to `/` ([Archiving and deleting chats](#archiving-and-deleting-chats)). |
+| `POST /chats/<id>/unarchive`   | Unarchives the chat (CSRF-checked), 303 to the chat.            |
+| `POST /chats/<id>/delete`      | Deletes the user's chat and its workspaces (CSRF-checked), 303 to the list it was in; 409 while it's being worked on. |
 | `POST /chats/<id>/approvals`   | An approval button: posts `<answer> <code>` (CSRF-checked).      |
 | `GET /chats/<id>/events`       | Server-sent events for the page.                                 |
 | `GET /blobs/<sha256>`          | An attachment.                                                   |
@@ -323,8 +327,9 @@ itself is shown. A `send_attachment` call whose result isn't an error also shows
 message with its caption and the media it sent (looked up by id among the media of the loaded rows).
 A "New session" marker separates sessions (`/new`, idle reset). Messages sent with `send` that the
 agent loop doesn't store (notices) are only on pages that were open at the time. The chat list is
-`Store::channel_conversations(instance, user, 200)`, titled with the first line of the first user
-message (80 characters at most).
+`Store::channel_conversations(instance, user, archived, 200)`, titled with the first line of the
+first user message (80 characters at most). A chat page lists the archived chats when its chat is
+archived (`Store::conversation_archived_at`), and the others otherwise.
 
 The page is assembled so that a message or tool call is shown once, whatever happens while it loads:
 
@@ -350,6 +355,39 @@ The page is assembled so that a message or tool call is shown once, whatever hap
 
 A post the router drops (no route) isn't in the inbox, so after a reload it's gone, like any dropped
 message.
+
+## Archiving and deleting chats
+
+In `chat_actions.rs`. A chat page has the buttons once its chat has something stored (transcript
+rows or waiting inbox rows); before that there is nothing to archive or delete, and both posts
+answer 404 "No such chat". Neither post checks the chat's agent, so a chat whose agent was removed
+can still be deleted.
+
+- **Archive** (`Store::archive_conversation`) and **Unarchive** (`Store::unarchive_conversation`)
+  move the chat between the lists and change nothing else. They are part of `install`. Archiving
+  isn't refused while the agent works: the turn finishes and its reply is stored in the archived
+  chat. The chat's workspace is left to the sweep, which stops and deletes it like any idle one.
+  `POST /chats/<id>/messages` unarchives before it posts, so writing in an archived chat brings it
+  back. Nothing else does: a job's reply into an archived chat leaves it archived.
+- **Delete** is installed separately, by `web.install_chat_deletion(builder, activity, workspaces)`,
+  because it needs the session manager and the workspace service, which `serve` has only after the
+  web app is built. `ChatActivity::is_busy(instance, chat)` is the seam; the daemon's is `Sessions`
+  (`Sessions::conversation_busy`: a live session of the conversation, with any agent, that has a
+  turn, a holder, or a driver about to run). The post is refused with 409 while the channel holds a
+  post of the chat the core hasn't acked, or `is_busy` says so. Then `Store::delete_conversation`
+  deletes the conversation in one transaction, refusing (409 too) while an inbox row of it is queued
+  or started. Last, for each agent the conversation's sessions were with, `Workspaces::delete`
+  deletes the conversation's workspace with `DeleteReason::ChatDeleted`. A store error there is a
+  500 after the chat is gone; the sweep deletes the leftover workspace later, since its owner has no
+  activity. The answer is 303 to `/chats/archived` for a chat that was archived and to `/`
+  otherwise.
+
+What deleting leaves: usage rows (without their session), memories the agent saved (their
+`source_session` is only recorded), and runtime jobs scheduled in the chat. Such a job's next run
+opens a session in the conversation again, which brings the chat back. The chat's hub, if one is
+open, is dropped when idle like any other.
+
+The confirmation is a `<dialog>` on the chat page ([Confirmations](web-ui.md#confirmations)).
 
 ## Approval prompts (hook for 2.7)
 
@@ -1024,6 +1062,12 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
 - Approvals: prompt fragment and page form, CSRF and validation, `yes! <code>` posted, the "Sent"
   replacement, `resolve_approval` outcomes (and `false` for unknown prompts and chats), plain-post
   redirect.
+- Archiving and deleting (`tests/chat_actions.rs`, with the fake environment as `box`): archiving
+  moves a chat to the archived list, whose page and chat pages say so and offer Unarchive, and keeps
+  its workspace; Unarchive and a post bring it back; deleting removes the chat and deletes its
+  workspace with `chat_deleted`, then 303s to the list it was in; a busy chat (the activity, or an
+  unacked post) isn't deleted; every action needs a login and the CSRF token; a chat with nothing
+  stored has no buttons and both posts are 404.
 - Jobs page (`tests/jobs.rs`): one list across agents, soonest first, with config jobs for the owner
   only, a "Doesn't run" note for a job of an unconfigured agent, and no other user's jobs. The form
   stores the spec the `schedule` tool would and notifies the scheduler; it refuses a blank prompt, a

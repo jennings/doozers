@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use giles_store::{Session, SessionId, SessionKey, Store};
-use giles_types::{AgentId, Channel, Timestamp, UserId};
+use giles_types::{AgentId, Channel, ConversationId, Timestamp, UserId};
 use tokio::sync::{Notify, oneshot};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -383,6 +383,32 @@ impl Sessions {
                 },
             };
             if owner.as_ref() == Some(agent) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether some session of the conversation `conversation` on channel instance `channel` is
+    /// being worked on, with any agent: a turn is running in it, someone holds it (a job's turn
+    /// or reply), or messages are queued for it. A session whose driver hasn't loaded it yet is
+    /// looked up in the database. For the web UI, which won't archive or delete a chat in the
+    /// middle of its work.
+    pub async fn conversation_busy(&self, channel: &str, conversation: &ConversationId) -> bool {
+        let live: Vec<(SessionId, Option<SessionKey>)> = lock(&self.inner.live)
+            .iter()
+            .map(|(id, live)| (*id, live.key.clone()))
+            .collect();
+        for (id, known) in live {
+            let key = match known {
+                Some(key) => Some(key),
+                None => match self.inner.store.session(id).await {
+                    Ok(session) => session.and_then(|session| session.key()),
+                    // A session that can't be read can't be worked on either.
+                    Err(_) => None,
+                },
+            };
+            if key.is_some_and(|key| key.channel == channel && &key.conversation == conversation) {
                 return true;
             }
         }
