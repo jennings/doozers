@@ -47,6 +47,7 @@
 - [Rendering model output](technical/rendering.md)
 - [HTTP server](technical/http.md)
 - [Web channel](technical/web-channel.md)
+- [Web interface design](technical/web-ui.md)
 - [IRC channel](technical/irc.md)
 - [Email channel](technical/email.md)
 - [WhatsApp channel](technical/whatsapp.md)
