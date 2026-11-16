@@ -7,22 +7,38 @@
 {% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/agents">Agents</a>
 <h1>New agent</h1>
 {%- if let Some(error) = error %}
-<p class="error" role="alert">{{ error }}</p>
+<p class="banner banner-error" role="alert">{{ error }}</p>
 {%- endif %}
-<form class="agent-form" method="post" action="/admin/agents">
+<form class="form-sections" method="post" action="/admin/agents">
 <input type="hidden" name="csrf" value="{{ csrf }}">
+<section class="card">
+<div class="field-row">
+<div class="field">
 <label for="name">Name</label>
 <input id="name" name="name" value="{{ form.name }}">
-<p class="detail">The display name, such as <code>Jeeves</code>. Optional if you give an id.</p>
+<p class="help">The display name, such as <code>Jeeves</code>. Optional if you give an id.</p>
+</div>
+<div class="field">
 <label for="id">Id</label>
-<input id="id" name="id" value="{{ form.id }}" pattern="[a-zA-Z0-9-]+">
-<p class="detail">The agent's directory name, <code>agents/&lt;id&gt;/</code>: letters, digits, and <code>-</code>. It fills in from the name as you type (lowercase, spaces as <code>-</code>, everything else dropped) until you edit it yourself; clear it to follow the name again. Left empty when you create the agent, it is made from the name the same way.</p>
+<input id="id" name="id" value="{{ form.id }}" pattern="[a-zA-Z0-9-]+" class="mono">
+<p class="help">The agent's directory name, <code>agents/&lt;id&gt;/</code>: letters, digits, and <code>-</code>. It fills in from the name as you type (lowercase, spaces as <code>-</code>, everything else dropped) until you edit it yourself; clear it to follow the name again. Left empty when you create the agent, it is made from the name the same way.</p>
+</div>
+</div>
+</section>
 {% include "web/admin_agent_fields.html" %}
+<section class="card">
+<div class="field">
 <label for="soul">SOUL.md</label>
-<textarea id="soul" name="soul" rows="12">{{ form.soul }}</textarea>
-<p class="detail">Who the agent is: its instructions, in Markdown. It starts with a short default you can replace.</p>
-<button type="submit">Create</button>
+<textarea id="soul" name="soul" rows="12" class="mono">{{ form.soul }}</textarea>
+<p class="help">Who the agent is: its instructions, in Markdown. It starts with a short default you can replace.</p>
+</div>
+</section>
+<div class="form-actions">
+<button type="submit" class="button-primary">Create</button>
+<a class="button button-quiet" href="/admin/agents">Cancel</a>
+</div>
 </form>
 {% endblock %}

@@ -408,14 +408,14 @@ async fn the_advanced_settings_are_shown_from_the_file_and_saved_and_applied_at_
     // An agent with none set: the section starts closed.
     let (_, html) = env.edit_page(&manager, "bunter").await;
     assert!(
-        html.contains("<details>\n<summary>Advanced</summary>"),
+        html.contains("<details class=\"card\">\n<summary>Advanced</summary>"),
         "{html}"
     );
 
     // With some set: open, filled in from the file.
     let (_, html) = env.edit_page(&manager, "jeeves").await;
     for expected in [
-        "<details open>\n<summary>Advanced</summary>",
+        "<details class=\"card\" open>\n<summary>Advanced</summary>",
         r#"name="compaction_model" value="fake/summarizer""#,
         r#"name="max_iterations" value="50""#,
         r#"name="max_iterations_jobs" value="""#,
@@ -550,7 +550,7 @@ async fn an_invalid_edit_is_shown_again_with_the_input_and_leaves_the_files_alon
         .iter()
         .any(|key| rest.contains(&format!("&{key}=")));
         assert_eq!(
-            html.contains("<details open>"),
+            html.contains("<details class=\"card\" open>"),
             advanced,
             "{message}\n{html}"
         );
