@@ -88,9 +88,8 @@ goes to the agent you picked, and needs no route.
 Replies appear as the agent writes them. Image attachments show inline, and other attachments
 download. Images from other sites aren't loaded. The model's reasoning isn't shown.
 
-Each tool the agent runs shows in the chat with its input and output. Only the first line of the
-input and the last 6 lines of the output show at first. Click **Show N more lines** or
-**Show N earlier lines** to see the rest.
+Each tool the agent runs shows in the chat as a box with its name and the first line of its input.
+Click the box to see the whole input and output, and click its name to fold it again.
 
 If something goes wrong:
 

@@ -18,9 +18,6 @@ use crate::agent_loop::history;
 use crate::core_tools::SEND_ATTACHMENT;
 use crate::media::{self, SessionMedia};
 
-/// How many of a tool's last output lines a tool call shows unfolded.
-pub(super) const TOOL_OUTPUT_LINES: usize = 6;
-
 /// Media types `/blobs/<id>` shows inline (and the page shows as `<img>`): raster images only, the
 /// same set the renderer accepts as `data:` images. Everything else is a download.
 pub(super) const INLINE_IMAGE_TYPES: [&str; 5] = [
@@ -256,70 +253,48 @@ pub(super) enum ToolState<'a> {
     },
 }
 
-/// Text shown in part: `shown`, and `folded` behind a disclosure labeled `label`.
-struct Folded<'a> {
-    shown: &'a str,
-    folded: Option<&'a str>,
-    label: String,
-}
-
-impl<'a> Folded<'a> {
-    fn whole(text: &'a str) -> Self {
-        Self {
-            shown: text,
-            folded: None,
-            label: String::new(),
-        }
-    }
-
-    /// The first line shown, the rest folded.
-    fn first_line(text: &'a str) -> Self {
-        let Some((first, rest)) = text.split_once('\n') else {
-            return Self::whole(text);
-        };
-        Self {
-            shown: first.strip_suffix('\r').unwrap_or(first),
-            folded: Some(rest),
-            label: lines_label(rest.lines().count(), "more"),
-        }
-    }
-
-    /// The last `n` lines shown (`n` > 0), the earlier ones folded.
-    fn last_lines(text: &'a str, n: usize) -> Self {
-        let Some((at, _)) = text.rmatch_indices('\n').nth(n - 1) else {
-            return Self::whole(text);
-        };
-        let earlier = text[..at].strip_suffix('\r').unwrap_or(&text[..at]);
-        Self {
-            shown: &text[at + 1..],
-            folded: Some(earlier),
-            label: lines_label(earlier.lines().count(), "earlier"),
-        }
-    }
-}
-
-/// "Show 1 more line", "Show 3 earlier lines".
-fn lines_label(count: usize, which: &str) -> String {
-    let s = if count == 1 { "" } else { "s" };
-    format!("Show {count} {which} line{s}")
-}
-
 #[derive(Template)]
 #[template(path = "web/tool_call.html")]
 struct ToolCallFragment<'a> {
     id: &'a str,
     name: &'a str,
-    input: Option<Folded<'a>>,
-    output: Option<Folded<'a>>,
+    /// The input's first line, shown while the call is collapsed, with " …" if more follow.
+    first_line: Option<String>,
+    /// What the collapsed call holds besides its input: "Output, 14 lines, 1 attachment".
+    hint: Option<String>,
+    /// Whether there's anything to expand: input, output, or media.
+    expandable: bool,
+    input: &'a str,
+    output: &'a str,
     attachments: String,
     running: bool,
     error: bool,
     status: Option<&'static str>,
 }
 
-/// Tool call element `id` ([`tool_element`]): the tool's name, its `input` ([`tool_input`]) with
-/// only the first line unfolded, and by `state` its output with only the last
-/// [`TOOL_OUTPUT_LINES`] lines unfolded, then the media it returned.
+/// The first line of `input`, with " …" if more follow.
+fn first_line(input: &str) -> String {
+    match input.split_once('\n') {
+        Some((first, _)) => format!("{} …", first.strip_suffix('\r').unwrap_or(first)),
+        None => input.to_owned(),
+    }
+}
+
+/// "Output, 14 lines", "Output, 1 line, 2 attachments", "1 attachment"; `None` for neither.
+fn output_hint(output: &str, media: usize) -> Option<String> {
+    let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+    let lines =
+        (!output.is_empty()).then(|| format!("Output, {}", plural(output.lines().count(), "line")));
+    let media = (media > 0).then(|| plural(media, "attachment"));
+    match (lines, media) {
+        (Some(lines), Some(media)) => Some(format!("{lines}, {media}")),
+        (lines, media) => lines.or(media),
+    }
+}
+
+/// Tool call element `id` ([`tool_element`]): the tool's name and status, then collapsed to the
+/// first line of its `input` ([`tool_input`]) and a hint of its output. Expanded, it shows the
+/// whole input, the output by `state`, and the media it returned.
 pub(super) fn tool_call(id: &str, name: &str, input: &str, state: ToolState<'_>) -> String {
     let input = input.trim_end();
     let mut output = String::new();
@@ -358,8 +333,11 @@ pub(super) fn tool_call(id: &str, name: &str, input: &str, state: ToolState<'_>)
     fragment(&ToolCallFragment {
         id,
         name,
-        input: (!input.is_empty()).then(|| Folded::first_line(input)),
-        output: (!output.is_empty()).then(|| Folded::last_lines(output, TOOL_OUTPUT_LINES)),
+        first_line: (!input.is_empty()).then(|| first_line(input)),
+        hint: output_hint(output, media.len()),
+        expandable: !input.is_empty() || !output.is_empty() || !media.is_empty(),
+        input,
+        output,
         attachments: if media.is_empty() {
             String::new()
         } else {
@@ -819,7 +797,8 @@ mod tests {
         );
         assert!(items[0].contains("<strong>there</strong>"));
         assert!(
-            items[1].contains("<pre>cmd: tool input</pre>") && items[1].contains("tool output"),
+            items[1].contains(r#"<pre class="tool-input">cmd: tool input</pre>"#)
+                && items[1].contains("tool output"),
             "{}",
             items[1]
         );
@@ -833,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_call_shows_the_first_input_line_and_the_last_output_lines() {
+    fn a_tool_call_collapses_to_the_first_input_line_and_expands_to_everything() {
         let input = tool_input(&serde_json::json!({
             "timeout": 30,
             "command": "cargo test \\\n  --all\r\n<b>",
@@ -853,38 +832,52 @@ mod tests {
             html.starts_with(r#"<article id="t-1" class="tool">"#),
             "{html}"
         );
-        assert!(html.contains("shell__exec"), "{html}");
-        assert!(html.contains(r"<pre>command: cargo test \</pre>"), "{html}");
+        // Collapsed: the name, the first input line, and how much output there is.
+        let (summary, body) = html
+            .split_once("<summary>")
+            .and_then(|(_, rest)| rest.split_once("</summary>"))
+            .expect(&html);
+        assert!(summary.contains("shell__exec"), "{summary}");
         assert!(
-            html.contains(
-                "<summary>Show 3 more lines</summary><pre>  --all\r\n&#60;b&#62;\ntimeout: 30</pre>"
-            ),
-            "{html}"
+            summary.contains(r#"<code class="tool-first-line">command: cargo test \ …</code>"#),
+            "{summary}"
+        );
+        assert!(summary.contains("Output, 10 lines"), "{summary}");
+        assert!(!summary.contains("--all"), "{summary}");
+        assert!(!summary.contains("msg-status"), "{summary}");
+        // Expanded: the whole input and output.
+        assert!(
+            body.contains(&format!(
+                r#"<pre class="tool-input">command: cargo test \{}  --all{}&#60;b&#62;{}timeout: 30</pre>"#,
+                '\n', "\r\n", '\n'
+            )),
+            "{body}"
         );
         assert!(
-            html.contains(
-                "<summary>Show 4 earlier lines</summary><pre>line 1\nline 2\nline 3\nline 4</pre>"
-            ),
-            "{html}"
+            body.contains(&format!(
+                r#"<pre class="tool-output">{}</pre>"#,
+                output.trim_end()
+            )),
+            "{body}"
         );
-        assert!(
-            html.contains("<pre>line 5\nline 6\nline 7\nline 8\nline 9\nline 10</pre>"),
-            "{html}"
-        );
-        assert!(!html.contains("msg-status"), "{html}");
 
-        // Short enough: nothing folded.
-        let html = tool_call(
-            "t-1",
-            "x",
-            "ls",
-            ToolState::Done {
-                content: &[text("a\nb\nc\nd\ne\nf\n")],
-                is_error: false,
-            },
+        // One input line: shown whole, no ellipsis.
+        let html = tool_call("t-1", "x", "ls", ToolState::Running);
+        assert!(
+            html.contains(r#"<code class="tool-first-line">ls</code>"#),
+            "{html}"
         );
-        assert!(!html.contains("<details>"), "{html}");
-        assert!(html.contains("<pre>a\nb\nc\nd\ne\nf</pre>"), "{html}");
+    }
+
+    #[test]
+    fn a_tool_call_hints_at_its_output() {
+        assert_eq!(output_hint("", 0), None);
+        assert_eq!(output_hint("a", 0).as_deref(), Some("Output, 1 line"));
+        assert_eq!(output_hint("", 2).as_deref(), Some("2 attachments"));
+        assert_eq!(
+            output_hint("a\nb", 1).as_deref(),
+            Some("Output, 2 lines, 1 attachment")
+        );
     }
 
     #[test]
@@ -895,7 +888,10 @@ mod tests {
             "{running}"
         );
         assert!(running.contains("Running"), "{running}");
-        assert!(!running.contains("tool-input"), "no input: {running}");
+        assert!(
+            !running.contains("<details>") && !running.contains("tool-input"),
+            "nothing to expand: {running}"
+        );
         let stopped = tool_call("t-1", "x", "", ToolState::Stopped);
         assert!(stopped.contains("Stopped"), "{stopped}");
         let failed = tool_call(
@@ -936,7 +932,10 @@ mod tests {
                 is_error: false,
             },
         );
-        assert!(html.contains("<pre>saved</pre>"), "{html}");
+        assert!(
+            html.contains(r#"<pre class="tool-output">saved</pre>"#),
+            "{html}"
+        );
         assert!(html.contains("<img"), "{html}");
         assert!(!html.contains("[media:"), "{html}");
     }

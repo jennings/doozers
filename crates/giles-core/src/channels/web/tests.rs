@@ -2157,9 +2157,12 @@ async fn the_agent_loop_shows_tool_calls_on_the_page() {
     assert!(started.starts_with(r#"<article id="t-"#), "{started}");
     assert!(started.contains(r#"class="tool live""#), "{started}");
     assert!(started.contains("shell__exec"), "{started}");
-    assert!(started.contains("<pre>command: ls</pre>"), "{started}");
     assert!(
-        started.contains("<summary>Show 1 more line</summary><pre>-la</pre>"),
+        started.contains(r#"<code class="tool-first-line">command: ls …</code>"#),
+        "{started}"
+    );
+    assert!(
+        started.contains("<pre class=\"tool-input\">command: ls\n-la</pre>"),
         "{started}"
     );
     let element = started.split('"').nth(1).unwrap().to_owned();
