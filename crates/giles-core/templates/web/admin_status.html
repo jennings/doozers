@@ -51,7 +51,10 @@
 {%- if let Some(linking) = channel.status.linking %}
 <div class="linking">
 {%- if let Some(qr) = linking.qr %}
+<details class="qr-toggle">
+<summary>Show QR code</summary>
 {{ qr|safe }}
+</details>
 {%- endif %}
 <div>
 {%- if linking.qr.is_some() %}
@@ -95,7 +98,7 @@
 <thead><tr><th>Instance</th><th>Kind</th><th>State</th><th>Tools</th></tr></thead>
 <tbody>
 {%- for plugin in plugins %}
-<tr><td><a href="/admin/plugins#plugin-{{ plugin.route_kind }}-{{ plugin.instance }}">{{ plugin.instance }}</a></td><td class="secondary">{{ plugin.kind }}</td><td><span class="pill pill-{{ plugin.class }}">{{ plugin.state_word }}</span></td><td class="secondary">{% if let Some(tools) = plugin.tools %}{{ tools }}{% endif %}</td></tr>
+<tr><td data-label="Instance" class="m-title"><a href="/admin/plugins#plugin-{{ plugin.route_kind }}-{{ plugin.instance }}">{{ plugin.instance }}</a></td><td data-label="Kind" class="secondary m-meta">{{ plugin.kind }}</td><td data-label="State" class="m-aside"><span class="pill pill-{{ plugin.class }}">{{ plugin.state_word }}</span></td><td data-label="Tools" class="secondary m-meta m-label">{% if let Some(tools) = plugin.tools %}{{ tools }}{% endif %}</td></tr>
 {%- endfor %}
 </tbody>
 </table>

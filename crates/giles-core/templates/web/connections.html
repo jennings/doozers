@@ -17,12 +17,12 @@
 <tbody>
 {%- for server in servers %}
 <tr id="connection-{{ server.name }}">
-<td><code>{{ server.name }}</code></td>
+<td data-label="MCP server" class="m-title"><code>{{ server.name }}</code></td>
 {%- if let Some(error) = server.failure %}
-<td><span class="pill pill-warn">Not available</span> <span class="muted">{{ error }}</span></td>
+<td data-label="Your sign-in" class="m-split"><span class="pill pill-warn m-aside">Not available</span> <span class="muted m-body">{{ error }}</span></td>
 <td></td>
 {%- else if let Some(since) = server.signed_in %}
-<td><span class="pill pill-ok">Signed in</span> <span class="muted">tokens updated {{ since }}</span></td>
+<td data-label="Your sign-in" class="m-split"><span class="pill pill-ok m-aside">Signed in</span> <span class="muted m-meta">tokens updated {{ since }}</span></td>
 <td class="row-actions">
 <form method="post" action="/connections/{{ server.name }}/sign-out">
 <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -30,7 +30,7 @@
 </form>
 </td>
 {%- else %}
-<td><span class="pill pill-neutral">Not signed in</span></td>
+<td data-label="Your sign-in" class="m-split"><span class="pill pill-neutral m-aside">Not signed in</span></td>
 <td class="row-actions"><a class="button button-small button-primary" href="/connections/{{ server.name }}/sign-in?csrf={{ csrf }}">Sign in</a></td>
 {%- endif %}
 </tr>
