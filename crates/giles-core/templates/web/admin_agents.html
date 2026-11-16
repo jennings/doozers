@@ -16,8 +16,8 @@
 <tbody>
 {%- for agent in agents %}
 <tr id="agent-{{ agent.id }}">
-<td><strong><a href="/admin/agents/{{ agent.id }}">{{ agent.label }}</a></strong></td>
-<td><code>{{ agent.models }}</code></td>
+<td data-label="Agent" class="m-title"><strong><a href="/admin/agents/{{ agent.id }}">{{ agent.label }}</a></strong></td>
+<td data-label="Models" class="m-body"><code>{{ agent.models }}</code></td>
 <td class="row-actions"><a href="/chats/new?agent={{ agent.id }}">Chat</a> <a href="/admin/agents/{{ agent.id }}/edit">Edit</a> <a class="warn-text" href="/admin/agents/{{ agent.id }}/remove">Remove</a></td>
 </tr>
 {%- endfor %}

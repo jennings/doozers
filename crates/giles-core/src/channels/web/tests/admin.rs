@@ -351,8 +351,8 @@ async fn the_status_page_shows_the_admin_state_with_plugin_strings_escaped() {
         r#"<p class="warn-text">nick in use &#60;script&#62;alert(1)&#60;/script&#62;</p>"#,
         "since <time datetime=\"2026-10-21T00:00:00Z\">2026-10-21 00:00:00 UTC</time>",
         r##"<a href="/admin/plugins#plugin-channel-libera">libera</a>"##,
-        r#"<td><span class="pill pill-bad">down</span></td>"#,
-        r#"<td><span class="pill pill-unknown">unknown</span></td>"#,
+        r#"<td data-label="State" class="m-aside"><span class="pill pill-bad">down</span></td>"#,
+        r#"<td data-label="State" class="m-aside"><span class="pill pill-unknown">unknown</span></td>"#,
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
@@ -509,8 +509,8 @@ async fn the_plugins_page_shows_a_toolsets_state_and_a_restart_form() {
     let (_, html) = env.admin_page(&admin, "/admin").await;
     for expected in [
         r##"<a href="/admin/plugins#plugin-toolset-files">files</a>"##,
-        r#"<span class="pill pill-ok">running</span></td><td class="secondary">4</td>"#,
-        r#"<span class="pill pill-bad">failed</span></td><td class="secondary">0</td>"#,
+        r#"<span class="pill pill-ok">running</span></td><td data-label="Tools" class="secondary m-meta m-label">4</td>"#,
+        r#"<span class="pill pill-bad">failed</span></td><td data-label="Tools" class="secondary m-meta m-label">0</td>"#,
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }

@@ -420,15 +420,15 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
         r#"<a href="/admin/mcp-servers/box">box</a>"#,
         "<code>http://127.0.0.1:9/mcp</code>",
         // The stdio toolset of giles.toml, as it runs.
-        "<td class=\"secondary\">command</td>",
+        r#"<td data-label="Runs as" class="secondary m-meta">command</td>"#,
         "<code>/x</code>",
-        "<td class=\"secondary\">remote URL</td>",
+        r#"<td data-label="Runs as" class="secondary m-meta">remote URL</td>"#,
         "<code>https://mcp.example.com/mcp</code>",
-        r#"<td><span class="pill pill-bad">failed</span></td>"#,
-        r#"<td><span class="pill pill-ok">running</span></td>"#,
-        r#"<td><span class="pill pill-ok">idle</span></td>"#,
-        "<td class=\"secondary\">4</td>",
-        "<td class=\"secondary\">2</td>",
+        r#"<td data-label="State" class="m-aside"><span class="pill pill-bad">failed</span></td>"#,
+        r#"<td data-label="State" class="m-aside"><span class="pill pill-ok">running</span></td>"#,
+        r#"<td data-label="State" class="m-aside"><span class="pill pill-ok">idle</span></td>"#,
+        r#"<td data-label="Tools" class="secondary m-meta m-label">4</td>"#,
+        r#"<td data-label="Tools" class="secondary m-meta m-label">2</td>"#,
         "cannot connect &#60;script&#62;alert(1)&#60;/script&#62;",
         r#"href="/admin/mcp-servers/box/edit""#,
         r#"href="/admin/mcp-servers/box/remove""#,
@@ -1441,7 +1441,7 @@ async fn the_connections_page_signs_the_user_in_and_out() {
         .unwrap();
     let (_, html) = t.get("/connections").await;
     assert!(
-        html.contains(r#"<span class="pill pill-ok">Signed in</span>"#),
+        html.contains(r#"<span class="pill pill-ok m-aside">Signed in</span>"#),
         "{html}"
     );
     assert!(

@@ -624,6 +624,7 @@ button,
   gap: 6px;
 }
 
+
 .stat-label {
   color: var(--text-faint);
   font-size: 0.75rem;
@@ -643,6 +644,35 @@ button,
 
   &.warn {
     color: var(--warn-text);
+  }
+}
+
+/* Narrow screens: the stat cards become one card of label and value lines. */
+@media (width < 760px) {
+  .stats {
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 8px 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+
+  .stat {
+    display: contents;
+  }
+
+  .stat-label {
+    color: var(--text-faint);
+    font-size: 0.875rem;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  .stat-value {
+    font-family: var(--font);
+    font-size: 0.875rem;
+    font-weight: 400;
   }
 }
 
@@ -780,6 +810,185 @@ dialog.confirm {
 /* A table with many columns, such as the jobs. */
 .table-wide {
   min-width: 980px;
+}
+
+/* Narrow screens: a table becomes a stacked list, with no sideways scrolling. Each row is a block
+   whose cells flow into lines by their m-* class: the title line (.m-lead, .m-title, .m-aside),
+   then the meta line (.m-meta, .m-chip), body lines (.m-body), the foot line (.m-foot), and the
+   row's buttons (.row-actions). A cell with no m-* class gets a body line of its own. */
+@media (width < 760px) {
+  .table-wrap {
+    overflow-x: visible;
+  }
+
+  .table {
+    min-width: 0;
+
+    & thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    & tbody {
+      display: block;
+    }
+
+    & tbody tr:first-child {
+      border-top: none;
+    }
+
+    & tbody tr {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 6px;
+      padding: 14px 16px;
+
+      /* Ends the title line. */
+      &::before {
+        content: "";
+        order: 2;
+        flex-basis: 100%;
+      }
+    }
+
+    & td {
+      order: 4;
+      flex-basis: 100%;
+      min-width: 0;
+      margin-top: 6px;
+      padding: 0;
+      overflow-wrap: anywhere;
+
+      &:empty {
+        display: none;
+      }
+    }
+
+    & .m-lead,
+    & .m-title,
+    & .m-aside {
+      order: 1;
+      flex: none;
+      margin-top: 0;
+    }
+
+    & .m-lead {
+      color: var(--text-faint);
+    }
+
+    & .m-title {
+      flex: 1 1 0;
+      font-size: 0.9375rem;
+      font-weight: 600;
+    }
+
+    & .m-meta,
+    & .m-chip {
+      order: 3;
+      flex: none;
+      font-size: 0.8125rem;
+    }
+
+    & .m-meta {
+      color: var(--text-secondary);
+    }
+
+    & .m-chip {
+      margin-top: 8px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--surface-selected);
+
+      &::before {
+        content: attr(data-label) ": ";
+        color: var(--text-muted);
+      }
+    }
+
+    & .m-body {
+      order: 4;
+    }
+
+    & .m-foot {
+      order: 5;
+      flex: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    /* " · " between the values of one line, and a cell's column name before its value. */
+    & .m-meta ~ .m-meta::before,
+    & .m-foot ~ .m-foot::before {
+      content: "·";
+      margin-right: 6px;
+    }
+
+    & .m-label::before {
+      content: attr(data-label) ":\a0";
+    }
+
+    & .m-meta ~ .m-meta.m-label::before,
+    & .m-foot ~ .m-foot.m-label::before {
+      content: "·\a0\a0" attr(data-label) ":\a0";
+      margin-right: 0;
+    }
+
+    /* A cell whose parts go to different lines: its children take the m-* classes. */
+    & .m-split {
+      display: contents;
+    }
+
+    & .m-hide {
+      display: none;
+    }
+
+    & .long {
+      min-width: 0;
+      max-width: none;
+    }
+
+    & .row-actions {
+      order: 6;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      text-align: left;
+      white-space: normal;
+
+      & a {
+        margin: 0;
+      }
+
+      /* The danger action goes to the far end. */
+      & .button-danger,
+      & .warn-text {
+        margin-left: auto;
+      }
+    }
+
+    & tr.problem-row {
+      padding-top: 0;
+
+      &::before {
+        display: none;
+      }
+
+      & td {
+        margin-top: 0;
+      }
+    }
+  }
+
+  .jobs code {
+    white-space: normal;
+  }
 }
 
 /* Pills and banners ----------------------------------------------------------------------------- */
@@ -1531,6 +1740,26 @@ details.card[open] > summary {
     gap: 8px;
     color: var(--text-secondary);
     font-size: 0.8125rem;
+  }
+}
+
+/* The QR code is behind "Show QR code" on narrow screens, where the page is likely on the phone
+   that would scan it; wider, it is always shown. */
+.qr-toggle > summary {
+  min-height: 32px;
+  color: var(--link);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+@media (width >= 760px) {
+  .qr-toggle > summary {
+    display: none;
+  }
+
+  .qr-toggle::details-content {
+    content-visibility: visible;
+    display: contents;
   }
 }
 
