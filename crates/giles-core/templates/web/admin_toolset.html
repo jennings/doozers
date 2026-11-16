@@ -3,35 +3,38 @@
 {% block title %}{{ name }} - MCP servers - Giles{% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/mcp-servers">MCP servers</a>
 <div class="page-head">
 <h1>{{ name }}</h1>
 <div class="actions">
+{%- if stored %}
+<a class="button button-primary" href="/admin/mcp-servers/{{ name }}/edit">Edit</a>
+{%- endif %}
 {%- if restartable %}
-<form class="inline-form" method="post" action="/admin/mcp-servers/{{ name }}/restart">
+<form method="post" action="/admin/mcp-servers/{{ name }}/restart">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <button type="submit">Restart</button>
 </form>
 {%- endif %}
 {%- if stored %}
-<a class="button" href="/admin/mcp-servers/{{ name }}/edit">Edit</a>
 <a class="button" href="/admin/mcp-servers/{{ name }}/rename">Rename</a>
-<a class="button" href="/admin/mcp-servers/{{ name }}/remove">Remove</a>
+<a class="button button-danger" href="/admin/mcp-servers/{{ name }}/remove">Remove</a>
 {%- endif %}
 </div>
 </div>
 {%- if !stored %}
-<p class="notice">This MCP server is configured in giles.toml, so it can only be changed there.</p>
+<p class="banner banner-warn">This MCP server is configured in giles.toml, so it can only be changed there.</p>
 {%- endif %}
-<dl class="facts">
+<dl class="card facts">
 <dt>Runs as</dt>
 <dd>{{ transport }}</dd>
 {%- if let Some(plugin) = plugin %}
 <dt>State</dt>
-<dd class="state-{{ plugin.class }}">{{ plugin.state }}</dd>
+<dd><span class="pill pill-{{ plugin.class }}">{{ plugin.state_word }}</span>{% if plugin.state != plugin.state_word %} <span class="muted">{{ plugin.state }}</span>{% endif %}</dd>
 {%- endif %}
 {%- if let Some(error) = error %}
 <dt>Last error</dt>
-<dd class="state-bad">{{ error }}</dd>
+<dd class="warn-text">{{ error }}</dd>
 {%- endif %}
 {%- if let Some(plugin) = plugin %}
 {%- if !plugin.location.is_empty() %}
@@ -63,23 +66,27 @@
 {%- endfor %}
 {%- if let Some(callback) = callback %}
 <dt>Sign-in callback</dt>
-<dd><code>{{ callback }}</code><div class="detail">Register this redirect URI with the server's OAuth app. Each user signs in on <a href="/connections">Connections</a>.</div></dd>
+<dd><code>{{ callback }}</code><div class="help">Register this redirect URI with the server's OAuth app. Each user signs in on <a href="/connections">Connections</a>.</div></dd>
 {%- endif %}
 </dl>
+<section class="section">
 <h2>Tools</h2>
 {%- if tools.is_empty() %}
 <p>No tools are offered to new conversations yet. A server that is still starting, or failed to start, offers none.</p>
 {%- else %}
-<table class="admin-table">
+<div class="table-wrap">
+<table class="table">
 <thead><tr><th>Name</th><th>Description</th></tr></thead>
 <tbody>
 {%- for tool in tools %}
 <tr>
 <td><code>{{ tool.name }}</code></td>
-<td>{{ tool.description }}</td>
+<td class="secondary">{{ tool.description }}</td>
 </tr>
 {%- endfor %}
 </tbody>
 </table>
+</div>
 {%- endif %}
+</section>
 {% endblock %}

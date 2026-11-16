@@ -416,19 +416,19 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
     assert_eq!(status, StatusCode::OK);
     for expected in [
         r#"<a href="/admin/mcp-servers" aria-current="page">MCP servers</a>"#,
-        r#"<a class="button" href="/admin/mcp-servers/new">New MCP server</a>"#,
+        r#"<a class="button button-primary" href="/admin/mcp-servers/new">New MCP server</a>"#,
         r#"<a href="/admin/mcp-servers/box">box</a>"#,
         "<code>http://127.0.0.1:9/mcp</code>",
         // The stdio toolset of giles.toml, as it runs.
-        "<td>command</td>",
+        "<td class=\"secondary\">command</td>",
         "<code>/x</code>",
-        "<td>remote URL</td>",
+        "<td class=\"secondary\">remote URL</td>",
         "<code>https://mcp.example.com/mcp</code>",
-        r#"<td class="state-bad">failed</td>"#,
-        r#"<td class="state-ok">running</td>"#,
-        r#"<td class="state-ok">idle</td>"#,
-        "<td>4</td>",
-        "<td>2</td>",
+        r#"<td><span class="pill pill-bad">failed</span></td>"#,
+        r#"<td><span class="pill pill-ok">running</span></td>"#,
+        r#"<td><span class="pill pill-ok">idle</span></td>"#,
+        "<td class=\"secondary\">4</td>",
+        "<td class=\"secondary\">2</td>",
         "cannot connect &#60;script&#62;alert(1)&#60;/script&#62;",
         r#"href="/admin/mcp-servers/box/edit""#,
         r#"href="/admin/mcp-servers/box/remove""#,
@@ -447,7 +447,7 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
         "{html}"
     );
     assert!(
-        html.contains(r#"<span class="detail">giles.toml</span>"#),
+        html.contains(r#"<span class="meta">giles.toml</span>"#),
         "{html}"
     );
     assert!(html.contains("Edit it in giles.toml"), "{html}");
@@ -462,14 +462,14 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
     let (status, html) = t.get("/admin/mcp-servers/new").await;
     assert_eq!(status, StatusCode::OK);
     for expected in [
-        r#"<form class="agent-form" method="post" action="/admin/mcp-servers">"#,
+        r#"<form class="card form form-wide" method="post" action="/admin/mcp-servers">"#,
         &format!(r#"name="csrf" value="{CSRF}""#),
         r#"id="url" name="url""#,
         r#"<option value="none" selected>No authentication</option>"#,
         r#"<option value="token">Bearer token</option>"#,
         r#"<input type="password" name="bearer_token" autocomplete="off""#,
         // Hidden until the URL is plain http.
-        r#"<label class="tool" id="insecure-field" hidden><input type="checkbox" name="insecure"> Allow insecure connections</label>"#,
+        r#"<label class="check" id="insecure-field" hidden><input type="checkbox" name="insecure"> Allow insecure connections</label>"#,
         r#"name="deadline""#,
         r#"name="parallel""#,
         r#"name="skills""#,
@@ -692,9 +692,9 @@ async fn editing_replaces_the_settings_and_a_stale_edit_is_refused() {
         &format!(r#"name="updated_at" value="{loaded}""#),
         r#"name="url" value="http://127.0.0.1:9/v1""#,
         r#"name="deadline" value="30m""#,
-        "<code>box</code>",
+        r#"<code class="field-value">box</code>"#,
         // The URL is plain http, so the box shows.
-        r#"<label class="tool" id="insecure-field"><input type="checkbox" name="insecure">"#,
+        r#"<label class="check" id="insecure-field"><input type="checkbox" name="insecure">"#,
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
@@ -1026,7 +1026,7 @@ async fn the_toolset_page_shows_settings_state_and_tools_and_restarts() {
     assert_eq!(status, StatusCode::OK);
     for expected in [
         "<h1>box</h1>",
-        r#"<dd class="state-ok">running</dd>"#,
+        r#"<dd><span class="pill pill-ok">running</span>"#,
         "<dd>remote URL</dd>",
         "<code>http://127.0.0.1:9/mcp</code>",
         "<code>bearer token (stored)</code>",
