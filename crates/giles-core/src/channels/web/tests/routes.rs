@@ -228,7 +228,7 @@ async fn the_list_shows_routes_in_order_escaped_with_links_and_buttons() {
         "{html}"
     );
     assert!(
-        html.contains(r#"<a href="/admin/routes">Routes</a>"#),
+        html.contains(r#"<a href="/admin/routes" aria-current="page">Routes</a>"#),
         "{html}"
     );
 

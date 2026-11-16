@@ -1,9 +1,8 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}Remove {{ name }} - MCP servers - Giles{% endblock %}
 
 {% block content %}
-{% include "web/admin_nav.html" %}
 <h1>Remove {{ name }}?</h1>
 <p>Removing the MCP server <code>{{ name }}</code> does this:</p>
 <ul>

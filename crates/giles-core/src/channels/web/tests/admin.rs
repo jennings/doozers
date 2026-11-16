@@ -358,7 +358,7 @@ async fn the_status_page_shows_the_admin_state_with_plugin_strings_escaped() {
     assert!(!html.contains(XSS), "{html}");
     // Nothing needs linking, so the page doesn't reload itself.
     assert!(!html.contains("http-equiv=\"refresh\""), "{html}");
-    assert!(!html.contains("<svg"), "{html}");
+    assert!(!html.contains(r#"<svg class="qr""#), "{html}");
 }
 
 #[tokio::test]
@@ -386,7 +386,7 @@ async fn a_channel_that_needs_linking_shows_its_qr_code_until_it_connects() {
     assert!(section.contains("2026-10-21 00:00:20 UTC"), "{section}");
     // The payload is drawn, never printed.
     assert!(!html.contains("QRPAYLOAD"), "{html}");
-    assert_eq!(html.matches("<svg").count(), 1);
+    assert_eq!(html.matches(r#"<svg class="qr""#).count(), 1);
 
     // The plugin replaced its code: the next load shows the new one.
     admin.set_channel_status(
@@ -398,8 +398,9 @@ async fn a_channel_that_needs_linking_shows_its_qr_code_until_it_connects() {
     );
     let (_, next) = env.admin_page(&admin, "/admin").await;
     let svg = |page: &str| {
-        let start = page.find("<svg").unwrap();
-        page[start..page.find("</svg>").unwrap()].to_owned()
+        let start = page.find(r#"<svg class="qr""#).unwrap();
+        let end = start + page[start..].find("</svg>").unwrap();
+        page[start..end].to_owned()
     };
     assert_ne!(svg(&html), svg(&next));
 
@@ -431,7 +432,7 @@ async fn a_channel_that_needs_linking_shows_its_qr_code_until_it_connects() {
     // Once linked, no code and no reload.
     admin.set_channel_status("whatsapp", State::Connected(Connected {}));
     let (_, html) = env.admin_page(&admin, "/admin").await;
-    assert!(!html.contains("<svg"), "{html}");
+    assert!(!html.contains(r#"<svg class="qr""#), "{html}");
     assert!(!html.contains("http-equiv=\"refresh\""), "{html}");
 }
 

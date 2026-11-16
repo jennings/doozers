@@ -179,7 +179,7 @@ a deleting `Set-Cookie` on the response. A store error is a 500. `WebApp::expire
 expired rows now and every hour (`Store::web_sessions_expire`) until shutdown.
 
 `POST /logout` (CSRF-checked) deletes the session and the cookie. A proxy login has nothing to end,
-so the chat list shows no logout button for it.
+so the sidebar shows no logout button for it.
 
 ### The trusted-proxy listener
 
@@ -858,7 +858,7 @@ every POST. [Environment workspaces](environments.md#calls) describes the calls 
 
 ## Toolset pages
 
-The web UI calls stored toolsets MCP servers: the admin menu entry, the pages, and their addresses
+The web UI calls stored toolsets MCP servers: the sidebar entry, the pages, and their addresses
 (`/admin/mcp-servers`). The code and the rest of the docs keep the name toolset.
 
 In `toolsets.rs`: `web.install_toolsets(builder, manager, admin, registry)`, which `serve` calls
@@ -980,13 +980,22 @@ answer is `no-store`.
 
 ## Templates and styles
 
-Templates are in `crates/giles-core/templates/web/`: pages `chats.html`, `chat.html`, `error.html`,
-`login_required.html`, `login.html`, `admin_status.html`, `admin_plugins.html`, `admin_agents.html`,
-`admin_agent.html`, `admin_agent_new.html`, `admin_routes.html`, `admin_route_form.html`,
-`admin_toolsets.html`, `admin_toolset.html`, `admin_toolset_form.html`, `admin_toolset_remove.html`,
-`admin_toolset_rename.html`, `jobs.html`, `job_form.html` (extending `layout.html`; `admin_nav.html`
-is included by the admin pages), and fragments `message.html`, `approval.html`, `compose.html`,
-`attachments.html` (rendered by `render.rs`). Nothing inline: no scripts, styles, or `hx-on`
+Templates are in `crates/giles-core/templates/web/`, and the design they follow is in
+[Web interface design](web-ui.md). Every page for a signed-in user extends `app.html`, which extends
+`layout.html` and adds the sidebar, the top bar of narrow screens, and the navigation `<dialog>`
+(opened by an invoker button, `command="show-modal"`, so it needs no script). `nav.html` is the
+navigation and the user footer, included in both the sidebar and the dialog. The pages that render
+without a login (`error.html`, `login.html`, `login_required.html`) extend `layout.html` directly
+and are standalone cards.
+
+`app.html` reads one field, `shell` (`shell::Shell`), that every page's struct has.
+`Shell::new(user, nav)` builds it from the `WebUser` and the sidebar link the page belongs to
+(`shell::Nav`): the groups of links with that one marked `aria-current="page"`, the Admin group only
+when `may_administer`, the user's id and its initial for the footer (always `owner` in v1), and the
+CSRF token of the logout form for a cookie login.
+
+The fragments `message.html`, `tool_call.html`, `approval.html`, `compose.html`, and
+`attachments.html` are rendered by `render.rs`. Nothing is inline: no scripts, styles, or `hx-on`
 handlers (the CSP and `allowEval: false` forbid them). The chat page is `hx-ext="sse"` with
 `sse-connect`; `#messages` has `sse-swap="message"` and `hx-swap="beforeend"`. The compose form
 replaces itself (`hx-target="this"`, `hx-swap="outerHTML"`); approval forms use `hx-swap="none"`.

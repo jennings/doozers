@@ -29,7 +29,7 @@ giles admin login-link --user owner
 ```
 
 Open the link and press **Log in** to log that browser in for 30 days. The link works once, and only
-for 10 minutes. **Log out** on the chat list ends the login. See [Command line](cli.md).
+for 10 minutes. **Log out** at the bottom of the sidebar ends the login. See [Command line](cli.md).
 
 The link starts with the address Giles listens on. If you reach Giles at another address, such as
 through a reverse proxy, set `public_url`:
@@ -108,7 +108,7 @@ The buttons send [the same replies](commands.md) you could type, and typing them
 
 ## Scheduled jobs
 
-**Scheduled jobs** on the chat list shows your jobs with every agent in one table. It lists the jobs
+**Scheduled jobs** in the sidebar shows your jobs with every agent in one table. It lists the jobs
 you scheduled here and the ones an agent scheduled when you asked it. The owner also sees the
 [`[[jobs]]`](configuration.md#jobs) of every agent, marked `agent.toml`.
 
@@ -149,7 +149,7 @@ The `[[jobs]]` from `agent.toml` can't be changed here. Edit `agent.toml` to cha
 
 ## Admin pages
 
-**Status** on the chat list opens the admin pages. Only the owner can open them.
+The **Admin** group in the sidebar opens the admin pages. Only the owner sees it and can open them.
 
 `/admin` shows what [`giles status`](cli.md) shows, including each channel's last status.
 
@@ -171,8 +171,8 @@ The page reloads itself until the channel connects, so it always shows the newes
 
 ## Agents
 
-**Agents** in the admin menu lists every agent, with buttons to chat with it, edit it, or remove it.
-An agent's page shows its models, tools, and time zone, and the files in `agents/<agent>/` as plain
+**Agents** in the sidebar lists every agent, with buttons to chat with it, edit it, or remove it. An
+agent's page shows its models, tools, and time zone, and the files in `agents/<agent>/` as plain
 text.
 
 **New agent** opens a form that creates one:
@@ -298,9 +298,9 @@ memories. Nobody else can see or change a group's memories.
 
 ## Routes
 
-**Routes** in the admin menu decides which agent answers each conversation, on every channel. A
-message in a conversation that no route matches is dropped. A fresh Giles has no routes, and answers
-nobody until you add one.
+**Routes** in the sidebar decides which agent answers each conversation, on every channel. A message
+in a conversation that no route matches is dropped. A fresh Giles has no routes, and answers nobody
+until you add one.
 
 Routes are tried from the top, and the first match wins. Put a route for one conversation before a
 broader one for a whole channel or everything.
@@ -331,7 +331,7 @@ file. See [Configuration](configuration.md#routes).
 
 ## MCP servers
 
-**MCP servers** in the admin menu lists the MCP servers that give your agents more tools. Each row
+**MCP servers** in the sidebar lists the MCP servers that give your agents more tools. Each row
 shows how the server runs, its state, how many tools it offers, and its last error. A server's page
 shows its settings and the name and description of each tool, and has a **Restart** button.
 
@@ -448,8 +448,8 @@ You can't rename a server that you configure in `giles.toml` here. Stop Giles an
 
 ## Workspaces
 
-**Workspaces** in the admin menu lists the [workspaces](environments.md) your agents have, so you
-can see what they use and stop or delete one. Only the owner can open it.
+**Workspaces** in the sidebar lists the [workspaces](environments.md) your agents have, so you can
+see what they use and stop or delete one. Only the owner can open it.
 
 Each workspace shows:
 

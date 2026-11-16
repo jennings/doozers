@@ -28,6 +28,7 @@ use tracing::warn;
 use super::WebChannel;
 use super::auth::{WebUser, check_csrf};
 use super::pages::{WebApp, error_page, no_store};
+use super::shell::{Nav, Shell};
 use crate::http::{self, RouterBuilder};
 use crate::toolsets::{SignInView, ToolsetManager, ToolsetManagerError};
 
@@ -81,8 +82,8 @@ impl WebApp {
 #[derive(Template)]
 #[template(path = "web/connections.html")]
 struct ListPage<'a> {
+    shell: Shell,
     csrf: &'a str,
-    admin: bool,
     servers: Vec<ServerRow>,
     notice: Option<String>,
 }
@@ -127,8 +128,8 @@ async fn list_page(
         (None, None) => None,
     };
     http::render(&ListPage {
+        shell: Shell::new(&user, Nav::Connections),
         csrf: &user.csrf,
-        admin: super::admin::may_administer(&user),
         servers,
         notice,
     })

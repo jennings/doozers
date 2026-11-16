@@ -1,9 +1,8 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}Plugins - Giles{% endblock %}
 
 {% block content %}
-{% include "web/admin_nav.html" %}
 <h1>Plugins</h1>
 {%- if plugins.is_empty() %}
 <p>No plugins are configured.</p>

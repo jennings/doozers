@@ -23,6 +23,7 @@ mod proxy;
 mod qr;
 mod render;
 mod routes;
+mod shell;
 mod toolsets;
 mod workspaces;
 

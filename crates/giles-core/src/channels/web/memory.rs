@@ -43,6 +43,7 @@ use super::admin::may_administer;
 use super::agents::AgentPages;
 use super::auth::{WebUser, check_csrf};
 use super::pages::{agent_label, error_page};
+use super::shell::{Nav, Shell};
 use crate::config::AgentConfig;
 use crate::http;
 use crate::identity;
@@ -234,6 +235,7 @@ struct AddForm {
 #[derive(Template)]
 #[template(path = "web/admin_agent_memory.html")]
 struct MemoryPage {
+    shell: Shell,
     csrf: String,
     agent: String,
     label: String,
@@ -451,6 +453,7 @@ async fn build(
 
     let config = pages.manager.config().get();
     Ok(MemoryPage {
+        shell: Shell::new(user, Nav::Agents),
         csrf: user.csrf.clone(),
         agent: agent.id.to_string(),
         label: agent_label(&config, &agent.id),

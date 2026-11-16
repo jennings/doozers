@@ -23,6 +23,7 @@ use tracing::error;
 use super::admin::{forbidden, may_administer};
 use super::auth::{WebUser, check_csrf};
 use super::pages::{WebApp, agent_label, error_page, no_store};
+use super::shell::{Nav, Shell};
 use crate::config::Config;
 use crate::http::{self, RouterBuilder};
 use crate::routes::{RouteError, RouteSpec, RouteView, Routes};
@@ -72,6 +73,7 @@ struct RouteRow {
 #[derive(Template)]
 #[template(path = "web/admin_routes.html")]
 struct RoutesPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     routes: Vec<RouteRow>,
     /// How many `[[routes]]` `giles.toml` still has.
@@ -131,6 +133,7 @@ async fn routes_page(State(pages): State<RoutePages>, user: WebUser) -> Response
     };
     let config = pages.routes.config().get();
     http::render(&RoutesPage {
+        shell: Shell::new(&user, Nav::Routes),
         csrf: &user.csrf,
         routes: rows(views, &config),
         legacy: config.legacy_routes.len(),
@@ -147,6 +150,7 @@ struct Choice {
 #[derive(Template)]
 #[template(path = "web/admin_route_form.html")]
 struct RouteFormPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     title: &'a str,
     action: String,
@@ -265,6 +269,7 @@ async fn render_form(
         None => ("New route", "/admin/routes".to_owned(), "Add"),
     };
     http::render(&RouteFormPage {
+        shell: Shell::new(user, Nav::Routes),
         csrf: &user.csrf,
         title,
         action,

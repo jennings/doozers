@@ -25,6 +25,7 @@ use super::admin::{forbidden, may_administer};
 use super::auth::{WebUser, check_csrf};
 use super::memory;
 use super::pages::{WebApp, agent_label, error_page, no_store};
+use super::shell::{Nav, Shell};
 use crate::agents::{
     AdvancedSettings, AgentEdit, AgentFile, AgentForm, AgentManager, Content, CreateError,
     DEFAULT_SOUL, EditError, EnvironmentNotes, EnvironmentPicker, MAX_FILE_BYTES, MAX_FILES,
@@ -210,6 +211,7 @@ struct AgentRow {
 #[derive(Template)]
 #[template(path = "web/admin_agents.html")]
 struct AgentsPage {
+    shell: Shell,
     agents: Vec<AgentRow>,
 }
 
@@ -228,7 +230,10 @@ async fn agents_page(State(pages): State<AgentPages>, user: WebUser) -> Response
             models: models(agent),
         })
         .collect();
-    http::render(&AgentsPage { agents })
+    http::render(&AgentsPage {
+        shell: Shell::new(&user, Nav::Agents),
+        agents,
+    })
 }
 
 fn models(agent: &AgentConfig) -> String {
@@ -300,6 +305,7 @@ fn bytes(size: u64) -> String {
 #[derive(Template)]
 #[template(path = "web/admin_agent.html")]
 struct AgentPage {
+    shell: Shell,
     id: String,
     label: String,
     models: String,
@@ -360,6 +366,7 @@ async fn agent_page(
         }
     };
     http::render(&AgentPage {
+        shell: Shell::new(&user, Nav::Agents),
         id: agent.id.to_string(),
         label: agent_label(&config, &agent.id),
         models: models(&agent),
@@ -422,6 +429,7 @@ impl Default for CreateForm {
 #[derive(Template)]
 #[template(path = "web/admin_agent_new.html")]
 struct NewAgentPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     picker: ToolPicker,
     environments: EnvironmentPicker,
@@ -442,6 +450,7 @@ async fn render_form(
     let picker = ToolPicker::new(&config, &picked(&form.checks), &split_list(&form.tools));
     let (environments, notes) = environment_boxes(&config, &form.checks, &picker);
     http::render(&NewAgentPage {
+        shell: Shell::new(user, Nav::Agents),
         csrf: &user.csrf,
         picker,
         environments,
@@ -568,6 +577,7 @@ impl EditForm {
 #[derive(Template)]
 #[template(path = "web/admin_agent_edit.html")]
 struct EditAgentPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     id: &'a str,
     label: String,
@@ -597,6 +607,7 @@ async fn render_edit_form(
     let picker = ToolPicker::new(&config, &picked(&form.checks), &split_list(&form.tools));
     let (environments, notes) = environment_boxes(&config, &form.checks, &picker);
     http::render(&EditAgentPage {
+        shell: Shell::new(user, Nav::Agents),
         csrf: &user.csrf,
         id,
         label,
@@ -722,6 +733,7 @@ const TRASH: &str = "trash/agents";
 #[derive(Template)]
 #[template(path = "web/admin_agent_remove.html")]
 struct RemovePage<'a> {
+    shell: Shell,
     csrf: &'a str,
     id: String,
     label: String,
@@ -743,6 +755,7 @@ struct RouteLink {
 #[derive(Template)]
 #[template(path = "web/admin_agent_removed.html")]
 struct RemovedPage {
+    shell: Shell,
     id: String,
     label: String,
     trash: String,
@@ -760,6 +773,7 @@ fn confirm_page(
 ) -> Response {
     let config = pages.manager.config().get();
     http::render(&RemovePage {
+        shell: Shell::new(user, Nav::Agents),
         csrf: &user.csrf,
         label: agent_label(&config, &preview.id),
         id: preview.id.to_string(),
@@ -840,6 +854,7 @@ async fn remove(
             config_jobs,
             jobs_error,
         }) => http::render(&RemovedPage {
+            shell: Shell::new(&user, Nav::Agents),
             id: agent,
             label,
             trash: trash.display().to_string(),
