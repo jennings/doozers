@@ -137,12 +137,13 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 7)
+## Schema (version 10)
 
 The files in `crates/giles-store/src/migrations/` are the authority. `0001_initial.sql` has every
-table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, and `secret_key`, which
-`0002_blobs.sql`, `0003_routes.sql`, `0004_toolsets.sql`, `0005_workspaces.sql`, and
-`0007_secrets.sql` add. This is their outline.
+table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`, and
+`archived_conversations`, which `0002_blobs.sql`, `0003_routes.sql`, `0004_toolsets.sql`,
+`0005_workspaces.sql`, `0007_secrets.sql`, and `0009_archived_conversations.sql` add. This is their
+outline.
 
 | Table          | Columns and rules                                                                    |
 | -------------- | ------------------------------------------------------------------------------------ |
@@ -163,6 +164,7 @@ table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, and `secret_ke
 | `workspaces`   | The environment workspaces: `id` (core-assigned, primary key), `environment`, the owner (`agent`, `channel`, `conversation`, or `job_session`; exactly one form), `options` (JSON), the plugin's `description`, `working_directory`, `persistence`, `state` (`creating`, `active`, `deleting`, `deleted`), `created_at`, `last_used_at`, `deleted_at`, `delete_reason`. Partial unique indexes allow one `creating` or `active` row per owner. See [Workspaces](#workspaces). |
 | `secrets`      | The local secret store: `path` (primary key), `description`, `algorithm`, `nonce`, `ciphertext` (the sealed value), `created_at`, `created_by`, `updated_at`, `updated_by` (user ids, null when no user did it). See [Secrets](#secrets). |
 | `secret_key`   | One row, once the secret store has a data key: `source` (the key source that wrapped it), `algorithm`, `nonce`, `wrapped`, `created_at`. |
+| `archived_conversations` | The conversations their user archived: (`channel`, `conversation`) as the primary key, `archived_at`. No foreign key, since a conversation is a set of sessions. See [Conversations](#conversations). |
 
 `identities` and `pairings` are deferred with multi-user support (PLAN 1.1, D49) and don't exist
 yet.
@@ -219,14 +221,22 @@ The store doesn't decide when to compact or what a synthetic result says; the ag
 ## Conversations
 
 A conversation is every keyed session with one channel instance and conversation id, whatever the
-agent, ended sessions included. The web channel reads its chat list and chat history this way.
+agent, ended sessions included. The web channel reads its chat list and chat history this way, and
+archives and deletes chats.
+
+A conversation is archived while `archived_conversations` has a row for its instance and id. The row
+is keyed like the conversation, so it covers sessions that `/new` or an idle reset start later.
 
 | Method                  | Contract                                                            |
 | ----------------------- | ------------------------------------------------------------------- |
-| `channel_conversations` | A user's conversations on one instance, most recently active first (last message, else last session start), with when the first session started and the text of the first user message if it starts with a text block (filled slots skipped). |
+| `channel_conversations` | A user's conversations on one instance, archived ones or the others, most recently active first (last message, else last session start), with when the first session started and the text of the first user message if it starts with a text block (filled slots skipped). |
 | `conversation_transcript` | In one read transaction: the last N transcript rows of a conversation, oldest first, each with its session (sessions in id order, then by `seq`; summarized messages included, as a transcript to show, not a prompt; empty slots as `Entry::EmptySlot`), and the `waiting` inbox rows routed to its sessions that are `queued` or `started`, oldest first. A started row's message may be in the transcript already (its turn stores it). |
+| `conversation_archived_at` | When a conversation was archived, or `None`.                     |
+| `archive_conversation`  | Archives a user's conversation at `now`, keeping the first time if it's archived already; `false` if the user has no session in it. |
+| `unarchive_conversation` | Removes the archive row; whether there was one.                    |
+| `delete_conversation`   | In one transaction: refuses (`Busy`) while an inbox row of the user's sessions in the conversation is `queued` or `started`; otherwise deletes those sessions (with their messages and summaries), their inbox rows, the outbox rows going into the conversation, and its archive row. Usage rows stay without their session. Returns the agents the sessions were with, which name the conversation's workspaces, and whether it was archived; `NotFound` if the user has no session in it. |
 
-Neither has an index of its own: both scan `sessions` (small: one row per conversation and reset).
+None has an index of its own: they scan `sessions` (small: one row per conversation and reset).
 
 ## Search
 

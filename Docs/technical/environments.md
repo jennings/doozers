@@ -34,10 +34,11 @@ digits) and the plugin labels its resources with it, so reconciliation needs no 
 `deleted_at` and `delete_reason` are set on `deleting` and `deleted` rows. The reasons
 (`DeleteReason`): `user_reset`, `model_reset`, `model_delete`, `inactive` (the sweep),
 `job_run_ended`, `removed_outside_giles` (reconciliation, or a call that found the workspace
-missing), `chat_archived` (reserved for the chat-archive hook), `creation_failed`, and `operator`
-(deleted on the web UI's workspaces page). A failed creation isn't reported to the model: it saw the
-error. An operator's delete is: `DeleteReason::Operator` reads "an operator deleted it" in the
-model's error. (Migration 0006 added the reason; the table's `CHECK` had to be rebuilt.)
+missing), `chat_archived` (reserved for the chat-archive hook), `creation_failed`, `operator`
+(deleted on the web UI's workspaces page), and `chat_deleted` (its web chat was deleted). A failed
+creation isn't reported to the model: it saw the error. An operator's delete is:
+`DeleteReason::Operator` reads "an operator deleted it" in the model's error. (Migrations 0006 and
+0010 added the last two reasons; the table's `CHECK` had to be rebuilt each time.)
 
 ## Calls
 

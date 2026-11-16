@@ -313,7 +313,7 @@ impl ChatList {
         let listed = app
             .inner
             .store
-            .channel_conversations(channel, &user.user, CHAT_LIST_LIMIT)
+            .channel_conversations(channel, &user.user, false, CHAT_LIST_LIMIT)
             .await?;
         let config = app.inner.agents.get();
         let chats = listed
