@@ -746,6 +746,13 @@ dialog.confirm {
     color: var(--text-faint);
   }
 
+  /* A cell of free text that may be long, such as a prompt or an error. */
+  & .long {
+    min-width: 200px;
+    max-width: 280px;
+    overflow-wrap: anywhere;
+  }
+
   & .row-actions {
     padding-block: 10px;
     text-align: right;
@@ -938,7 +945,7 @@ input.mono {
   flex-direction: column;
   gap: 6px;
 
-  & > label,
+  & > label:not(.check),
   & > .field-label {
     color: var(--text-secondary);
     font-size: 0.8125rem;
@@ -1592,8 +1599,4 @@ details.card[open] > summary {
 
 .jobs code {
   white-space: nowrap;
-}
-
-.jobs td:nth-child(7) {
-  max-width: 260px;
 }

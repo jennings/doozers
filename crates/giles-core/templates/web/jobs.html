@@ -25,7 +25,7 @@
 <td>{% if let Some(problem) = job.problem %}<span class="warn-text">{{ problem }}</span>{% else if job.disabled %}<span class="warn-text">Disabled</span>{% else if let Some(next) = job.next %}<time datetime="{{ next.iso }}">{{ next.text }}</time>{% else %}<span class="muted">None</span>{% endif %}</td>
 <td class="secondary">{% if let Some(last) = job.last %}<time datetime="{{ last.iso }}">{{ last.text }}</time>{% else %}Never{% endif %}</td>
 <td class="secondary">{{ job.session }}</td>
-<td class="secondary">{% if let Some(file) = job.prompt_file %}From <code>{{ file }}</code>{% else %}{{ job.prompt }}{% endif %}</td>
+<td class="secondary long">{% if let Some(file) = job.prompt_file %}From <code>{{ file }}</code>{% else %}{{ job.prompt }}{% endif %}</td>
 <td class="row-actions">
 {%- if let Some(id) = job.id %}
 <a href="/jobs/{{ id }}/edit" aria-label="Edit job {{ job.job }}">Edit</a>
