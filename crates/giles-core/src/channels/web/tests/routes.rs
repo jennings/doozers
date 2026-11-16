@@ -256,7 +256,7 @@ async fn the_list_shows_routes_in_order_escaped_with_links_and_buttons() {
         "<code>web</code>",
         "<code>&#60;script&#62;alert(1)&#60;/script&#62;</code>",
         r#"<a href="/admin/agents/jeeves">Jeeves (jeeves)</a>"#,
-        r#"<span class="detail">any</span>"#,
+        r#"<span class="any">any</span>"#,
         r#"action="/admin/routes/1/move""#,
         r#"action="/admin/routes/2/remove""#,
         &format!(r#"name="csrf" value="{CSRF}""#),

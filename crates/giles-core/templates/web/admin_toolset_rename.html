@@ -3,31 +3,40 @@
 {% block title %}Rename {{ name }} - MCP servers - Giles{% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/mcp-servers/{{ name }}">{{ name }}</a>
 <h1>Rename {{ name }}</h1>
 {%- if let Some(error) = error %}
-<p class="error" role="alert">{{ error }}</p>
+<p class="banner banner-error" role="alert">{{ error }}</p>
 {%- endif %}
 {%- if let Some(failure) = failure %}
-<p class="error" role="alert">Renaming can't go ahead. It failed while {{ failure.step }}: {{ failure.error }}</p>
+<div class="banner banner-error" role="alert">
+<p>Renaming can't go ahead. It failed while {{ failure.step }}: {{ failure.error }}</p>
 {%- if failure.undo_errors.is_empty() %}
 <p>Nothing was changed.</p>
 {%- else %}
-<p class="state-bad">Undoing the earlier steps failed too, so the rename is partly done. Put these right by hand:</p>
+<p>Undoing the earlier steps failed too, so the rename is partly done. Put these right by hand:</p>
 <ul>
 {%- for undo in failure.undo_errors %}
 <li>{{ undo }}</li>
 {%- endfor %}
 </ul>
 {%- endif %}
+</div>
 {%- endif %}
-<p>The name is the prefix of the MCP server's tools (<code>{{ name }}__read</code>). Renaming rewrites the <code>{{ name }}__</code> entries in every agent's tools and ask-first lists. Running conversations keep the old tool names, and calls to them fail until you start a new conversation.</p>
-<form class="agent-form" method="get" action="/admin/mcp-servers/{{ name }}/rename">
+<p class="lede">The name is the prefix of the MCP server's tools (<code>{{ name }}__read</code>). Renaming rewrites the <code>{{ name }}__</code> entries in every agent's tools and ask-first lists. Running conversations keep the old tool names, and calls to them fail until you start a new conversation.</p>
+<form class="card form" method="get" action="/admin/mcp-servers/{{ name }}/rename">
+<div class="field">
 <label for="new">New name</label>
-<input id="new" name="new" value="{{ new }}" required>
-<p class="detail">Letters, digits, <code>-</code>, and <code>_</code>, such as <code>files</code>.</p>
+<input id="new" name="new" value="{{ new }}" required class="mono">
+<p class="help">Letters, digits, <code>-</code>, and <code>_</code>, such as <code>files</code>.</p>
+</div>
+<div class="form-actions">
 <button type="submit">Show the changes</button>
+<a class="button button-quiet" href="/admin/mcp-servers/{{ name }}">Cancel</a>
+</div>
 </form>
 {%- if let Some(agents) = preview %}
+<section class="card form">
 <h2>What changes</h2>
 {%- if agents.is_empty() %}
 <p>No agent's tools or ask-first list mentions <code>{{ name }}__</code>, so no agent changes.</p>
@@ -45,11 +54,13 @@
 {%- endfor %}
 </ul>
 {%- endif %}
-<form class="inline-form" method="post" action="/admin/mcp-servers/{{ name }}/rename">
+<div class="form-actions">
+<form method="post" action="/admin/mcp-servers/{{ name }}/rename">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="new" value="{{ new }}">
-<button type="submit">Rename to {{ new }}</button>
+<button type="submit" class="button-primary">Rename to {{ new }}</button>
 </form>
+</div>
+</section>
 {%- endif %}
-<p><a href="/admin/mcp-servers/{{ name }}">Cancel</a></p>
 {% endblock %}

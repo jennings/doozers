@@ -407,7 +407,8 @@ A table sits in `.table-wrap`: a card with no padding that scrolls sideways. The
 - The actions column's header is `<span class="sr-only">Actions</span>`, and its cells are
   `.row-actions`: right aligned, not wrapping.
 - `.secondary` cells use the secondary text color, and `.num` cells (a route's position) the faint
-  one.
+  one. A `.long` cell holds free text that may be long, such as a prompt or an error: 200 to 280 px
+  wide, wrapping anywhere.
 - An empty filter value reads "any" in muted italics (`.any`).
 - A problem with a row goes in a following `.problem-row` that spans the columns, in warn text.
 

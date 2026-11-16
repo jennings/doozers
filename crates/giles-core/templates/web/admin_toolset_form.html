@@ -7,33 +7,45 @@
 {% endblock %}
 
 {% block content %}
+{%- if editing %}
+<a class="back" href="/admin/mcp-servers/{{ form.name }}">{{ form.name }}</a>
+{%- else %}
+<a class="back" href="/admin/mcp-servers">MCP servers</a>
+{%- endif %}
 <h1>{{ title }}</h1>
 {%- if let Some(error) = error %}
-<p class="error" role="alert">{{ error }}</p>
+<p class="banner banner-error" role="alert">{{ error }}</p>
 {%- endif %}
 {%- if stale %}
-<p><a href="/admin/mcp-servers/{{ form.name }}/edit">Reload the current values</a>. What you typed here is not saved.</p>
+<p class="banner banner-warn"><span><a href="/admin/mcp-servers/{{ form.name }}/edit">Reload the current values</a>. What you typed here is not saved.</span></p>
 {%- endif %}
 {%- if let Some(notice) = notice %}
-<p class="notice">{{ notice }}</p>
+<p class="banner banner-info" role="status">{{ notice }}</p>
 {%- endif %}
-<form class="agent-form" method="post" action="{{ action }}">
+<form class="card form form-wide" method="post" action="{{ action }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 {%- if editing %}
 <input type="hidden" name="updated_at" value="{{ form.updated_at }}">
-<span class="label">Name</span>
-<code>{{ form.name }}</code>
-<p class="detail">The name can't be changed here. It is the prefix of the MCP server's tools. <a href="/admin/mcp-servers/{{ form.name }}/rename">Rename the MCP server</a> to change it.</p>
+<div class="field">
+<span class="field-label">Name</span>
+<code class="field-value">{{ form.name }}</code>
+<p class="help">The name can't be changed here. It is the prefix of the MCP server's tools. <a href="/admin/mcp-servers/{{ form.name }}/rename">Rename the MCP server</a> to change it.</p>
+</div>
 {%- else %}
+<div class="field">
 <label for="name">Name</label>
-<input id="name" name="name" value="{{ form.name }}" required>
-<p class="detail">Letters, digits, <code>-</code>, and <code>_</code>, such as <code>search</code>. It is the prefix of the MCP server's tools (<code>search__query</code>).</p>
+<input id="name" name="name" value="{{ form.name }}" required class="mono">
+<p class="help">Letters, digits, <code>-</code>, and <code>_</code>, such as <code>search</code>. It is the prefix of the MCP server's tools (<code>search__query</code>).</p>
+</div>
 {%- endif %}
+<div class="field">
 <label for="url">URL</label>
-<input id="url" name="url" value="{{ form.url }}" placeholder="https://example.com/mcp" required>
-<label class="tool" id="insecure-field"{% if !form.plain_http() %} hidden{% endif %}><input type="checkbox" name="insecure"{% if form.insecure %} checked{% endif %}> Allow insecure connections</label>
-<span class="label">Authentication</span>
-<div class="field-row">
+<input id="url" name="url" value="{{ form.url }}" placeholder="https://example.com/mcp" required class="mono">
+<label class="check" id="insecure-field"{% if !form.plain_http() %} hidden{% endif %}><input type="checkbox" name="insecure"{% if form.insecure %} checked{% endif %}> Allow insecure connections</label>
+</div>
+<div class="field">
+<span class="field-label">Authentication</span>
+<div class="control-row">
 <select name="auth" aria-label="How Giles authenticates to the server">
 <option value="none"{% if form.auth == "none" %} selected{% endif %}>No authentication</option>
 <option value="token"{% if form.auth == "token" %} selected{% endif %}>Bearer token</option>
@@ -44,25 +56,46 @@
 <input type="hidden" name="bearer_stored" value="1">
 {%- endif %}
 </div>
-<p class="detail">For a bearer token, Giles keeps the token encrypted and never shows it again. To change it, type the new one.</p>
+<p class="help">For a bearer token, Giles keeps the token encrypted and never shows it again. To change it, type the new one.</p>
+</div>
+<div class="field-row">
+<div class="field">
 <label for="oauth_client_id">OAuth client ID</label>
-<input id="oauth_client_id" name="oauth_client_id" value="{{ form.oauth_client_id }}" autocomplete="off">
+<input id="oauth_client_id" name="oauth_client_id" value="{{ form.oauth_client_id }}" autocomplete="off" class="mono">
+</div>
+<div class="field">
 <label for="oauth_client_secret">OAuth client secret</label>
 <input type="password" id="oauth_client_secret" name="oauth_client_secret" autocomplete="off" placeholder="{% if form.oauth_secret_stored %}stored; leave blank to keep it{% else %}none{% endif %}">
 {%- if form.oauth_secret_stored %}
 <input type="hidden" name="oauth_secret_stored" value="1">
 {%- endif %}
+</div>
+</div>
+<div class="field">
 <label for="oauth_scopes">OAuth scopes</label>
-<input id="oauth_scopes" name="oauth_scopes" value="{{ form.oauth_scopes }}" placeholder="repo read:org">
-<p class="detail">For OAuth, each user signs in with their own account on the Connections page. Enter the client ID and secret of the OAuth app you registered with the server, or leave them blank if the server registers clients itself. Scopes are optional, separated by spaces.</p>
+<input id="oauth_scopes" name="oauth_scopes" value="{{ form.oauth_scopes }}" placeholder="repo read:org" class="mono">
+<p class="help">For OAuth, each user signs in with their own account on the Connections page. Enter the client ID and secret of the OAuth app you registered with the server, or leave them blank if the server registers clients itself. Scopes are optional, separated by spaces.</p>
+</div>
+<div class="field-row">
+<div class="field">
 <label for="deadline">Deadline</label>
 <input id="deadline" name="deadline" value="{{ form.deadline }}" placeholder="5m">
-<p class="detail">Optional. How long one tool call may run, such as <code>90s</code>. The default is <code>5m</code>.</p>
-<label class="tool"><input type="checkbox" name="parallel"{% if form.parallel %} checked{% endif %}> Tools may run in parallel</label>
+<p class="help">Optional. How long one tool call may run, such as <code>90s</code>. The default is <code>5m</code>.</p>
+</div>
+<div class="field">
+<span class="field-label">Parallel calls</span>
+<label class="check"><input type="checkbox" name="parallel"{% if form.parallel %} checked{% endif %}> Tools may run in parallel</label>
+</div>
+</div>
+<div class="field">
 <label for="skills">Skills</label>
-<textarea id="skills" name="skills" rows="2">
+<textarea id="skills" name="skills" rows="2" class="mono">
 {{ form.skills }}</textarea>
-<p class="detail">Optional. Absolute paths of skill directories the MCP server offers, one per line.</p>
-<button type="submit">{{ submit }}</button>
+<p class="help">Optional. Absolute paths of skill directories the MCP server offers, one per line.</p>
+</div>
+<div class="form-actions">
+<button type="submit" class="button-primary">{{ submit }}</button>
+<a class="button button-quiet" href="{% if editing %}/admin/mcp-servers/{{ form.name }}{% else %}/admin/mcp-servers{% endif %}">Cancel</a>
+</div>
 </form>
 {% endblock %}
