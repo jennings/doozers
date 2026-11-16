@@ -3,15 +3,17 @@
 {% block title %}{{ title }} - Scheduled jobs - Giles{% endblock %}
 
 {% block content %}
+<a class="back" href="/jobs">Scheduled jobs</a>
 <h1>{{ title }}</h1>
 {%- if let Some(error) = error %}
-<p class="error" role="alert">{{ error }}</p>
+<p class="banner banner-error" role="alert">{{ error }}</p>
 {%- endif %}
-<form class="agent-form" method="post" action="{{ action }}">
+<form class="card form" method="post" action="{{ action }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="field">
 {%- if let Some(agent) = agent %}
-<span class="label">Agent</span>
-<span>{{ agent }}</span>
+<span class="field-label">Agent</span>
+<span class="field-value">{{ agent }}</span>
 {%- else %}
 <label for="agent">Agent</label>
 <select id="agent" name="agent" required>
@@ -20,25 +22,41 @@
 {%- endfor %}
 </select>
 {%- endif %}
+</div>
+<div class="field">
 <label for="repeat">Runs</label>
 <select id="repeat" name="repeat">
 <option value="cron"{% if form.repeat != "once" %} selected{% endif %}>On a cron schedule</option>
 <option value="once"{% if form.repeat == "once" %} selected{% endif %}>Once</option>
 </select>
+</div>
+<div class="field-row">
+<div class="field">
 <label for="cron">Cron schedule</label>
-<input id="cron" name="cron" value="{{ form.cron }}" placeholder="0 9 * * 1-5">
-<p class="detail">For a job that repeats: minute, hour, day of month, month, and day of week, such as <code>0 9 * * 1-5</code> for 09:00 on weekdays.</p>
+<input id="cron" name="cron" class="mono" value="{{ form.cron }}" placeholder="0 9 * * 1-5">
+<p class="help">For a job that repeats: minute, hour, day of month, month, and day of week, such as <code>0 9 * * 1-5</code> for 09:00 on weekdays.</p>
+</div>
+<div class="field">
 <label for="at">Time</label>
 <input id="at" name="at" type="datetime-local" value="{{ form.at }}">
-<p class="detail">For a job that runs once. Times are in {{ zone }}.</p>
+<p class="help">For a job that runs once. Times are in {{ zone }}.</p>
+</div>
+</div>
+<div class="field">
 <label for="prompt">Prompt</label>
 <textarea id="prompt" name="prompt" rows="6" required>{{ form.prompt }}</textarea>
-<p class="detail">What the agent does when the job runs. Its reply is sent to you.</p>
+<p class="help">What the agent does when the job runs. Its reply is sent to you.</p>
+</div>
+<div class="field">
 <label for="session">Runs in</label>
 <select id="session" name="session">
 <option value="isolated"{% if form.session != "dm" %} selected{% endif %}>Its own session</option>
 <option value="dm"{% if form.session == "dm" %} selected{% endif %}>Your DM with the agent</option>
 </select>
-<button type="submit">{{ submit }}</button>
+</div>
+<div class="form-actions">
+<button type="submit" class="button-primary">{{ submit }}</button>
+<a class="button button-quiet" href="/jobs">Cancel</a>
+</div>
 </form>
 {% endblock %}

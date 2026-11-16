@@ -6,38 +6,41 @@
 <div class="page-head">
 <h1>Scheduled jobs</h1>
 {%- if can_create %}
-<a class="button" href="/jobs/new">New job</a>
+<a class="button button-primary" href="/jobs/new">New job</a>
 {%- endif %}
 </div>
+<p class="lede">Prompts an agent runs on a schedule. Times are in the time zone each job runs in.</p>
 {%- if jobs.is_empty() %}
 <p>No scheduled jobs.{% if can_create %} Schedule one with <a href="/jobs/new">New job</a>, or ask an agent, such as "remind me at 5".{% endif %}</p>
 {%- else %}
-<table class="admin-table jobs">
-<thead><tr><th>Agent</th><th>Job</th><th>Schedule</th><th>Next run</th><th>Last run</th><th>Runs in</th><th>Prompt</th><th></th></tr></thead>
+<div class="table-wrap">
+<table class="table table-wide jobs">
+<thead><tr><th>Agent</th><th>Job</th><th>Schedule</th><th>Next run</th><th>Last run</th><th>Runs in</th><th>Prompt</th><th><span class="sr-only">Actions</span></th></tr></thead>
 <tbody>
 {%- for job in jobs %}
 <tr>
 <td>{{ job.agent }}</td>
-<td>{% if job.from_config %}<code>{{ job.job }}</code> <span class="detail">agent.toml</span>{% else %}{{ job.job }}{% endif %}</td>
-<td>{% if let Some(cron) = job.cron %}<code>{{ cron }}</code>{% else %}Once{% endif %}{% if let Some(hours) = job.active_hours %} <span class="detail">{{ hours }} only</span>{% endif %}</td>
-<td>{% if let Some(problem) = job.problem %}<span class="state-warn">{{ problem }}</span>{% else if job.disabled %}<span class="state-warn">Disabled</span>{% else if let Some(next) = job.next %}<time datetime="{{ next.iso }}">{{ next.text }}</time>{% else %}<span class="detail">None</span>{% endif %}</td>
-<td>{% if let Some(last) = job.last %}<time datetime="{{ last.iso }}">{{ last.text }}</time>{% else %}<span class="detail">Never</span>{% endif %}</td>
-<td>{{ job.session }}</td>
-<td>{% if let Some(file) = job.prompt_file %}From <code>{{ file }}</code>{% else %}{{ job.prompt }}{% endif %}</td>
-<td>
+<td>{% if job.from_config %}<code>{{ job.job }}</code> <span class="meta">agent.toml</span>{% else %}{{ job.job }}{% endif %}</td>
+<td>{% if let Some(cron) = job.cron %}<code>{{ cron }}</code>{% else %}Once{% endif %}{% if let Some(hours) = job.active_hours %} <span class="meta">{{ hours }} only</span>{% endif %}</td>
+<td>{% if let Some(problem) = job.problem %}<span class="warn-text">{{ problem }}</span>{% else if job.disabled %}<span class="warn-text">Disabled</span>{% else if let Some(next) = job.next %}<time datetime="{{ next.iso }}">{{ next.text }}</time>{% else %}<span class="muted">None</span>{% endif %}</td>
+<td class="secondary">{% if let Some(last) = job.last %}<time datetime="{{ last.iso }}">{{ last.text }}</time>{% else %}Never{% endif %}</td>
+<td class="secondary">{{ job.session }}</td>
+<td class="secondary">{% if let Some(file) = job.prompt_file %}From <code>{{ file }}</code>{% else %}{{ job.prompt }}{% endif %}</td>
+<td class="row-actions">
 {%- if let Some(id) = job.id %}
 <a href="/jobs/{{ id }}/edit" aria-label="Edit job {{ job.job }}">Edit</a>
 {%- if job.disabled %}
-<form class="inline-form" method="post" action="/jobs/{{ id }}/enable"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" aria-label="Enable job {{ job.job }}">Enable</button></form>
+<form method="post" action="/jobs/{{ id }}/enable"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small" aria-label="Enable job {{ job.job }}">Enable</button></form>
 {%- else if job.problem.is_none() %}
-<form class="inline-form" method="post" action="/jobs/{{ id }}/disable"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" aria-label="Disable job {{ job.job }}">Disable</button></form>
+<form method="post" action="/jobs/{{ id }}/disable"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small" aria-label="Disable job {{ job.job }}">Disable</button></form>
 {%- endif %}
-<form class="inline-form" method="post" action="/jobs/{{ id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" aria-label="Delete job {{ job.job }}">Delete</button></form>
+<form method="post" action="/jobs/{{ id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small button-danger" aria-label="Delete job {{ job.job }}">Delete</button></form>
 {%- endif -%}
 </td>
 </tr>
 {%- endfor %}
 </tbody>
 </table>
+</div>
 {%- endif %}
 {% endblock %}
