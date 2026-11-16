@@ -355,8 +355,8 @@ document it here.
 | `button-small`         | 34 px tall, 13 px text, 12 px padding                      | Buttons in table rows and memory items |
 
 Buttons are 8 px radius with 14 to 22 px side padding. A page has at most one primary button in
-view, except the chat page's approvals. Inside a table, actions are plain links (Edit) and small
-buttons (Disable, Up, Down) with the danger action last.
+view, except the chat page's approvals. Inside a table, every action is a `button-small`, links
+(Edit, Chat) included: outlined, with the `button-danger` action (Delete, Remove) last.
 
 ### Fields
 

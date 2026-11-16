@@ -184,7 +184,9 @@ async fn the_confirmation_page_says_exactly_what_will_happen() {
         .agents_call(&manager, Method::GET, "/admin/agents", None)
         .await;
     assert!(
-        list.contains(r#"<a class="warn-text" href="/admin/agents/jeeves/remove">Remove</a>"#),
+        list.contains(
+            r#"<a class="button button-small button-danger" href="/admin/agents/jeeves/remove">Remove</a>"#
+        ),
         "{list}"
     );
     let (_, page, _) = env
