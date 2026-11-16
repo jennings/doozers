@@ -28,7 +28,7 @@
 <td data-label="Prompt" class="secondary long m-body">{% if let Some(file) = job.prompt_file %}From <code>{{ file }}</code>{% else %}{{ job.prompt }}{% endif %}</td>
 <td class="row-actions">
 {%- if let Some(id) = job.id %}
-<a href="/jobs/{{ id }}/edit" aria-label="Edit job {{ job.job }}">Edit</a>
+<a class="button button-small" href="/jobs/{{ id }}/edit" aria-label="Edit job {{ job.job }}">Edit</a>
 {%- if job.disabled %}
 <form method="post" action="/jobs/{{ id }}/enable"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small" aria-label="Enable job {{ job.job }}">Enable</button></form>
 {%- else if job.problem.is_none() %}

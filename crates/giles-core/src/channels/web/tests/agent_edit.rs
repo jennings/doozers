@@ -197,7 +197,9 @@ async fn the_form_shows_the_agent_as_its_files_have_it_and_says_the_id_is_fixed(
         .agents_call(&manager, Method::GET, "/admin/agents", None)
         .await;
     assert!(
-        list.contains(r#"<a href="/admin/agents/jeeves/edit">Edit</a>"#),
+        list.contains(
+            r#"<a class="button button-small" href="/admin/agents/jeeves/edit">Edit</a>"#
+        ),
         "{list}"
     );
     let (_, page, _) = env

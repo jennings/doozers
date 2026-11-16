@@ -27,8 +27,8 @@
 {%- if toolset.from_file %}
 <span class="muted">Edit it in giles.toml</span>
 {%- else %}
-<a href="/admin/mcp-servers/{{ toolset.name }}/edit">Edit</a>
-<a class="warn-text" href="/admin/mcp-servers/{{ toolset.name }}/remove">Remove</a>
+<a class="button button-small" href="/admin/mcp-servers/{{ toolset.name }}/edit">Edit</a>
+<a class="button button-small button-danger" href="/admin/mcp-servers/{{ toolset.name }}/remove">Remove</a>
 {%- endif %}
 </td>
 </tr>
