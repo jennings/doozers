@@ -462,8 +462,10 @@ whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
 - `.chat-notice` is a centered muted line among the messages, such as "Older messages aren't shown."
 - `.msg.user`: right aligned, at most 75% wide, accent fill, white text, radius 14 14 4 14.
 - `.msg.assistant`: left aligned, at most 80% wide, surface fill and border, radius 14 14 14 4.
-- `.tool`: full width, inset surface, control border, radius 10 px. The tool's name is 13 px and
-  600, then its input and output as `<pre>`. Earlier output folds into `<details>`.
+- `.tool`: full width, inset surface, no border (so it reads apart from a reply), radius 10 px. The
+  whole collapsed bubble is a `<summary>`: the name (13 px, 600) and status, the input's first line
+  cut with an ellipsis, and a link-colored hint ("Output, 14 lines"). Opened, `.tool-body` shows the
+  whole input and output as `<pre>`.
 - `.approval`: full width, accent border, approval fill. It has the prompt, the call's input, and
   the buttons Allow (primary), Allow for this session, and Deny.
 - `.attachment`: a 10 px 14 px chip with a file icon and the name. Images show inline.

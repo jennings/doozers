@@ -275,11 +275,12 @@ The output is the result's text blocks joined by newlines, with trailing whitesp
 blocks show as attachments, without their references. Input and output are escaped plain text in
 `<pre>`, never Markdown.
 
-Folding needs no script. The input's first line is shown, and the rest is in a `<details>` labeled
-"Show N more lines" below it. The output's last `TOOL_OUTPUT_LINES` (6) lines are shown, and the
-earlier ones are in a `<details>` labeled "Show N earlier lines" above them. A failed result has the
-`error` class and "Failed."; an empty one says "No output.". A live element replaced by its result
-loses the open state of its disclosures.
+Collapsing needs no script. The element holds a `<details>` whose `<summary>` is the whole collapsed
+bubble: the name and status, the input's first line (with " …" if more follow), and a hint such as
+"Output, 14 lines, 1 attachment". Opened, the summary keeps only the name and status, and the body
+shows the whole input, the whole output, and the media. A call with no input, output, or media has
+nothing to open and renders without `<details>`. A failed result has the `error` class and
+"Failed."; an empty one says "No output.". A live element replaced by its result closes again.
 
 ### Event streams and cursors
 
