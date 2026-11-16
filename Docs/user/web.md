@@ -97,6 +97,25 @@ If something goes wrong:
 - A message longer than 32 KiB is refused.
 - If the page says "Some messages may be missing", reload it.
 
+## Archive and delete chats
+
+Archive a chat to take it off the list without losing it. Open the chat and press **Archive**.
+
+- **Archived chats**, below the list, shows your archived chats. Open one to read it.
+- Press **Unarchive** in an archived chat to move it back to your chats. Sending a message in it
+  moves it back too.
+- Replies from [jobs](#scheduled-jobs) scheduled in an archived chat still go to it, and it stays
+  archived.
+
+Delete a chat to remove it for good. Open the chat, press **Delete**, and confirm.
+
+- **Deleting can't be undone.** The chat's messages are removed, and so is the agent's
+  [workspace](environments.md) for the chat, with its files.
+- What the agent saved to [memory](#memory) from the chat stays.
+- Jobs scheduled in the chat keep running, and their next reply starts the chat again.
+- While the agent is working in the chat, Giles refuses to delete it. Wait for the reply, or send
+  `/stop` in the chat, then try again.
+
 ## Approvals
 
 When an agent asks before running a tool, the chat shows the request with three buttons:

@@ -3,12 +3,19 @@
 {% extends "web/app.html" %}
 
 {% block content %}
-<section class="chat-list-pane" aria-label="Chats">
+<section class="chat-list-pane" aria-label="{% if list.archived %}Archived chats{% else %}Chats{% endif %}">
+{%- if list.archived %}
+<a class="back" href="/">Chats</a>
+<div class="page-head">
+<h1>Archived chats</h1>
+</div>
+{%- else %}
 <div class="page-head">
 <h1>Chats</h1>
 <a class="button button-primary" href="/chats/new">New chat</a>
 </div>
-{%- if !list.agents.is_empty() %}
+{%- endif %}
+{%- if !list.archived && !list.agents.is_empty() %}
 <form class="agent-picker" method="get" action="/chats/new">
 <div class="field">
 <label for="agent">Chat with</label>
@@ -22,13 +29,20 @@
 </form>
 {%- endif %}
 {%- if list.chats.is_empty() %}
+{%- if list.archived %}
+<p class="muted">No archived chats.</p>
+{%- else %}
 <p class="muted">No chats yet. Start one with <a href="/chats/new">New chat</a>.</p>
+{%- endif %}
 {%- else %}
 <ul class="chat-list">
 {%- for chat in list.chats %}
 <li><a href="/chats/{{ chat.id }}"{% if chat.current %} aria-current="page"{% endif %}><span class="chat-item-title">{{ chat.title }}</span><span class="chat-item-meta"><span>{% if let Some(agent) = chat.agent %}{{ agent }}{% endif %}</span><time datetime="{{ chat.active_at }}">{{ chat.active }}</time></span></a></li>
 {%- endfor %}
 </ul>
+{%- endif %}
+{%- if !list.archived %}
+<a class="archived-link" href="/chats/archived">Archived chats</a>
 {%- endif %}
 </section>
 {% block pane %}{% endblock %}

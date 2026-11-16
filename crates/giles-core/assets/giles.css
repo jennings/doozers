@@ -697,6 +697,11 @@ button,
 dialog.confirm {
   width: min(620px, calc(100vw - 32px));
 
+  /* `.card` sets `display`, which would show a closed dialog. */
+  &:not([open]) {
+    display: none;
+  }
+
   &::backdrop {
     background: var(--scrim);
   }
@@ -1427,6 +1432,21 @@ details.card[open] > summary {
   & .all-chats {
     display: none;
   }
+}
+
+/* Archive or Unarchive, and Delete, at the end of the chat's head. */
+.chat-actions {
+  display: flex;
+  gap: 8px;
+  align-self: center;
+  margin-left: auto;
+}
+
+/* "Archived chats", at the foot of the chat list. */
+.archived-link {
+  align-self: flex-start;
+  margin-top: auto;
+  font-size: 0.875rem;
 }
 
 .chat-empty {

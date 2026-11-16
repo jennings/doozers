@@ -89,6 +89,7 @@ A workspace goes away when:
 - it has gone unused, and its conversation has had no messages, for the environment's `delete_after`
 - the environment loses it, for example when you remove its container by hand
 - it belongs to a scheduled job's run that ended
+- you [delete its web chat](web.md#archive-and-delete-chats). Archiving the chat keeps it.
 
 An `"isolated"` [job](configuration.md#jobs) gets its own workspace for each run, which is deleted
 when the run ends. A `"dm"` job uses your DM's workspace.

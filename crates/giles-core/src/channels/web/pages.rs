@@ -159,11 +159,13 @@ impl WebApp {
     fn routes(&self) -> Router {
         Router::new()
             .route("/chats/new", get(new_chat))
+            .route("/chats/archived", get(archived_chats))
             .route("/chats/{chat}", get(chat_page))
             .route("/chats/{chat}/messages", post(post_message))
             .route("/chats/{chat}/approvals", post(post_approval))
             .route("/chats/{chat}/events", get(events))
             .route("/blobs/{id}", get(blob))
+            .merge(super::chat_actions::routes())
             .merge(super::jobs::routes())
             .merge(super::login::routes())
             .with_state(self.clone())
@@ -208,7 +210,7 @@ pub(super) fn login_required() -> Response {
     response
 }
 
-fn not_found() -> Response {
+pub(super) fn not_found() -> Response {
     error_page(
         StatusCode::NOT_FOUND,
         "Not found",
@@ -227,7 +229,7 @@ pub(super) fn internal_error(what: &str, err: &dyn std::error::Error) -> Respons
 }
 
 /// The chat id in a path, if it is one.
-fn chat_id(raw: &str) -> Option<ConversationId> {
+pub(super) fn chat_id(raw: &str) -> Option<ConversationId> {
     is_chat_id(raw)
         .then(|| ConversationId::new(raw).ok())
         .flatten()
@@ -296,11 +298,13 @@ struct ChatItem {
     current: bool,
 }
 
-/// The chat list beside every chat page: the user's chats, most recently active first, with
-/// `open` marked current, and the agents a new chat can be started with.
+/// The chat list beside every chat page: the user's chats or their archived chats, most recently
+/// active first, with `open` marked current, and the agents a new chat can be started with.
 struct ChatList {
     chats: Vec<ChatItem>,
     agents: Vec<AgentChoice>,
+    /// Whether these are the archived chats.
+    archived: bool,
 }
 
 impl ChatList {
@@ -308,12 +312,13 @@ impl ChatList {
         app: &WebApp,
         user: &WebUser,
         open: Option<&ConversationId>,
+        archived: bool,
     ) -> Result<Self, giles_store::Error> {
         let channel = app.inner.channel.instance().as_str();
         let listed = app
             .inner
             .store
-            .channel_conversations(channel, &user.user, false, CHAT_LIST_LIMIT)
+            .channel_conversations(channel, &user.user, archived, CHAT_LIST_LIMIT)
             .await?;
         let config = app.inner.agents.get();
         let chats = listed
@@ -332,6 +337,7 @@ impl ChatList {
         Ok(Self {
             chats,
             agents: agent_choices(&config, user),
+            archived,
         })
     }
 
@@ -355,9 +361,18 @@ struct ChatsPage {
 
 /// `GET /`: the chat list, and no chat open.
 async fn chats(State(app): State<WebApp>, user: WebUser) -> Response {
-    match ChatList::load(&app, &user, None).await {
+    chat_list_page(&app, &user, false).await
+}
+
+/// `GET /chats/archived`: the archived chats, and no chat open.
+async fn archived_chats(State(app): State<WebApp>, user: WebUser) -> Response {
+    chat_list_page(&app, &user, true).await
+}
+
+async fn chat_list_page(app: &WebApp, user: &WebUser, archived: bool) -> Response {
+    match ChatList::load(app, user, None, archived).await {
         Ok(list) => http::render(&ChatsPage {
-            shell: Shell::new(&user, Nav::Chats),
+            shell: Shell::new(user, Nav::Chats),
             list,
         }),
         Err(err) => internal_error("cannot list the web chats", &err),
@@ -427,6 +442,10 @@ struct ChatPage<'a> {
     title: String,
     /// The agent the chat was started with, if one was chosen.
     agent: Option<String>,
+    /// Whether the chat is archived.
+    archived: bool,
+    /// Whether the chat has anything stored, so it can be archived and deleted.
+    stored: bool,
     chat: &'a str,
     csrf: &'a str,
     cursor: String,
@@ -436,8 +455,8 @@ struct ChatPage<'a> {
 }
 
 /// `GET /chats/<id>`: the stored transcript, the user's messages not stored yet, live messages
-/// and approval prompts, and the form. The page follows `/chats/<id>/events` from the event it
-/// reflects.
+/// and approval prompts, and the form, beside the chat list it is in (the archived chats for an
+/// archived chat). The page follows `/chats/<id>/events` from the event it reflects.
 ///
 /// Order matters. The hub snapshot comes first: anything published after it is replayed by the
 /// event stream, so the page leaves out posts and tool calls it will replay. The posts the core
@@ -468,6 +487,7 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
         Err(err) => return internal_error("cannot load a web chat", &err),
     };
     let rows = &transcript.messages;
+    let stored = !rows.is_empty() || !transcript.waiting.is_empty();
     let mut items = render::history(rows, &hub.tools_after(snapshot.seq));
     items.extend(render::waiting(
         rows,
@@ -496,7 +516,17 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
                 ),
             }),
     );
-    let list = match ChatList::load(&app, &user, Some(&chat)).await {
+    let instance = channel.instance().as_str();
+    let archived = match app
+        .inner
+        .store
+        .conversation_archived_at(instance, &chat)
+        .await
+    {
+        Ok(archived_at) => archived_at.is_some(),
+        Err(err) => return internal_error("cannot load a web chat", &err),
+    };
+    let list = match ChatList::load(&app, &user, Some(&chat), archived).await {
         Ok(list) => list,
         Err(err) => return internal_error("cannot list the web chats", &err),
     };
@@ -505,6 +535,8 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
         title: list.title(rows.is_empty() && items.is_empty()),
         list,
         agent,
+        archived,
+        stored,
         chat: chat.as_str(),
         csrf: &user.csrf,
         cursor: channel.hubs.cursor(snapshot.seq),
@@ -521,8 +553,9 @@ struct ComposeForm {
     text: String,
 }
 
-/// `POST /chats/<id>/messages`: posts the text as the user. htmx gets a fresh form back (the
-/// message itself arrives over the event stream); a plain form post is redirected to the chat.
+/// `POST /chats/<id>/messages`: posts the text as the user, taking an archived chat out of the
+/// archive first. htmx gets a fresh form back (the message itself arrives over the event stream);
+/// a plain form post is redirected to the chat.
 async fn post_message(
     State(app): State<WebApp>,
     user: WebUser,
@@ -562,6 +595,10 @@ async fn post_message(
             StatusCode::PAYLOAD_TOO_LARGE,
             "That message is too long: at most 32 KiB.",
         );
+    }
+    let channel = app.inner.channel.instance().as_str();
+    if let Err(err) = app.inner.store.unarchive_conversation(channel, &chat).await {
+        return internal_error("cannot unarchive a web chat", &err);
     }
     let now = app.inner.clock.now();
     if let Err(Busy) = app.inner.channel.post(&user, &chat, &form.text, now) {

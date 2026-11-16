@@ -182,12 +182,13 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
         clock: Arc::new(SystemClock),
     }));
     let builder = http::RouterBuilder::new();
-    // The web channel's pages, the admin pages over the admin service, the agent pages, which
-    // create, edit, and remove agents in the running configuration (the registry's, which the web
-    // app also reads), the route pages, which change the routes the router reads, and the toolset
-    // pages, which change the stored toolsets through the manager and show how each is doing from
-    // the admin service, and the workspaces page, which lists, stops, and deletes environment
-    // workspaces.
+    // The web channel's pages, with deleting a chat (refused while the session manager is working
+    // in it; it deletes the chat's workspaces), the admin pages over the admin service, the agent
+    // pages, which create, edit, and remove agents in the running configuration (the registry's,
+    // which the web app also reads), the route pages, which change the routes the router reads, and
+    // the toolset pages, which change the stored toolsets through the manager and show how each is
+    // doing from the admin service, and the workspaces page, which lists, stops, and deletes
+    // environment workspaces.
     #[cfg(feature = "channel-web")]
     let builder = match &web {
         Some(web) => {
@@ -205,10 +206,12 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
                     lock: agent_lock.clone(),
                 },
             ));
-            let builder = web.install_agents(
-                web.install_admin(web.install(builder), admin.clone()),
-                manager,
+            let builder = web.install_chat_deletion(
+                web.install(builder),
+                Arc::new(sessions.clone()),
+                runtime.workspaces.clone(),
             );
+            let builder = web.install_agents(web.install_admin(builder, admin.clone()), manager);
             let builder = web.install_routes(builder, runtime.routes.clone());
             let builder = web.install_connections(builder, toolset_manager.clone());
             let builder = web.install_toolsets(

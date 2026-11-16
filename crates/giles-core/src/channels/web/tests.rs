@@ -43,6 +43,7 @@ mod agent_edit;
 mod agent_environments;
 mod agent_remove;
 mod agents;
+mod chat_actions;
 mod jobs;
 mod memory;
 mod routes;
