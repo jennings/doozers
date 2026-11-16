@@ -80,8 +80,8 @@
 <tbody>
 {%- for tool in tools %}
 <tr>
-<td><code>{{ tool.name }}</code></td>
-<td class="secondary">{{ tool.description }}</td>
+<td data-label="Name" class="m-title"><code>{{ tool.name }}</code></td>
+<td data-label="Description" class="secondary m-body">{{ tool.description }}</td>
 </tr>
 {%- endfor %}
 </tbody>

@@ -17,12 +17,12 @@
 <tbody>
 {%- for toolset in toolsets %}
 <tr id="toolset-{{ toolset.name }}">
-<td><strong><a href="/admin/mcp-servers/{{ toolset.name }}">{{ toolset.name }}</a></strong>{% if toolset.from_file %} <span class="meta">giles.toml</span>{% endif %}</td>
-<td class="secondary">{{ toolset.transport }}</td>
-<td><code>{{ toolset.location }}</code></td>
-<td><span class="pill pill-{{ toolset.class }}">{{ toolset.state }}</span></td>
-<td class="secondary">{% if let Some(tools) = toolset.tools %}{{ tools }}{% else %}<span class="muted">unknown</span>{% endif %}</td>
-<td class="long">{% if let Some(error) = toolset.error %}<span class="warn-text">{{ error }}</span>{% endif %}</td>
+<td data-label="Name" class="m-title"><strong><a href="/admin/mcp-servers/{{ toolset.name }}">{{ toolset.name }}</a></strong>{% if toolset.from_file %} <span class="meta">giles.toml</span>{% endif %}</td>
+<td data-label="Runs as" class="secondary m-meta">{{ toolset.transport }}</td>
+<td data-label="Location" class="m-body"><code>{{ toolset.location }}</code></td>
+<td data-label="State" class="m-aside"><span class="pill pill-{{ toolset.class }}">{{ toolset.state }}</span></td>
+<td data-label="Tools" class="secondary m-meta m-label">{% if let Some(tools) = toolset.tools %}{{ tools }}{% else %}<span class="muted">unknown</span>{% endif %}</td>
+<td data-label="Last error" class="long m-body m-label">{% if let Some(error) = toolset.error %}<span class="warn-text">{{ error }}</span>{% endif %}</td>
 <td class="row-actions">
 {%- if toolset.from_file %}
 <span class="muted">Edit it in giles.toml</span>

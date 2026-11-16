@@ -20,11 +20,11 @@
 <tbody>
 {%- for route in routes %}
 <tr id="route-{{ route.id }}">
-<td class="num">{{ route.position }}</td>
-<td>{% if let Some(channel) = route.channel %}<code>{{ channel }}</code>{% else %}<span class="any">any</span>{% endif %}</td>
-<td>{% if let Some(kind) = route.kind %}{{ kind }}{% else %}<span class="any">any</span>{% endif %}</td>
-<td>{% if let Some(conversation) = route.conversation %}<code>{{ conversation }}</code>{% else %}<span class="any">any</span>{% endif %}</td>
-<td>{% if route.agent_exists %}<a href="/admin/agents/{{ route.agent_id }}">{{ route.agent_label }}</a>{% else %}<code>{{ route.agent_id }}</code>{% endif %}</td>
+<td data-label="Route" class="num m-lead">{{ route.position }}</td>
+<td data-label="Channel" class="m-chip">{% if let Some(channel) = route.channel %}<code>{{ channel }}</code>{% else %}<span class="any">any</span>{% endif %}</td>
+<td data-label="Kind" class="m-chip">{% if let Some(kind) = route.kind %}{{ kind }}{% else %}<span class="any">any</span>{% endif %}</td>
+<td data-label="Conversation" class="m-chip">{% if let Some(conversation) = route.conversation %}<code>{{ conversation }}</code>{% else %}<span class="any">any</span>{% endif %}</td>
+<td data-label="Agent" class="m-title">{% if route.agent_exists %}<a href="/admin/agents/{{ route.agent_id }}">{{ route.agent_label }}</a>{% else %}<code>{{ route.agent_id }}</code>{% endif %}</td>
 <td class="row-actions">
 <a href="/admin/routes/{{ route.id }}/edit">Edit</a>
 {%- if !route.first %}

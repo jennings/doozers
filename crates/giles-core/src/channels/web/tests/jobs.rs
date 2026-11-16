@@ -127,8 +127,11 @@ async fn the_owner_sees_every_agents_jobs_in_one_list_soonest_first() {
     let yearly = position(&page, "Yearly review");
     let orphaned = position(&page, "Orphaned");
     assert!(stretch < morning && morning < yearly && yearly < orphaned);
-    assert!(page[..stretch].contains("<td>bunter</td>"));
-    assert!(page[stretch..morning].contains("<td>Jeeves (jeeves)</td>"));
+    assert!(page[..stretch].contains(r#"<td data-label="Agent" class="m-meta">bunter</td>"#));
+    assert!(
+        page[stretch..morning]
+            .contains(r#"<td data-label="Agent" class="m-meta">Jeeves (jeeves)</td>"#)
+    );
     assert!(page.contains("From <code>morning.md</code>"));
     assert!(page.contains(r#"<time datetime="2026-10-22T08:00:00Z">"#));
     let orphaned_row = &page[page[..orphaned].rfind("<tr>").unwrap()..orphaned];

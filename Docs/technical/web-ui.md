@@ -153,8 +153,12 @@ Below 760 px:
   button and the same groups and footer. Links are 44 px tall. `closedby="any"` closes it on a
   backdrop click.
 - The content's padding drops to 20 px 16 px.
-- Two-column field grids become one column. Tables keep their minimum width and scroll sideways
-  inside their card.
+- Two-column field grids become one column.
+- Nothing scrolls sideways. A table becomes a stacked list: one block per row, with the row's name
+  and state on its first line, the details in short lines under it, and its buttons last
+  ([Tables](#tables)).
+- The stat cards become one card of label and value lines, and a QR code to scan hides behind
+  **Show QR code**, since the page is likely on the phone that would scan it.
 - All touch targets are at least 44 px tall.
 
 ### Page patterns
@@ -383,8 +387,11 @@ buttons (Disable, Up, Down) with the danger action last.
 - `.chips` is a row of `.chip`s: small bordered facts above a list, such as each environment's free
   space.
 - `details.disclosure` is a card's "show more" below a top border, with a link-colored summary.
+- `details.qr-toggle` holds something only narrow screens fold away: its summary ("Show QR code")
+  shows below 760 px, and above that the summary is hidden and the content always shown
+  (`::details-content`).
 - `.stats` holds `.stat` cards, each with a `.stat-label` (12 px, uppercase, faint) and a
-  `.stat-value` (22 px, display font).
+  `.stat-value` (22 px, display font). Below 760 px they become one card of label and value lines.
 - `.confirm`: a card with the warn border, at most 620 px wide.
 - `.subtitle`: the quieter second half of a heading, such as "giles-channel-irc, wasm" after a
   plugin's name.
@@ -398,14 +405,36 @@ buttons (Disable, Up, Down) with the danger action last.
 
 ### Tables
 
-A table sits in `.table-wrap`: a card with no padding that scrolls sideways. The table has
-`class="table"`, the full width, and a minimum width of 600 px that keeps its columns readable.
-`.table-wide` raises the minimum to 980 px for a table with many columns, such as the jobs.
+A table sits in `.table-wrap`: a card with no padding. The table has `class="table"`, the full
+width, and a minimum width of 600 px that keeps its columns readable; on a wide screen too narrow
+for that, the card scrolls sideways. `.table-wide` raises the minimum to 980 px for a table with
+many columns, such as the jobs.
 
 - Header cells: 12 px uppercase faint, 12 px 16 px padding, left aligned.
 - Body rows have a top border, with 14 px 16 px cells, aligned top.
 - The actions column's header is `<span class="sr-only">Actions</span>`, and its cells are
   `.row-actions`: right aligned, not wrapping.
+- Every other cell has `data-label` set to its column's name, such as `<td data-label="Last run">`.
+
+Below 760 px a table becomes a stacked list. The header row is hidden, and each row becomes a block
+whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
+
+| Class         | Line                    | Look                                                          |
+| ------------- | ----------------------- | ------------------------------------------------------------- |
+| `.m-lead`     | 1, before the title     | Faint, such as a route's position                             |
+| `.m-title`    | 1                       | 15 px, 600: what the row is, such as the job or server name   |
+| `.m-aside`    | 1, at the right         | The row's state: a pill, or the next run                      |
+| `.m-meta`     | 2                       | 13 px secondary, values joined by " · "                       |
+| `.m-chip`     | 2                       | A small chip reading "`data-label`: value", such as a route's keys |
+| `.m-body`     | a line of its own       | Body text, such as a prompt, a location, or an error          |
+| `.m-foot`     | after the body lines    | 12 px muted, values joined by " · "                           |
+| `.row-actions`| last                    | The buttons in a row, the danger action at the far end        |
+
+- `.m-label` puts "`data-label`: " before the value, such as "Last run: Never".
+- `.m-split` hands a cell's parts to different lines: the cell disappears and its children take
+  `m-*` classes, such as a sign-in cell's pill (`.m-aside`) and its detail (`.m-meta`).
+- `.m-hide` leaves a cell out on narrow screens. Empty cells are always left out.
+- A cell with no `m-*` class gets a body line of its own, so nothing is lost.
 - `.secondary` cells use the secondary text color, and `.num` cells (a route's position) the faint
   one. A `.long` cell holds free text that may be long, such as a prompt or an error: 200 to 280 px
   wide, wrapping anywhere.
