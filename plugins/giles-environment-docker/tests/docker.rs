@@ -833,10 +833,18 @@ async fn list_reports_workspaces_with_disk_and_free_space() {
     let w1 = &list.workspaces[0];
     assert_eq!(w1.state, WorkspaceState::Running);
     // Docker's and Podman's local volume driver measure volumes; the size counts what is in it.
-    let used = w1
-        .disk_used_bytes
-        .expect("the engine reports the volume's size");
-    assert!(used >= 2_000_000, "{used}");
+    // Tests running in parallel share the engine's disk usage report, so one listing may read a
+    // report made before w1's volume or blob existed. Later listings measure it.
+    eventually(
+        "the engine to report w1's volume size with the blob",
+        || async {
+            let list = scope.env.list_workspaces().await.unwrap();
+            list.workspaces[0]
+                .disk_used_bytes
+                .is_some_and(|used| used >= 2_000_000)
+        },
+    )
+    .await;
     assert!(w1.created_at.as_second() > 1_700_000_000);
     let detail = |name: &str| {
         w1.details
