@@ -797,8 +797,9 @@ dialog.confirm {
       margin: 0;
     }
 
-    & a {
-      margin: 0 6px;
+    /* Every action is a small button: Edit and the like outlined, the danger action last. */
+    & > :not(:first-child) {
+      margin-left: 6px;
     }
   }
 
@@ -962,13 +963,13 @@ dialog.confirm {
       text-align: left;
       white-space: normal;
 
-      & a {
-        margin: 0;
+      & > :not(:first-child) {
+        margin-left: 0;
       }
 
       /* The danger action goes to the far end. */
-      & .button-danger,
-      & .warn-text {
+      & > .button-danger,
+      & > form:has(.button-danger) {
         margin-left: auto;
       }
     }
