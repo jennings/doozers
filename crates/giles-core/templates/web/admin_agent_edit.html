@@ -7,28 +7,44 @@
 {% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/agents/{{ id }}">{{ label }}</a>
 <h1>Edit {{ label }}</h1>
 {%- if let Some(error) = error %}
-<p class="error" role="alert">{{ error }}</p>
+<p class="banner banner-error" role="alert">{{ error }}</p>
 {%- endif %}
 {%- if stale %}
-<p><a href="/admin/agents/{{ id }}/edit">Reload the current values</a>. What you typed here is not saved.</p>
+<p class="banner banner-warn"><span><a href="/admin/agents/{{ id }}/edit">Reload the current values</a>. What you typed here is not saved.</span></p>
 {%- endif %}
-<form class="agent-form" method="post" action="/admin/agents/{{ id }}/edit">
+<form class="form-sections" method="post" action="/admin/agents/{{ id }}/edit">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="version" value="{{ form.version }}">
+<section class="card">
+<div class="field-row">
+<div class="field">
 <label for="name">Name</label>
 <input id="name" name="name" value="{{ form.name }}">
-<p class="detail">The display name, such as <code>Jeeves</code>. Empty for none.</p>
-<span class="label">Id</span>
-<code>{{ id }}</code>
-<p class="detail">The id is the agent's directory name, <code>agents/{{ id }}/</code>, so it can't be changed. To use another id, create a new agent and remove this one.</p>
+<p class="help">The display name, such as <code>Jeeves</code>. Empty for none.</p>
+</div>
+<div class="field">
+<span class="field-label">Id</span>
+<code class="field-value">{{ id }}</code>
+<p class="help">The id is the agent's directory name, <code>agents/{{ id }}/</code>, so it can't be changed. To use another id, create a new agent and remove this one.</p>
+</div>
+</div>
+</section>
 {% include "web/admin_agent_fields.html" %}
+<section class="card">
+<div class="field">
 <label for="soul">SOUL.md</label>
-<textarea id="soul" name="soul" rows="12">
+<textarea id="soul" name="soul" rows="12" class="mono">
 {{ form.soul }}</textarea>
-<p class="detail">Who the agent is: its instructions, in Markdown.</p>
-<p class="detail">Saving changes only the settings above and <code>SOUL.md</code>. Everything else in <code>agent.toml</code> stays as written: comments, jobs, and any other setting. A setting you empty is removed from the file. The change applies to chats started afterwards; a chat already going keeps the tools and instructions it started with.</p>
-<button type="submit">Save</button>
+<p class="help">Who the agent is: its instructions, in Markdown.</p>
+<p class="help">Saving changes only the settings above and <code>SOUL.md</code>. Everything else in <code>agent.toml</code> stays as written: comments, jobs, and any other setting. A setting you empty is removed from the file. The change applies to chats started afterwards; a chat already going keeps the tools and instructions it started with.</p>
+</div>
+</section>
+<div class="form-actions">
+<button type="submit" class="button-primary">Save</button>
+<a class="button button-quiet" href="/admin/agents/{{ id }}">Cancel</a>
+</div>
 </form>
 {% endblock %}

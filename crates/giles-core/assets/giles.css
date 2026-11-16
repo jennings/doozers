@@ -1548,7 +1548,7 @@ details.card[open] > summary {
   overflow: auto;
 }
 
-.memory-text {
+.memory-item > pre {
   color: var(--text);
   font-family: var(--font);
   font-size: 0.875rem;
@@ -1564,16 +1564,17 @@ details.card[open] > summary {
     font-size: 0.875rem;
   }
 
-  & .actions details {
-    display: contents;
-  }
-
-  & details[open] {
-    display: flex;
+  /* Edit is a <details> whose summary is a button: open, its form takes the row below. */
+  & .actions details[open] {
     flex-basis: 100%;
-    flex-direction: column;
-    gap: 10px;
     order: 1;
+
+    & > form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
   }
 
   & summary {
@@ -1582,6 +1583,10 @@ details.card[open] > summary {
     &::-webkit-details-marker {
       display: none;
     }
+  }
+
+  & .actions > form {
+    margin: 0;
   }
 }
 
