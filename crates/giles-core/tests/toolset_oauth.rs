@@ -1,7 +1,7 @@
 //! A stored remote toolset that signs each user in with OAuth, end to end: the manager stores it
 //! and its client secret, a user signs in against a fake authorization server (discovery, the
 //! authorization URL, the code exchange), the tokens land in the user's space of the secret store,
-//! the toolset lists its tools over that user's connection and calls them with the user's access
+//! the toolset lists each user's tools over their own connection and calls them with their access
 //! token, an expiring token is refreshed and the new one stored, and signing out and removing the
 //! toolset delete the tokens.
 #![allow(missing_docs)]
@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use axum::extract::{Form, Request, State};
 use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -25,11 +25,18 @@ use futures::StreamExt as _;
 use giles_core::config::{Builtins, Config, LoadOptions, ToolsetSpec};
 use giles_core::paths::DataRoot;
 use giles_core::registry::Registry;
+use giles_core::registry::ToolSnapshot;
 use giles_core::secrets::{KeyFile, LocalSecrets, SecretPath, SecretProvider};
 use giles_core::sessions::SystemClock;
 use giles_core::toolsets::{ToolsetHost, ToolsetLauncher, ToolsetManager, ToolsetManagerOptions};
 use giles_store::{BlobStore, Store};
 use giles_types::{AgentId, CallContext, ToolCall, ToolCallEvent, UserId};
+use rmcp::ServerHandler;
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, ErrorData, ListToolsResult, PaginatedRequestParams,
+    ServerConfig, Tool,
+};
+use rmcp::service::{RequestContext, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::json;
@@ -38,14 +45,21 @@ use self::mcp_server::TestServer;
 
 const CLIENT_ID: &str = "giles-client";
 const CLIENT_SECRET: &str = "client-secret-31";
-const CODE: &str = "code-from-the-browser";
 const WAIT: Duration = Duration::from_secs(20);
+
+/// The header the token check adds to an MCP request: the account the token belongs to.
+const ACCOUNT: &str = "x-account";
+
+/// The authorization code the browser brings back for `user`'s account.
+fn code(user: &UserId) -> String {
+    format!("code-{user}")
+}
 
 /// What the fake authorization server issued and saw.
 #[derive(Default)]
 struct Issuer {
-    /// Access tokens the MCP endpoint accepts.
-    valid: Vec<String>,
+    /// Access tokens the MCP endpoint accepts, and the account each belongs to.
+    valid: HashMap<String, String>,
     /// How many tokens were issued; the next one is `access-<n>`.
     issued: usize,
     /// The grant types of the token requests, in order.
@@ -65,12 +79,57 @@ fn lock(shared: &Shared) -> std::sync::MutexGuard<'_, Issuer> {
     shared.lock().unwrap()
 }
 
+/// The test MCP server, plus one tool named for the account the request's token belongs to,
+/// `account_<name>`: a server whose tools depend on the account.
+#[derive(Clone, Default)]
+struct AccountServer {
+    server: TestServer,
+}
+
+impl ServerHandler for AccountServer {
+    fn get_info(&self) -> ServerConfig {
+        self.server.get_info()
+    }
+
+    async fn list_tools(
+        &self,
+        request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        let account = context
+            .extensions
+            .get::<axum::http::request::Parts>()
+            .and_then(|parts| parts.headers.get(ACCOUNT)?.to_str().ok())
+            .map(str::to_owned);
+        let mut page = self.server.list_tools(request, context).await?;
+        if page.next_cursor.is_none()
+            && let Some(account) = account
+        {
+            let schema = json!({"type": "object"}).as_object().unwrap().clone();
+            page.tools.push(Tool::new(
+                format!("account_{account}"),
+                format!("Only for {account}"),
+                schema,
+            ));
+        }
+        Ok(page)
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        self.server.call_tool(request, context).await
+    }
+}
+
 /// Serves the authorization server and the MCP server (behind the token check) on one origin.
 async fn serve() -> (String, Shared) {
     let shared = Shared::default();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
-    let server = TestServer::default();
+    let server = AccountServer::default();
     let mcp = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),
@@ -134,29 +193,34 @@ async fn serve() -> (String, Shared) {
     (origin, shared)
 }
 
-async fn require_token(State(shared): State<Shared>, request: Request, next: Next) -> Response {
+/// Accepts a valid bearer token, and tells the MCP server whose account it is ([`ACCOUNT`]).
+async fn require_token(State(shared): State<Shared>, mut request: Request, next: Next) -> Response {
     let token = request
         .headers()
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::to_owned);
-    let accepted = {
+    let account = {
         let mut issuer = lock(&shared);
         if let Some(token) = &token {
             issuer.seen.push(token.clone());
         }
-        token.is_some_and(|token| issuer.valid.contains(&token))
+        token.and_then(|token| issuer.valid.get(&token).cloned())
     };
-    if accepted {
-        next.run(request).await
-    } else {
-        (StatusCode::UNAUTHORIZED, [(WWW_AUTHENTICATE, "Bearer")]).into_response()
+    match account {
+        Some(account) => {
+            let account = HeaderValue::from_str(&account).unwrap();
+            request.headers_mut().insert(ACCOUNT, account);
+            next.run(request).await
+        }
+        None => (StatusCode::UNAUTHORIZED, [(WWW_AUTHENTICATE, "Bearer")]).into_response(),
     }
 }
 
-/// The token endpoint: the code (with a PKCE verifier) for the first tokens, which expire at once,
-/// and the refresh token for later ones, which last an hour. The client must authenticate.
+/// The token endpoint: an account's code (with a PKCE verifier) for its first tokens, which
+/// expire at once, and its refresh token for later ones, which last an hour. The client must
+/// authenticate.
 async fn token(
     State(shared): State<Shared>,
     _headers: HeaderMap,
@@ -172,32 +236,33 @@ async fn token(
     }
     let mut issuer = lock(&shared);
     let grant = field("grant_type").unwrap_or_default().to_owned();
-    let expires_in = match grant.as_str() {
-        "authorization_code"
-            if field("code") == Some(CODE)
-                && field("code_verifier").is_some_and(|v| v.len() >= 43) =>
-        {
+    let (account, expires_in) = match grant.as_str() {
+        "authorization_code" if field("code_verifier").is_some_and(|v| v.len() >= 43) => {
             // Inside the client's refresh margin: the next use refreshes it.
-            5
+            (field("code").and_then(|code| code.strip_prefix("code-")), 5)
         }
-        "refresh_token" if field("refresh_token") == Some("refresh-1") => 3600,
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "invalid_grant"})),
-            )
-                .into_response();
-        }
+        "refresh_token" => (
+            field("refresh_token").and_then(|token| token.strip_prefix("refresh-")),
+            3600,
+        ),
+        _ => (None, 0),
+    };
+    let Some(account) = account.map(str::to_owned) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "invalid_grant"})),
+        )
+            .into_response();
     };
     issuer.grants.push(grant);
     issuer.issued += 1;
     let access = format!("access-{}", issuer.issued);
-    issuer.valid.push(access.clone());
+    issuer.valid.insert(access.clone(), account.clone());
     Json(json!({
         "access_token": access,
         "token_type": "Bearer",
         "expires_in": expires_in,
-        "refresh_token": "refresh-1",
+        "refresh_token": format!("refresh-{account}"),
         "scope": "files",
     }))
     .into_response()
@@ -278,15 +343,55 @@ impl Giles {
             .map(|secret| secret.expose().to_owned())
     }
 
-    /// Waits until new conversations get `tool`.
-    async fn offered(&self, tool: &str) {
+    /// Waits until `user`'s new conversations get `tool`, and returns all they get.
+    async fn offered(&self, user: &UserId, tool: &str) -> Arc<ToolSnapshot> {
         tokio::time::timeout(WAIT, async {
-            while self.registry.tools().snapshot().get(tool).is_none() {
+            loop {
+                let tools = self.registry.tools_for(Some(user)).await;
+                if tools.get(tool).is_some() {
+                    return tools;
+                }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })
         .await
-        .unwrap_or_else(|_| panic!("{tool} is never offered"));
+        .unwrap_or_else(|_| panic!("{tool} is never offered to {user}"))
+    }
+
+    /// Adds the toolset `files`, the MCP server at `origin`, which signs each user in.
+    async fn add_files(&self, origin: &str) {
+        let spec: ToolsetSpec = serde_json::from_value(json!({
+            "url": format!("{origin}/mcp"),
+            "auth": { "oauth": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "scopes": ["files"],
+            } },
+        }))
+        .unwrap();
+        self.manager.add("files", &spec).await.unwrap();
+    }
+
+    /// Signs `user` in to `files`, as the browser would.
+    async fn sign_in(&self, user: &UserId) {
+        let url = self
+            .manager
+            .begin_sign_in("files", user, &|name: &str| {
+                format!("http://127.0.0.1:1/connections/{name}/callback")
+            })
+            .await
+            .unwrap();
+        let state = url::Url::parse(&url)
+            .unwrap()
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        self.manager
+            .finish_sign_in("files", user, &state, &code(user), None)
+            .await
+            .unwrap();
     }
 
     /// Calls `files__echo` as `requester`: the result text, or the error.
@@ -327,16 +432,7 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     let owner = UserId::new("owner").unwrap();
     let token_path = "users/owner/toolsets/files/oauth-token";
 
-    let spec: ToolsetSpec = serde_json::from_value(json!({
-        "url": format!("{origin}/mcp"),
-        "auth": { "oauth": {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "scopes": ["files"],
-        } },
-    }))
-    .unwrap();
-    giles.manager.add("files", &spec).await.unwrap();
+    giles.add_files(&origin).await;
     assert_eq!(
         giles
             .secret("toolsets/files/oauth-client-secret")
@@ -374,14 +470,14 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     assert!(
         giles
             .manager
-            .finish_sign_in("files", &bob, &state, CODE, None)
+            .finish_sign_in("files", &bob, &state, &code(&bob), None)
             .await
             .is_err()
     );
     assert!(
         giles
             .manager
-            .finish_sign_in("files", &owner, "nope", CODE, None)
+            .finish_sign_in("files", &owner, "nope", &code(&owner), None)
             .await
             .is_err()
     );
@@ -389,7 +485,7 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     // The browser comes back with the code: the tokens are stored, sealed, in the user's space.
     let name = giles
         .manager
-        .finish_sign_in("files", &owner, &state, CODE, None)
+        .finish_sign_in("files", &owner, &state, &code(&owner), None)
         .await
         .unwrap();
     assert_eq!(name, "files");
@@ -404,14 +500,15 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     assert!(
         giles
             .manager
-            .finish_sign_in("files", &owner, &state, CODE, None)
+            .finish_sign_in("files", &owner, &state, &code(&owner), None)
             .await
             .is_err()
     );
 
-    // The toolset restarts over the owner's connection and offers the server's tools. The first
-    // access token was about to expire, so the connection refreshed it and stored the new one.
-    giles.offered("files__echo").await;
+    // The toolset restarts over the owner's connection and offers the owner the server's tools.
+    // The first access token was about to expire, so the connection refreshed it and stored the
+    // new one.
+    giles.offered(&owner, "files__echo").await;
     let echoed = giles.echo(Some("owner"), "hello").await.unwrap();
     assert!(echoed.contains(r#""text":"hello""#), "{echoed}");
     {
@@ -445,7 +542,7 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
         .into_owned();
     giles
         .manager
-        .finish_sign_in("files", &bob, &state, CODE, None)
+        .finish_sign_in("files", &bob, &state, &code(&bob), None)
         .await
         .unwrap();
     lock(&issuer).moved = true;
@@ -496,7 +593,7 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     }
     let err = giles
         .manager
-        .finish_sign_in("files", &owner, &owners[0], CODE, None)
+        .finish_sign_in("files", &owner, &owners[0], &code(&owner), None)
         .await
         .unwrap_err();
     assert!(err.to_string().contains("expired"), "{err}");
@@ -505,7 +602,7 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     for (callback_of, reason) in [("notes", "came back to the callback"), ("files", "expired")] {
         let err = giles
             .manager
-            .finish_sign_in(callback_of, &owner, &owners[1], CODE, None)
+            .finish_sign_in(callback_of, &owner, &owners[1], &code(&owner), None)
             .await
             .unwrap_err();
         assert!(err.to_string().contains(reason), "{err}");
@@ -513,11 +610,50 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     assert_eq!(giles.secret(token_path).await, None);
     giles
         .manager
-        .finish_sign_in("files", &bob, &bobs, CODE, None)
+        .finish_sign_in("files", &bob, &bobs, &code(&bob), None)
         .await
         .unwrap();
     giles.manager.sign_out("files", &bob).await.unwrap();
 
     giles.manager.remove("files").await.unwrap();
     assert!(giles.secrets.list(None).await.unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn each_user_is_offered_the_tools_their_own_account_lists() {
+    let (origin, _issuer) = serve().await;
+    let giles = Giles::start().await;
+    giles.add_files(&origin).await;
+    let owner = UserId::new("owner").unwrap();
+    let bob = UserId::new("bob").unwrap();
+    giles.sign_in(&owner).await;
+    giles.sign_in(&bob).await;
+
+    let files = |tools: &ToolSnapshot| -> Vec<String> {
+        tools
+            .specs()
+            .map(|spec| spec.name.clone())
+            .filter(|name| name.starts_with("files__account_"))
+            .collect()
+    };
+    let owners = giles.offered(&owner, "files__account_owner").await;
+    assert_eq!(files(&owners), ["files__account_owner"]);
+    assert!(owners.get("files__echo").is_some());
+    let bobs = giles.offered(&bob, "files__account_bob").await;
+    assert_eq!(files(&bobs), ["files__account_bob"]);
+
+    // No one's tools are offered to everyone: not to a user who hasn't signed in, nor to a
+    // session with no user.
+    let carol = UserId::new("carol").unwrap();
+    for tools in [
+        giles.registry.tools().snapshot(),
+        giles.registry.tools_for(None).await,
+        giles.registry.tools_for(Some(&carol)).await,
+    ] {
+        assert!(
+            tools.specs().all(|spec| !spec.name.starts_with("files__")),
+            "{:?}",
+            tools.specs().map(|spec| &spec.name).collect::<Vec<_>>()
+        );
+    }
 }

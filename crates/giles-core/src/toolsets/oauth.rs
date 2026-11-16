@@ -12,9 +12,10 @@
 //! Every OAuth request goes through [`OAuthHttp`], which keeps them to the addresses the MCP
 //! server's URL allows ([`address`]).
 //!
-//! [`UserOAuthToolset`] is the toolset the registry holds for such a server. Each call goes over the
-//! requester's own connection, which sends their token, so no user's call ever carries another
-//! user's credentials. The tools offered are those one signed-in user's connection lists.
+//! [`UserOAuthToolset`] is the toolset the registry holds for such a server. It is
+//! [per-user](Toolset::per_user): each user is offered the tools their own connection lists, and
+//! each call goes over the requester's own connection, which sends their token. No user's tools
+//! come from, and no user's call carries, another user's credentials.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -24,7 +25,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use axum::http::Response;
 use futures::StreamExt as _;
-use futures::stream::BoxStream;
 use giles_store::BlobStore;
 use giles_types::{
     CallContext, Error, Result, Skill, SkillSummary, ToolCall, ToolCallHandle, ToolSpec, Toolset,
@@ -478,18 +478,19 @@ impl CredentialStore for UserTokens {
     }
 }
 
-/// A remote toolset that signs each user in with their own account. Each call goes over the
-/// requester's connection, made on their first call; the tools are listed over the connection of
-/// the first user, by id, who is signed in.
+/// A remote toolset that signs each user in with their own account. Each user's tools are listed,
+/// and each call goes, over that user's connection, made when first needed. The first signed-in
+/// user's connection, by id, that works is the toolset's status: its server version, and its end
+/// for the supervisor.
 pub(crate) struct UserOAuthToolset {
     name: InstanceName,
     server: HttpServer,
     oauth: UserOAuth,
     context: Arc<OAuthContext>,
     blobs: BlobStore,
-    /// The user whose connection lists the tools, and the connection.
-    lister: (UserId, Arc<McpToolset>),
-    /// Other users' connections, made on their first call.
+    /// The first user whose connection worked, and the connection.
+    first: (UserId, Arc<McpToolset>),
+    /// Other users' connections, made when first needed.
     users: AsyncMutex<HashMap<UserId, Arc<McpToolset>>>,
 }
 
@@ -497,7 +498,7 @@ impl fmt::Debug for UserOAuthToolset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("UserOAuthToolset")
             .field("name", &self.name)
-            .field("lister", &self.lister.0)
+            .field("first", &self.first.0)
             .finish_non_exhaustive()
     }
 }
@@ -535,7 +536,7 @@ impl UserOAuthToolset {
                         oauth: oauth.clone(),
                         context,
                         blobs,
-                        lister: (user, Arc::new(connection)),
+                        first: (user, Arc::new(connection)),
                         users: AsyncMutex::default(),
                     });
                 }
@@ -551,26 +552,27 @@ impl UserOAuthToolset {
         }))
     }
 
-    /// The version the server reported to the listing connection.
+    /// The version the server reported to the first connection.
     pub(crate) fn server_version(&self) -> Option<String> {
-        self.lister.1.server_version()
+        self.first.1.server_version()
     }
 
-    /// Resolves when the listing connection has ended.
+    /// Resolves when the first connection has ended.
     pub(crate) async fn closed(&self) {
-        self.lister.1.closed().await;
+        self.first.1.closed().await;
     }
 
-    /// `user`'s connection: the listing one, an earlier one that is still open, or a new one.
-    async fn connection(&self, user: &UserId) -> Result<Arc<McpToolset>> {
-        if *user == self.lister.0 {
-            return Ok(self.lister.1.clone());
+    /// `user`'s connection: the first one, an earlier one that is still open, or a new one.
+    /// `None` if they haven't signed in.
+    async fn connection(&self, user: &UserId) -> Result<Option<Arc<McpToolset>>> {
+        if *user == self.first.0 {
+            return Ok(Some(self.first.1.clone()));
         }
         let mut users = self.users.lock().await;
         if let Some(connection) = users.get(user)
             && !connection.is_closed()
         {
-            return Ok(connection.clone());
+            return Ok(Some(connection.clone()));
         }
         users.remove(user);
         let Some(connection) = self
@@ -578,34 +580,45 @@ impl UserOAuthToolset {
             .connect_user(&self.name, &self.server, &self.oauth, user, &self.blobs)
             .await?
         else {
-            return Err(Error::InvalidRequest(format!(
-                "toolset {}: you haven't signed in to this MCP server. Sign in on the Connections \
-                 page of the web UI, then try again",
-                self.name
-            )));
+            return Ok(None);
         };
         let connection = Arc::new(connection);
         users.insert(user.clone(), connection.clone());
-        Ok(connection)
+        Ok(Some(connection))
     }
 }
 
 #[async_trait]
 impl Toolset for UserOAuthToolset {
+    /// None: each user's tools are their own ([`user_tools`](Self::user_tools)).
     async fn list_tools(&self) -> Result<Vec<ToolSpec>> {
-        self.lister.1.list_tools().await
+        Ok(Vec::new())
     }
 
-    fn tool_changes(&self) -> Option<BoxStream<'static, Vec<ToolSpec>>> {
-        self.lister.1.tool_changes()
+    fn per_user(&self) -> bool {
+        true
     }
 
+    /// The tools `user`'s own connection lists; none if they haven't signed in.
+    async fn user_tools(&self, user: &UserId) -> Result<Vec<ToolSpec>> {
+        match self.connection(user).await? {
+            Some(connection) => connection.list_tools().await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// None: an MCP connection has no skills (the instance's `skills` directories are the
+    /// `ManagedToolset`'s).
     async fn list_skills(&self) -> Result<Vec<SkillSummary>> {
-        self.lister.1.list_skills().await
+        Ok(Vec::new())
     }
 
+    /// Always [`Error::NotFound`] (see [`list_skills`](Self::list_skills)).
     async fn get_skill(&self, name: &str) -> Result<Skill> {
-        self.lister.1.get_skill(name).await
+        Err(Error::NotFound(format!(
+            "skill {name}: toolset {} has no skills",
+            self.name
+        )))
     }
 
     /// Calls the tool over the requester's own connection. A turn without a requester (a config
@@ -618,6 +631,13 @@ impl Toolset for UserOAuthToolset {
                 self.name
             )));
         };
-        self.connection(user).await?.call(call, ctx).await
+        let Some(connection) = self.connection(user).await? else {
+            return Err(Error::InvalidRequest(format!(
+                "toolset {}: you haven't signed in to this MCP server. Sign in on the Connections \
+                 page of the web UI, then try again",
+                self.name
+            )));
+        };
+        connection.call(call, ctx).await
     }
 }

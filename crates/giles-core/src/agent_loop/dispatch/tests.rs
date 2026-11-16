@@ -1,6 +1,6 @@
 //! The policy dispatcher against fake toolsets, on tokio's paused clock: `par` is `parallel =
-//! true` with the default deadline, `serial` has a 1 s deadline, and `ghost` is configured but
-//! never registered.
+//! true` with the default deadline, `serial` has a 1 s deadline, `mine` offers each user tools of
+//! their own, and `ghost` is configured but never registered.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use giles_store::{Session, SessionId, SessionKind};
 use giles_types::{
     AgentId, ConversationId, Error, Result, Skill, SkillSummary, Timestamp, ToolCallHandle,
-    ToolSpec, Toolset,
+    ToolSpec, Toolset, UserId,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -65,15 +65,25 @@ impl Drop for Running {
     }
 }
 
-/// Tools `run` (answers after `input.ms` milliseconds, or never without `ms`) and `gone`.
+/// Tools `run` (answers after `input.ms` milliseconds, or never without `ms`) and `gone`. A
+/// per-user one offers each user `run` and `for_<user>` instead.
 struct FakeToolset {
     probe: Arc<Probe>,
+    per_user: bool,
 }
 
 #[async_trait]
 impl Toolset for FakeToolset {
     async fn list_tools(&self) -> Result<Vec<ToolSpec>> {
         Ok(vec![spec("gone"), spec("run")])
+    }
+
+    fn per_user(&self) -> bool {
+        self.per_user
+    }
+
+    async fn user_tools(&self, user: &UserId) -> Result<Vec<ToolSpec>> {
+        Ok(vec![spec("run"), spec(&format!("for_{user}"))])
     }
 
     async fn list_skills(&self) -> Result<Vec<SkillSummary>> {
@@ -193,13 +203,15 @@ impl Setup {
                     "ghost",
                     "url = \"https://example.com/mcp\"\nparallel = true\n",
                 ),
+                ("mine", "url = \"https://example.com/mcp\"\n"),
             ],
         );
         let registry = Arc::new(Registry::new(root, Arc::new(config)));
         let probe = Arc::new(Probe::default());
-        for name in ["par", "serial"] {
+        for (name, per_user) in [("par", false), ("serial", false), ("mine", true)] {
             let toolset = Arc::new(FakeToolset {
                 probe: probe.clone(),
+                per_user,
             });
             registry
                 .register_toolset(&instance(name), toolset)
@@ -250,6 +262,17 @@ impl Setup {
         calls: &[(&str, &str, Value)],
         skip: CancellationToken,
     ) -> BoxStream<'static, (usize, ToolOutput)> {
+        self.dispatch_tools(self.tools(allow), ask, calls, skip)
+    }
+
+    /// Dispatches `calls` in a turn nobody attends, of a session offering `tools`.
+    fn dispatch_tools(
+        &self,
+        tools: Arc<SessionTools>,
+        ask: &[&str],
+        calls: &[(&str, &str, Value)],
+        skip: CancellationToken,
+    ) -> BoxStream<'static, (usize, ToolOutput)> {
         let calls = calls
             .iter()
             .map(|(id, name, input)| ToolRequest {
@@ -267,7 +290,7 @@ impl Setup {
         );
         PolicyDispatcher::new(self.registry.clone()).dispatch(ToolBatch {
             calls,
-            tools: self.tools(allow),
+            tools,
             context: CallContext {
                 agent: AgentId::new("jeeves").unwrap(),
                 requester: Some(owner()),
@@ -461,6 +484,41 @@ async fn a_tool_whose_toolset_is_not_registered_is_unavailable() {
     );
     // Nothing started for the ghost call.
     assert_eq!(s.probe.log(), ["start par", "end par"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_per_user_toolset_offers_each_user_their_own_tools_and_they_can_be_called() {
+    let s = Setup::new().await;
+    let mine = |snapshot: &crate::registry::ToolSnapshot| -> Vec<String> {
+        snapshot
+            .specs()
+            .map(|spec| spec.name.clone())
+            .filter(|name| name.starts_with("mine__"))
+            .collect()
+    };
+    // None in the index, so none for everyone, nor for a session with no user.
+    assert!(mine(&s.registry.tools().snapshot()).is_empty());
+    assert!(mine(&*s.registry.tools_for(None).await).is_empty());
+    let ann = s
+        .registry
+        .tools_for(Some(&UserId::new("ann").unwrap()))
+        .await;
+    assert_eq!(mine(&ann), ["mine__for_ann", "mine__run"]);
+    let bob = s
+        .registry
+        .tools_for(Some(&UserId::new("bob").unwrap()))
+        .await;
+    assert_eq!(mine(&bob), ["mine__for_bob", "mine__run"]);
+
+    // Though the index doesn't list them, the user's tools pass the call-time check.
+    let calls = [("ann", "mine__for_ann", json!({"ms": 1}))];
+    let tools = Arc::new(SessionTools::from_snapshot(&ann, &["*"]));
+    let results = outputs(
+        s.dispatch_tools(tools, &[], &calls, CancellationToken::new()),
+        calls.len(),
+    )
+    .await;
+    assert_eq!(results, [ok("ann done")]);
 }
 
 #[tokio::test(start_paused = true)]

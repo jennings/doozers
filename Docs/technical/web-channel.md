@@ -895,11 +895,11 @@ for what `ListPlugins` knows (state, last error, and tool count, built by the pl
   admin service's `PluginControl`. Where the service has nothing, the row shows the manager's
   `failure`.
 - **The toolset page** shows the settings from the stored spec (a toolset of `giles.toml` has no
-  spec to show), the state, the tools new conversations get from the registry's tool index (prefixed
-  name and description), and a Restart form when the service knows the instance. The restart route
-  exists next to the others so it can return to this page; `RestartPlugin` is the same call as on
-  the plugins page. The route looks the name up in the manager first (any case) and answers 404 for
-  a name that isn't a toolset, so it can't restart a channel or a provider.
+  spec to show), the state, the tools the viewer's new conversations get (`Registry::tools_for`,
+  prefixed name and description), and a Restart form when the service knows the instance. The
+  restart route exists next to the others so it can return to this page; `RestartPlugin` is the same
+  call as on the plugins page. The route looks the name up in the manager first (any case) and
+  answers 404 for a name that isn't a toolset, so it can't restart a channel or a provider.
 - **The form** is one template for add and edit, and it describes a remote server only, because the
   manager stores nothing else: name, `url`, `insecure`, the bearer token (none, or the name of a
   secret in `secrets.toml`), `deadline`, `parallel`, and `skills` (one per line). The `insecure` box
