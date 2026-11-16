@@ -3,16 +3,17 @@
 {% block title %}{{ id }} - Agents - Giles{% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/agents">Agents</a>
 <div class="page-head">
 <h1>{{ label }}</h1>
 <div class="actions">
-<a class="button" href="/chats/new?agent={{ id }}">Chat</a>
+<a class="button button-primary" href="/chats/new?agent={{ id }}">Chat</a>
 <a class="button" href="/admin/agents/{{ id }}/memory">Memory</a>
 <a class="button" href="/admin/agents/{{ id }}/edit">Edit</a>
-<a class="button" href="/admin/agents/{{ id }}/remove">Remove</a>
+<a class="button button-danger" href="/admin/agents/{{ id }}/remove">Remove</a>
 </div>
 </div>
-<dl class="facts">
+<dl class="card facts">
 <dt>Models</dt>
 <dd><code>{{ models }}</code></dd>
 <dt>Tools</dt>
@@ -24,20 +25,22 @@
 <dd>{{ timezone }}</dd>
 {%- endif %}
 </dl>
+<section class="section">
 <h2>Files</h2>
 {%- if let Some(error) = files_error %}
-<p class="state-bad">The agent's directory can't be read: {{ error }}</p>
+<p class="banner banner-error" role="alert">The agent's directory can't be read: {{ error }}</p>
 {%- endif %}
 {%- if truncated %}
-<p class="notice">Not every file is listed: at most {{ max_files }}, and not too deep.</p>
+<p class="banner banner-warn">Not every file is listed: at most {{ max_files }}, and not too deep.</p>
 {%- endif %}
 {%- for file in files %}
-<section class="admin-item agent-file">
-<h3><code>{{ file.path }}</code>{% if let Some(label) = file.label %} <span class="detail">{{ label }}</span>{% endif %}</h3>
-<p class="detail">{{ file.note }}</p>
+<section class="card item agent-file">
+<h3><code>{{ file.path }}</code>{% if let Some(label) = file.label %} <span class="subtitle">{{ label }}</span>{% endif %}</h3>
+<p class="help">{{ file.note }}</p>
 {%- if let Some(text) = file.text %}
-<pre>{{ text }}</pre>
+<pre class="inset">{{ text }}</pre>
 {%- endif %}
 </section>
 {%- endfor %}
+</section>
 {% endblock %}

@@ -285,7 +285,7 @@ async fn an_agent_without_memories_gets_an_empty_page_with_the_sessions_notice()
         "reaches a session after it compacts, or when a new session starts.",
         "Shared core memories: <code>[0% — 0/2,200]</code>",
         "Your core memories: <code>[0% — 0/2,200]</code>",
-        r#"<form class="inline-form" method="get" action="/admin/agents/jeeves/memory" role="search">"#,
+        r#"<form class="search" method="get" action="/admin/agents/jeeves/memory" role="search">"#,
         r#"<input type="hidden" name="csrf" value="csrf-token-for-tests">"#,
         r#"<a href="/admin/routes">Routes</a>"#,
     ] {
@@ -354,7 +354,7 @@ async fn the_owner_sees_their_own_and_the_shared_memories_but_not_other_users_pr
 
     let mine_item = item(&html, mine.id);
     for expected in [
-        "<h3>#1 <span class=\"detail\">core</span></h3>",
+        "<h3>#1 <span class=\"subtitle\">core</span></h3>",
         "<pre>Likes tea.</pre>",
         "10 characters.",
         r#"<time datetime="2026-03-04T05:06:07Z">2026-03-04 05:06 UTC</time>"#,
@@ -373,7 +373,7 @@ async fn the_owner_sees_their_own_and_the_shared_memories_but_not_other_users_pr
     let shared_item = item(&html, shared.id);
     assert!(shared_item.contains("core, shared"), "{shared_item}");
     assert!(shared_item.contains(r#"<input type="checkbox" name="shared" checked>"#));
-    assert!(item(&html, quiet.id).contains("<span class=\"detail\">shared</span>"));
+    assert!(item(&html, quiet.id).contains("<span class=\"subtitle\">shared</span>"));
     // The add form offers *shared* to the owner.
     assert!(
         html.contains(r#"<input type="checkbox" name="shared"> Shared: every user and group"#),

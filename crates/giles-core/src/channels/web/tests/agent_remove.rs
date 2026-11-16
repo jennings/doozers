@@ -145,7 +145,7 @@ async fn the_confirmation_page_says_exactly_what_will_happen() {
         "not part of <code>giles backup</code>",
         r#"action="/admin/agents/jeeves/remove""#,
         &format!(r#"name="csrf" value="{CSRF}""#),
-        "<button type=\"submit\">Remove agent</button>",
+        "<button type=\"submit\" class=\"button-danger-solid\">Remove agent</button>",
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
@@ -184,14 +184,16 @@ async fn the_confirmation_page_says_exactly_what_will_happen() {
         .agents_call(&manager, Method::GET, "/admin/agents", None)
         .await;
     assert!(
-        list.contains(r#"<a href="/admin/agents/jeeves/remove">Remove</a>"#),
+        list.contains(r#"<a class="warn-text" href="/admin/agents/jeeves/remove">Remove</a>"#),
         "{list}"
     );
     let (_, page, _) = env
         .agents_call(&manager, Method::GET, "/admin/agents/jeeves", None)
         .await;
     assert!(
-        page.contains(r#"<a class="button" href="/admin/agents/jeeves/remove">Remove</a>"#),
+        page.contains(
+            r#"<a class="button button-danger" href="/admin/agents/jeeves/remove">Remove</a>"#
+        ),
         "{page}"
     );
 }

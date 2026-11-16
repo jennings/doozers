@@ -229,7 +229,7 @@ async fn an_agents_page_shows_its_files_escaped_and_refuses_links() {
     for expected in [
         "<h1>Jeeves (jeeves)</h1>",
         "<code>memory</code>",
-        "<code>agent.toml</code> <span class=\"detail\">Configuration</span>",
+        "<code>agent.toml</code> <span class=\"subtitle\">Configuration</span>",
         "name = &#34;Jeeves&#34;",
         "You are Jeeves. &#60;script&#62;alert(1)&#60;/script&#62;",
         "<code>MEMORY.md</code>",
@@ -248,7 +248,7 @@ async fn an_agents_page_shows_its_files_escaped_and_refuses_links() {
         "<code>link.md</code>",
         "<code>linked-dir</code>",
         "a symbolic link: not followed",
-        r#"<a class="button" href="/chats/new?agent=jeeves">Chat</a>"#,
+        r#"<a class="button button-primary" href="/chats/new?agent=jeeves">Chat</a>"#,
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
@@ -299,7 +299,7 @@ async fn a_page_lists_at_most_max_files() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        html.matches("class=\"admin-item agent-file\"").count(),
+        html.matches("class=\"card item agent-file\"").count(),
         MAX_FILES
     );
     assert!(html.contains("Not every file is listed"), "{html}");
@@ -420,12 +420,12 @@ async fn the_new_form_asks_for_the_name_before_the_id_and_starts_the_soul() {
     assert!(name.unwrap() < id.unwrap(), "{html}");
     // The id can stay empty (no script: the server derives it), but is still a valid id when typed.
     assert!(
-        html.contains(r#"<input id="id" name="id" value="" pattern="[a-zA-Z0-9-]+">"#),
+        html.contains(r#"<input id="id" name="id" value="" pattern="[a-zA-Z0-9-]+" class="mono">"#),
         "{html}"
     );
     assert!(
         html.contains(&format!(
-            r#"<textarea id="soul" name="soul" rows="12">{DEFAULT_SOUL}</textarea>"#
+            r#"<textarea id="soul" name="soul" rows="12" class="mono">{DEFAULT_SOUL}</textarea>"#
         )),
         "{html}"
     );
@@ -564,7 +564,9 @@ async fn a_form_posted_without_an_id_comes_back_with_the_derived_id_and_what_was
         );
         if extra == "&soul=" {
             assert!(
-                html.contains(r#"<textarea id="soul" name="soul" rows="12"></textarea>"#),
+                html.contains(
+                    r#"<textarea id="soul" name="soul" rows="12" class="mono"></textarea>"#
+                ),
                 "{html}"
             );
         }
@@ -681,7 +683,7 @@ async fn an_invalid_form_is_shown_again_and_writes_nothing() {
         }
         assert!(html.contains(message), "{message}\n{html}");
         // The form keeps what was typed, escaped.
-        assert!(html.contains(r#"<form class="agent-form""#), "{html}");
+        assert!(html.contains(r#"<form class="form-sections""#), "{html}");
         assert!(
             !html.contains("/var/") && !html.contains("/tmp/"),
             "no paths: {html}"

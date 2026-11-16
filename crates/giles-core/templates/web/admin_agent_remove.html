@@ -3,20 +3,24 @@
 {% block title %}Remove {{ id }} - Agents - Giles{% endblock %}
 
 {% block content %}
+<a class="back" href="/admin/agents/{{ id }}">{{ label }}</a>
+<section class="card confirm">
 <h1>Remove {{ label }}?</h1>
 {%- if let Some(error) = error %}
-<p class="error" role="alert">{{ error }}</p>
+<p class="banner banner-error" role="alert">{{ error }}</p>
 {%- endif %}
 {%- if !routes.is_empty() %}
-<p class="state-bad">Giles won't remove an agent that routes still send conversations to. Change {% if routes.len() == 1 %}this route{% else %}these routes{% endif %} to another agent, or remove {% if routes.len() == 1 %}it{% else %}them{% endif %}, on the <a href="/admin/routes">routes page</a>, then come back:</p>
+<div class="banner banner-error" role="alert">
+<p>Giles won't remove an agent that routes still send conversations to. Change {% if routes.len() == 1 %}this route{% else %}these routes{% endif %} to another agent, or remove {% if routes.len() == 1 %}it{% else %}them{% endif %}, on the <a href="/admin/routes">routes page</a>, then come back:</p>
 <ul>
 {%- for route in routes %}
 <li><a href="/admin/routes#route-{{ route.id }}">Route {{ route.position }}</a>: {{ route.criteria }}</li>
 {%- endfor %}
 </ul>
+</div>
 {%- endif %}
 {%- if busy %}
-<p class="state-bad">The agent is working on a chat or a scheduled job right now. Stop the chat (<code>/stop</code>) or wait until it's done, then come back.</p>
+<p class="banner banner-error" role="alert">The agent is working on a chat or a scheduled job right now. Stop the chat (<code>/stop</code>) or wait until it's done, then come back.</p>
 {%- endif %}
 <p>Removing the agent <code>{{ id }}</code> does this:</p>
 <ul>
@@ -26,14 +30,17 @@
 <li>{% if runtime_jobs == 0 %}It has no jobs it scheduled itself.{% else %}Deletes the {{ runtime_jobs }} job{% if runtime_jobs != 1 %}s{% endif %} the agent scheduled itself (with the <code>schedule</code> tool). That can't be undone.{% endif %}</li>
 <li>Keeps its chats, messages, and usage in the database, out of sight. If you later create an agent with the same id, those chats belong to it again.</li>
 </ul>
-<p class="detail">The <code>trash</code> directory is not part of <code>giles backup</code>, and Giles never reads or empties it.</p>
+<p class="help">The <code>trash</code> directory is not part of <code>giles backup</code>, and Giles never reads or empties it.</p>
+<div class="form-actions">
 {%- if !routes.is_empty() || busy %}
-<p><a href="/admin/agents/{{ id }}">Back to the agent</a></p>
+<a class="button" href="/admin/agents/{{ id }}">Back to the agent</a>
 {%- else %}
-<form class="inline-form" method="post" action="/admin/agents/{{ id }}/remove">
+<form method="post" action="/admin/agents/{{ id }}/remove">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<button type="submit">Remove agent</button>
+<button type="submit" class="button-danger-solid">Remove agent</button>
 </form>
-<a href="/admin/agents/{{ id }}">Cancel</a>
+<a class="button button-quiet" href="/admin/agents/{{ id }}">Cancel</a>
 {%- endif %}
+</div>
+</section>
 {% endblock %}
