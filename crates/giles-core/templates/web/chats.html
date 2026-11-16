@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}Chats - Giles{% endblock %}
 
@@ -6,14 +6,6 @@
 <div class="page-head">
 <h1>Chats</h1>
 <a class="button" href="/chats/new">New chat</a>
-<a href="/jobs">Scheduled jobs</a>
-<a href="/admin">Status</a>
-{%- if let Some(csrf) = logout_csrf %}
-<form method="post" action="/logout">
-<input type="hidden" name="csrf" value="{{ csrf }}">
-<button type="submit">Log out</button>
-</form>
-{%- endif %}
 </div>
 {%- if !agents.is_empty() %}
 <form class="agent-picker" method="get" action="/chats/new">

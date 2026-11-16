@@ -48,6 +48,7 @@ use super::auth::{WebUser, check_csrf};
 use super::pages::{
     AgentChoice, WebApp, agent_choices, agent_label, error_page, internal_error, no_store,
 };
+use super::shell::{Nav, Shell};
 use crate::agent_loop::history::message_timezone;
 use crate::config::{ActiveHours, Config, JobPrompt, JobSession, parse_cron};
 use crate::core_tools::MAX_RUNTIME_JOBS_PER_USER;
@@ -124,9 +125,8 @@ struct JobRow {
 #[derive(Template)]
 #[template(path = "web/jobs.html")]
 struct JobsPage {
+    shell: Shell,
     jobs: Vec<JobRow>,
-    /// Whether the user is the owner: the page shows the admin menu.
-    admin: bool,
     /// Whether there's an agent the user may schedule a job with.
     can_create: bool,
     csrf: String,
@@ -292,8 +292,8 @@ async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Response {
         (None, None) => a.agent_id.cmp(&b.agent_id),
     });
     http::render(&JobsPage {
+        shell: Shell::new(&user, Nav::Jobs),
         jobs: rows,
-        admin,
         can_create: !agent_choices(&config, &user).is_empty(),
         csrf: user.csrf.clone(),
     })
@@ -401,11 +401,11 @@ impl JobForm {
 #[derive(Template)]
 #[template(path = "web/job_form.html")]
 struct JobFormPage<'a> {
+    shell: Shell,
     title: String,
     action: String,
     submit: &'static str,
     csrf: &'a str,
-    admin: bool,
     /// The agents a new job may be for; empty when editing.
     agents: Vec<AgentChoice>,
     /// The agent of the job being edited.
@@ -468,11 +468,11 @@ fn render_form(
         None => (StatusCode::OK, None),
     };
     let mut response = http::render(&JobFormPage {
+        shell: Shell::new(user, Nav::Jobs),
         title,
         action,
         submit,
         csrf: &user.csrf,
-        admin: may_administer(user),
         agents,
         agent,
         form,

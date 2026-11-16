@@ -29,6 +29,7 @@ use tracing::error;
 
 use super::auth::{WebUser, check_csrf};
 use super::hub::{Event, Subscription};
+use super::shell::{Nav, Shell};
 use super::{
     ApprovalAnswer, Busy, WebChannel, chat_agent, is_approval_code, is_chat_id, new_agent_chat_id,
     new_chat_id, render,
@@ -296,10 +297,9 @@ struct ChatItem {
 #[derive(Template)]
 #[template(path = "web/chats.html")]
 struct ChatsPage {
+    shell: Shell,
     chats: Vec<ChatItem>,
     agents: Vec<AgentChoice>,
-    /// Set for a cookie login: the page shows a logout button.
-    logout_csrf: Option<String>,
 }
 
 /// `GET /`: the user's chats, most recently active first, and the agents a new chat can be
@@ -328,9 +328,9 @@ async fn chats(State(app): State<WebApp>, user: WebUser) -> Response {
         })
         .collect();
     http::render(&ChatsPage {
+        shell: Shell::new(&user, Nav::Chats),
         chats,
         agents: agent_choices(&config, &user),
-        logout_csrf: user.can_log_out().then(|| user.csrf.clone()),
     })
 }
 
@@ -392,6 +392,7 @@ fn chosen_agent(
 #[derive(Template)]
 #[template(path = "web/chat.html")]
 struct ChatPage<'a> {
+    shell: Shell,
     title: &'a str,
     /// The agent the chat was started with, if one was chosen.
     agent: Option<String>,
@@ -465,6 +466,7 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
             }),
     );
     http::render(&ChatPage {
+        shell: Shell::new(&user, Nav::Chats),
         title: "Chat",
         agent,
         chat: chat.as_str(),

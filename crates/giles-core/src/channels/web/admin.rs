@@ -31,6 +31,7 @@ use tracing::error;
 use super::auth::{WebUser, check_csrf};
 use super::pages::{WebApp, error_page, no_store};
 use super::qr;
+use super::shell::{Nav, Shell};
 use crate::http::{self, RouterBuilder};
 use crate::identity;
 
@@ -374,6 +375,7 @@ fn requested_grants(grants: &SandboxGrants) -> String {
 #[derive(Template)]
 #[template(path = "web/admin_status.html")]
 struct StatusPage {
+    shell: Shell,
     version: String,
     started: Option<Time>,
     sandbox: String,
@@ -387,7 +389,7 @@ struct StatusPage {
 }
 
 impl StatusPage {
-    fn new(status: &pb::StatusResponse) -> Self {
+    fn new(shell: Shell, status: &pb::StatusResponse) -> Self {
         let channels: Vec<ChannelRow> = status.channels.iter().map(channel_row).collect();
         let (sandbox_ok, sandbox) = match &status.sandbox_host {
             Some(host) if host.available => (true, host.description.clone()),
@@ -395,6 +397,7 @@ impl StatusPage {
             None => (false, "unknown".to_owned()),
         };
         Self {
+            shell,
             version: status.version.clone(),
             started: time(status.started_at),
             sandbox,
@@ -415,7 +418,10 @@ async fn status_page(State(pages): State<AdminPages>, user: WebUser) -> Response
         return forbidden();
     }
     match pages.admin.status(Request::new(pb::StatusRequest {})).await {
-        Ok(status) => http::render(&StatusPage::new(status.get_ref())),
+        Ok(status) => http::render(&StatusPage::new(
+            Shell::new(&user, Nav::Status),
+            status.get_ref(),
+        )),
         Err(status) => call_failed("Status", "Status unavailable", &status),
     }
 }
@@ -423,6 +429,7 @@ async fn status_page(State(pages): State<AdminPages>, user: WebUser) -> Response
 #[derive(Template)]
 #[template(path = "web/admin_plugins.html")]
 struct PluginsPage {
+    shell: Shell,
     plugins: Vec<PluginRow>,
     csrf: String,
 }
@@ -439,6 +446,7 @@ async fn plugins_page(State(pages): State<AdminPages>, user: WebUser) -> Respons
         .await
     {
         Ok(listed) => http::render(&PluginsPage {
+            shell: Shell::new(&user, Nav::Plugins),
             plugins: listed.get_ref().plugins.iter().map(plugin_row).collect(),
             csrf: user.csrf,
         }),

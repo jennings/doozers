@@ -186,7 +186,7 @@ async fn the_list_shows_every_agent_with_its_models_and_links() {
         r#"<a href="/admin/agents/bunter">bunter</a>"#,
         "<code>fake/test-model</code>",
         r#"<a href="/chats/new?agent=jeeves">Chat</a>"#,
-        r#"<a href="/admin/agents">Agents</a>"#,
+        r#"<a href="/admin/agents" aria-current="page">Agents</a>"#,
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
