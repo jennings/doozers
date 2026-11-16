@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}{{ title }} - MCP servers - Giles{% endblock %}
 
@@ -7,7 +7,6 @@
 {% endblock %}
 
 {% block content %}
-{% include "web/admin_nav.html" %}
 <h1>{{ title }}</h1>
 {%- if let Some(error) = error %}
 <p class="error" role="alert">{{ error }}</p>

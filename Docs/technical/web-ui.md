@@ -326,6 +326,16 @@ Control heights:
 Each component is a class in `giles.css`. Reuse these. Add a class only for something new, and
 document it here.
 
+### Shell and page
+
+- `app.html` lays out `.app`: the `.sidebar` (with `.brand` and its `.brand-mark`), the `.topbar` of
+  narrow screens with its `.icon-button`, and the `.nav-dialog`. `nav.html` holds the `.nav`
+  (`.nav-label` and `.nav-list` per group) and the `.user` footer with its `.avatar`.
+- `<main class="page">` is the content column. In it, `.page-head` is the title row, `.actions` a
+  row of buttons, `.back` the back link, and `.lede` the intro paragraph.
+- Text helpers: `.muted` (muted color), `.meta` (12 px muted), `.warn-text`, `.mono`, and `.sr-only`
+  (read out but not shown).
+
 ### Buttons
 
 `<button>` and `<a>` share the button classes, and a bare `<button>` is a secondary button.
@@ -345,17 +355,23 @@ buttons (Disable, Up, Down) with the danger action last.
 
 ### Fields
 
+- `.form` is a form card (24 px padding, at most 680 px wide). `.form-wide` widens it to 760 px.
+  `.form-sections` is a long form's stack of cards and fieldsets, at most 820 px wide.
 - `.field` is a column: the `<label>` (13 px, 600, secondary), the control, then `.help` (13 px,
-  muted).
+  muted). A value that can't be edited here uses `<span class="field-label">` and
+  `<span class="field-value">` instead.
 - Controls are 40 px tall with 12 px side padding, radius 8 px, the control border, the inset
   surface, and the text color. Textareas resize vertically. A disabled control uses the disabled
   surface and faint text.
 - `.field-row` puts two fields side by side (a two-column grid with a 16 px gap). It becomes one
   column on narrow screens.
+- `.control-row` puts two controls under one label, such as the authentication choice and its token.
 - `.check` is a checkbox row: an 18 px box, a 10 px gap, then the label text. `.check-grid` puts
   checkbox rows in two columns.
 - `<fieldset class="card">` groups checkboxes. Its `<legend>` is 15 px, 600.
 - `.form-actions` is the row of the submit button and Cancel.
+- `.search` is an inline search form: label, field, and button in one row.
+- A field that fails the browser's checks (`:user-invalid`) gets the warn border.
 
 ### Surfaces
 
@@ -365,6 +381,13 @@ buttons (Disable, Up, Down) with the danger action last.
 - `.stats` holds `.stat` cards, each with a `.stat-label` (12 px, uppercase, faint) and a
   `.stat-value` (22 px, display font).
 - `.confirm`: a card with the warn border, at most 620 px wide.
+- `.subtitle`: the quieter second half of a heading, such as "giles-channel-irc, wasm" after a
+  plugin's name.
+- `.highlight`: a card with the accent border, for one that needs attention now (a channel waiting
+  to be linked).
+- `.item`: a smaller card (14 px 18 px padding, at most 780 px wide) in a list of them, such as a
+  memory.
+- `.inset`: a `<pre>` block inside a card, on the inset surface, at most 180 px tall and scrolling.
 - `.facts`: a `<dl>` laid out in two columns, `max-content` then the rest. `<dt>` is faint, and long
   values wrap anywhere.
 
@@ -375,9 +398,12 @@ A table sits in `.table-wrap`: a card with no padding that scrolls sideways. The
 
 - Header cells: 12 px uppercase faint, 12 px 16 px padding, left aligned.
 - Body rows have a top border, with 14 px 16 px cells, aligned top.
-- The actions column's header is `<span class="sr-only">Actions</span>`, and its cells don't wrap.
+- The actions column's header is `<span class="sr-only">Actions</span>`, and its cells are
+  `.row-actions`: right aligned, not wrapping.
+- `.secondary` cells use the secondary text color, and `.num` cells (a route's position) the faint
+  one.
 - An empty filter value reads "any" in muted italics (`.any`).
-- A problem with a row goes in a following row that spans the columns, in warn text.
+- A problem with a row goes in a following `.problem-row` that spans the columns, in warn text.
 
 ### Pills and banners
 
@@ -392,6 +418,11 @@ A table sits in `.table-wrap`: a card with no padding that scrolls sideways. The
 
 ### Chat
 
+- `.chats` is the two-pane grid: `.chat-list-pane` (with the `.agent-picker` card and the
+  `.chat-list` of `.chat-item-title` and `.chat-item-meta`) and `.chat-pane` (with the `.chat-head`,
+  then a `.chat-column` of `.messages` and the compose form, or `.chat-empty`). The container has
+  `.has-chat` when a chat is open, which picks the pane narrow screens show.
+- `.chat-notice` is a centered muted line among the messages, such as "Older messages aren't shown."
 - `.msg.user`: right aligned, at most 75% wide, accent fill, white text, radius 14 14 4 14.
 - `.msg.assistant`: left aligned, at most 80% wide, surface fill and border, radius 14 14 14 4.
 - `.tool`: full width, inset surface, control border, radius 10 px. The tool's name is 13 px and

@@ -1,13 +1,8 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}Memory - {{ agent }} - Agents - Giles{% endblock %}
 
 {% block content %}
-{%- if admin %}
-{% include "web/admin_nav.html" %}
-{%- else %}
-<nav class="admin-nav"><a href="/">Chats</a></nav>
-{%- endif %}
 <div class="page-head">
 <h1>Memory of {{ label }}</h1>
 {%- if admin %}

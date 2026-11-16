@@ -28,6 +28,7 @@ use super::admin::{forbidden, may_administer};
 use super::auth::{WebUser, check_csrf};
 use super::is_chat_id;
 use super::pages::{WebApp, agent_label, error_page, no_store};
+use super::shell::{Nav, Shell};
 use super::toolsets::when;
 use crate::config::Config;
 use crate::http::{self, RouterBuilder};
@@ -212,6 +213,7 @@ struct EnvironmentRow {
 #[derive(Template)]
 #[template(path = "web/admin_workspaces.html")]
 struct WorkspacesPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     environments: Vec<EnvironmentRow>,
     workspaces: Vec<WorkspaceRow>,
@@ -255,6 +257,7 @@ async fn list_page(State(pages): State<WorkspacePages>, user: WebUser) -> Respon
     let config = pages.app.inner.agents.get();
     let web = pages.app.inner.channel.instance().as_str();
     http::render(&WorkspacesPage {
+        shell: Shell::new(&user, Nav::Workspaces),
         csrf: &user.csrf,
         environments: overview
             .environments
@@ -292,6 +295,7 @@ struct ActionForm {
 #[derive(Template)]
 #[template(path = "web/admin_workspace_stop.html")]
 struct StopPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     id: String,
 }
@@ -317,6 +321,7 @@ async fn stop_page(
         return Redirect::to(&format!("/admin/workspaces#workspace-{id}")).into_response();
     }
     http::render(&StopPage {
+        shell: Shell::new(&user, Nav::Workspaces),
         csrf: &user.csrf,
         id: id.to_string(),
     })
@@ -350,6 +355,7 @@ async fn stop(
 #[derive(Template)]
 #[template(path = "web/admin_workspace_delete.html")]
 struct DeletePage<'a> {
+    shell: Shell,
     csrf: &'a str,
     id: String,
     environment: String,
@@ -379,6 +385,7 @@ async fn delete_page(
     let config = pages.app.inner.agents.get();
     let web = pages.app.inner.channel.instance().as_str();
     http::render(&DeletePage {
+        shell: Shell::new(&user, Nav::Workspaces),
         csrf: &user.csrf,
         in_use: pages.workspaces.in_use(&record.id),
         id: record.id.to_string(),

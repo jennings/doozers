@@ -415,7 +415,7 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
     let (status, html) = t.get("/admin/mcp-servers").await;
     assert_eq!(status, StatusCode::OK);
     for expected in [
-        r#"<a href="/admin/mcp-servers">MCP servers</a>"#,
+        r#"<a href="/admin/mcp-servers" aria-current="page">MCP servers</a>"#,
         r#"<a class="button" href="/admin/mcp-servers/new">New MCP server</a>"#,
         r#"<a href="/admin/mcp-servers/box">box</a>"#,
         "<code>http://127.0.0.1:9/mcp</code>",

@@ -1,9 +1,8 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}Removed {{ id }} - Agents - Giles{% endblock %}
 
 {% block content %}
-{% include "web/admin_nav.html" %}
 <h1>Removed {{ label }}</h1>
 <ul>
 <li>The agent's directory is now <code>{{ trash }}</code>. To bring the agent back, move it back to <code>agents/{{ id }}/</code> and restart Giles. Its memory database, <code>memory.db</code>, is in that directory, so its memories come back with it.</li>

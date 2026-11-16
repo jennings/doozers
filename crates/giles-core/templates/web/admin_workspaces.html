@@ -1,9 +1,8 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}Workspaces - Giles{% endblock %}
 
 {% block content %}
-{% include "web/admin_nav.html" %}
 <h1>Workspaces</h1>
 <p>A workspace is where an agent runs commands and keeps files when it has an environment. Here you see each one with what its environment says about it now, and you can stop or delete it. Stopping keeps the files, and the agent's next command starts the workspace again. Deleting removes everything in it, and the agent is told on its next workspace call that an operator deleted it.</p>
 {%- if !environments.is_empty() %}

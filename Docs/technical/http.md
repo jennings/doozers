@@ -60,12 +60,18 @@ Rules for a module's `routes(..) -> axum::Router`:
 Templates live in `crates/giles-core/templates/` (askama's default directory) and are compiled into
 the binary by `#[derive(askama::Template)]`; a template error is a compile error.
 
-`layout.html` is the base every page extends. It has three blocks:
+`layout.html` is the base every page extends. It has four blocks:
 
 - `title` (default `Giles`).
 - `head` (default empty), for a page's own `<script src>` or `<link>`; the new-agent form loads its
   script here.
-- `content`, inside `<main>`.
+- `body`: everything in `<body>`. By default it's a standalone page, one card centered on the page
+  with the brand above the `content` block. The home, 404, login, and error pages use it.
+- `content`, the page's own markup.
+
+The web channel's signed-in pages extend `web/app.html` instead, which overrides `body` with the
+sidebar and keeps `content` inside `<main>` ([Web channel](web-channel.md#templates-and-styles)).
+The look of both is in [Web interface design](web-ui.md).
 
 It links the stylesheet and both scripts through the asset constants
 (`{{ crate::http::assets::HTMX.path }}`), so no page ever hard-codes an asset path. The scripts are

@@ -225,9 +225,9 @@ async fn the_page_lists_a_workspace_with_what_its_environment_says_now() {
     // `far` has no workspaces and never connected.
     assert!(page.contains("<code>far</code>"), "{page}");
     assert!(page.contains("is not connected right now"), "{page}");
-    // The admin nav links to the page.
+    // The sidebar links to the page, marked current.
     assert!(
-        page.contains(r#"<a href="/admin/workspaces">Workspaces</a>"#),
+        page.contains(r#"<a href="/admin/workspaces" aria-current="page">Workspaces</a>"#),
         "{page}"
     );
     assert!(!page.contains(r#"state-warn">In use"#), "{page}");

@@ -1,9 +1,8 @@
-{% extends "layout.html" %}
+{% extends "web/app.html" %}
 
 {% block title %}Remove {{ id }} - Agents - Giles{% endblock %}
 
 {% block content %}
-{% include "web/admin_nav.html" %}
 <h1>Remove {{ label }}?</h1>
 {%- if let Some(error) = error %}
 <p class="error" role="alert">{{ error }}</p>

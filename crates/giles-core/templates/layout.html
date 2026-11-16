@@ -13,9 +13,13 @@
 {% block head %}{% endblock %}
 </head>
 <body>
-<header><a href="/">Giles</a></header>
-<main>
+{%- block body %}
+<main class="standalone">
+<section class="card solo">
+<a class="brand" href="/"><span class="brand-mark" aria-hidden="true">G</span> Giles</a>
 {% block content %}{% endblock %}
+</section>
 </main>
+{%- endblock %}
 </body>
 </html>

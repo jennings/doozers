@@ -1,0 +1,26 @@
+{#- The frame of every signed-in page: the sidebar, the top bar and navigation dialog of narrow
+    screens, and the page in <main>. The page's struct has a `shell` (`web::shell::Shell`). #}
+{% extends "layout.html" %}
+
+{%- block body %}
+<div class="app">
+<header class="topbar">
+<button type="button" class="icon-button" command="show-modal" commandfor="nav-dialog" aria-label="Open menu"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+<span class="topbar-title">{{ shell.section }}</span>
+</header>
+<aside class="sidebar">
+<a class="brand" href="/"><span class="brand-mark" aria-hidden="true">G</span> Giles</a>
+{% include "web/nav.html" %}
+</aside>
+<dialog id="nav-dialog" class="nav-dialog" closedby="any" aria-label="Menu">
+<div class="nav-dialog-head">
+<a class="brand" href="/"><span class="brand-mark" aria-hidden="true">G</span> Giles</a>
+<form method="dialog"><button class="icon-button" aria-label="Close menu"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></form>
+</div>
+{% include "web/nav.html" %}
+</dialog>
+<main class="{% block main_class %}page{% endblock %}">
+{% block content %}{% endblock %}
+</main>
+</div>
+{%- endblock %}

@@ -41,6 +41,7 @@ use super::admin::{PluginRow, call_failed, forbidden, may_administer, plugin_row
 use super::auth::{WebUser, check_csrf};
 use super::connections::callback_path;
 use super::pages::{WebApp, agent_label, error_page, no_store};
+use super::shell::{Nav, Shell};
 use crate::config::{
     Config, InstanceName, KeyPath, LiveConfig, ToolsetError, ToolsetInstance, ToolsetSpec,
     ToolsetTransport,
@@ -208,6 +209,7 @@ struct ToolsetRow {
 #[derive(Template)]
 #[template(path = "web/admin_toolsets.html")]
 struct ToolsetsPage {
+    shell: Shell,
     toolsets: Vec<ToolsetRow>,
 }
 
@@ -252,7 +254,10 @@ async fn list_page(State(pages): State<ToolsetPages>, user: WebUser) -> Response
             }
         })
         .collect();
-    http::render(&ToolsetsPage { toolsets })
+    http::render(&ToolsetsPage {
+        shell: Shell::new(&user, Nav::McpServers),
+        toolsets,
+    })
 }
 
 /// One row of a toolset's settings: a label and what it is set to, one value per line.
@@ -287,6 +292,7 @@ fn tools_of(registry: &Registry, name: &str) -> Vec<ToolRow> {
 #[derive(Template)]
 #[template(path = "web/admin_toolset.html")]
 struct ToolsetPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     name: String,
     /// Stored in Giles, so it can be edited and removed.
@@ -344,6 +350,7 @@ async fn detail_page(
         .and_then(|plugin| plugin.error.clone())
         .or_else(|| view.failure.clone());
     http::render(&ToolsetPage {
+        shell: Shell::new(&user, Nav::McpServers),
         csrf: &user.csrf,
         restartable: plugin.as_ref().is_some_and(|plugin| plugin.restartable),
         tools: tools_of(&pages.registry, &view.name),
@@ -678,6 +685,7 @@ fn settings(form: &ToolsetForm) -> Vec<Setting> {
 #[derive(Template)]
 #[template(path = "web/admin_toolset_form.html")]
 struct ToolsetFormPage<'a> {
+    shell: Shell,
     csrf: &'a str,
     title: String,
     action: String,
@@ -758,6 +766,7 @@ fn render_form(
     };
     let status = problem.as_ref().map(|problem| problem.status);
     let mut response = http::render(&ToolsetFormPage {
+        shell: Shell::new(user, Nav::McpServers),
         csrf: &user.csrf,
         title,
         action,
@@ -957,6 +966,7 @@ fn mentions(config: &Config, name: &str) -> Vec<Mention> {
 #[derive(Template)]
 #[template(path = "web/admin_toolset_remove.html")]
 struct RemovePage<'a> {
+    shell: Shell,
     csrf: &'a str,
     name: String,
     agents: Vec<Mention>,
@@ -977,6 +987,7 @@ async fn remove_page(
         Err(response) => return *response,
     };
     http::render(&RemovePage {
+        shell: Shell::new(&user, Nav::McpServers),
         csrf: &user.csrf,
         agents: mentions(&pages.config.get(), &view.name),
         name: view.name,
@@ -1043,6 +1054,7 @@ enum RenameState {
 #[derive(Template)]
 #[template(path = "web/admin_toolset_rename.html")]
 struct RenamePage<'a> {
+    shell: Shell,
     csrf: &'a str,
     name: String,
     /// What the owner typed as the new name.
@@ -1088,6 +1100,7 @@ fn render_rename(user: &WebUser, name: &str, new: &str, state: RenameState) -> R
         }
     };
     let mut response = http::render(&RenamePage {
+        shell: Shell::new(user, Nav::McpServers),
         csrf: &user.csrf,
         name: name.to_owned(),
         new: new.to_owned(),
