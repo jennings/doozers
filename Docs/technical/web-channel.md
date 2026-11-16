@@ -28,7 +28,7 @@ the live-output hook.
 | ------------------------------ | ---------------------------------------------------------------- |
 | `GET /`                        | The user's chats on this instance, most recently active first, and the agent picker. |
 | `GET /chats/new`               | 303 to `/chats/<new id>`; nothing is stored until a message. `?agent=<id>`: a chat with that agent. |
-| `GET /chats/<id>`              | The transcript, live messages, pending prompts, and the form.   |
+| `GET /chats/<id>`              | The chat list, then the chat: transcript, live messages, pending prompts, and the form. Its title is its first message's, from the list. |
 | `POST /chats/<id>/messages`    | Posts `text` as the user (CSRF-checked).                         |
 | `POST /chats/<id>/approvals`   | An approval button: posts `<answer> <code>` (CSRF-checked).      |
 | `GET /chats/<id>/events`       | Server-sent events for the page.                                 |

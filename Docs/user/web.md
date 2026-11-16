@@ -77,7 +77,9 @@ There's no logout for a proxy login. The proxy decides who you are on every requ
 
 ## Chats
 
-The home page lists your chats. Each chat is a separate conversation with its own history.
+The home page lists your chats. Each chat is a separate conversation with its own history. The chat
+you open shows beside the list. On a narrow screen it replaces the list, and **All chats** goes
+back.
 
 Messages in a chat you open with **New chat** go to the agent your [routes](#routes) pick. To talk
 to a particular agent instead, pick it under **Chat with** and press **Start**. That chat always

@@ -330,9 +330,10 @@ document it here.
 
 - `app.html` lays out `.app`: the `.sidebar` (with `.brand` and its `.brand-mark`), the `.topbar` of
   narrow screens with its `.icon-button`, and the `.nav-dialog`. `nav.html` holds the `.nav`
-  (`.nav-label` and `.nav-list` per group) and the `.user` footer with its `.avatar`.
+  (`.nav-label` and `.nav-list` per group) and the `.account` footer with its `.avatar`.
 - `<main class="page">` is the content column. In it, `.page-head` is the title row, `.actions` a
-  row of buttons, `.back` the back link, and `.lede` the intro paragraph.
+  row of buttons, `.back` the back link, `.lede` the intro paragraph, and `.section` a titled
+  section (a column with a 12 px gap).
 - Text helpers: `.muted` (muted color), `.meta` (12 px muted), `.warn-text`, `.mono`, and `.sr-only`
   (read out but not shown).
 

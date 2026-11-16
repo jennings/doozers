@@ -195,7 +195,7 @@ pub(super) fn compose(chat: &str, csrf: &str, text: &str, error: Option<&str>) -
 
 /// The page notice that events were missed.
 pub(super) fn reload_notice() -> String {
-    r#"<p id="chat-notice" class="notice" hx-swap-oob="true">Some messages may be missing. <a href="">Reload the page</a> to see them.</p>"#
+    r#"<p id="chat-notice" class="banner banner-warn" hx-swap-oob="true">Some messages may be missing. <a href="">Reload the page</a> to see them.</p>"#
         .to_owned()
 }
 
@@ -549,7 +549,7 @@ pub(super) fn history(rows: &[ConversationMessage], replayed: &[String]) -> Vec<
             continue;
         }
         if session.is_some_and(|s| s != row.session) {
-            items.push(r#"<p class="session-break">New session</p>"#.to_owned());
+            items.push(r#"<p class="chat-notice">New session</p>"#.to_owned());
         }
         session = Some(row.session);
         if let Some((text, media)) = shown {
@@ -675,7 +675,8 @@ mod tests {
             "{html}"
         );
         assert!(
-            html.contains(&format!(r#"<a href="/blobs/{id}">&#60;b&#62;.svg</a>"#)),
+            html.contains(&format!(r#"<a href="/blobs/{id}">"#))
+                && html.contains("</svg>&#60;b&#62;.svg</a>"),
             "{html}"
         );
         assert!(html.contains(">application/pdf</a>"), "{html}");
@@ -814,7 +815,7 @@ mod tests {
         let items = history(&rows, &[]);
         assert_eq!(
             ids(&items),
-            ["m-h1", "t-3", "m-h4", "t-5", "session-break", "m-h6"]
+            ["m-h1", "t-3", "m-h4", "t-5", "chat-notice", "m-h6"]
         );
         assert!(items[0].contains("<strong>there</strong>"));
         assert!(
@@ -828,10 +829,7 @@ mod tests {
 
         // A call the event stream will add is left out.
         let items = history(&rows, &["t-3".into()]);
-        assert_eq!(
-            ids(&items),
-            ["m-h1", "m-h4", "t-5", "session-break", "m-h6"]
-        );
+        assert_eq!(ids(&items), ["m-h1", "m-h4", "t-5", "chat-notice", "m-h6"]);
     }
 
     #[test]
@@ -1033,7 +1031,7 @@ mod tests {
         let items = history(&rows, &[]);
         assert_eq!(
             ids(&items),
-            ["m-h1", "m-h2", "t-3", "t-5", "session-break", "t-7"]
+            ["m-h1", "m-h2", "t-3", "t-5", "chat-notice", "t-7"]
         );
         assert!(items[1].contains("<strong>cat</strong>"), "{}", items[1]);
         assert!(items[1].contains("<img"), "{}", items[1]);
