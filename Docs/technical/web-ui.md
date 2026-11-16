@@ -395,7 +395,8 @@ buttons (Disable, Up, Down) with the danger action last.
 ### Tables
 
 A table sits in `.table-wrap`: a card with no padding that scrolls sideways. The table has
-`class="table"`, the full width, and a minimum width that keeps its columns readable.
+`class="table"`, the full width, and a minimum width of 600 px that keeps its columns readable.
+`.table-wide` raises the minimum to 980 px for a table with many columns, such as the jobs.
 
 - Header cells: 12 px uppercase faint, 12 px 16 px padding, left aligned.
 - Body rows have a top border, with 14 px 16 px cells, aligned top.

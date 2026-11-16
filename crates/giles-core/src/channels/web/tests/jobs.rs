@@ -132,7 +132,7 @@ async fn the_owner_sees_every_agents_jobs_in_one_list_soonest_first() {
     assert!(page.contains("From <code>morning.md</code>"));
     assert!(page.contains(r#"<time datetime="2026-10-22T08:00:00Z">"#));
     let orphaned_row = &page[page[..orphaned].rfind("<tr>").unwrap()..orphaned];
-    assert!(orphaned_row.contains(r#"<span class="state-warn">"#));
+    assert!(orphaned_row.contains(r#"<span class="warn-text">"#));
     assert!(!page.contains("Guest reminder"));
 }
 
@@ -308,7 +308,7 @@ async fn edit_disable_enable_and_delete_change_only_the_users_own_jobs() {
     assert_eq!(spec(&env, mine).await.unwrap()["disabled"], true);
     assert!(seen.has_changed().unwrap());
     let (_, page) = jobs_page(&env, owner()).await;
-    assert!(page.contains(r#"<span class="state-warn">Disabled</span>"#));
+    assert!(page.contains(r#"<span class="warn-text">Disabled</span>"#));
     assert!(page.contains(&format!(r#"action="/jobs/{mine}/enable""#)));
     // An edit keeps it disabled.
     let edited = post(

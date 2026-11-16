@@ -678,6 +678,7 @@ dialog.confirm {
     letter-spacing: 0.06em;
     text-align: left;
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
   & td {
@@ -729,6 +730,11 @@ dialog.confirm {
   & ul {
     padding-left: 1rem;
   }
+}
+
+/* A table with many columns, such as the jobs. */
+.table-wide {
+  min-width: 980px;
 }
 
 /* Pills and banners ----------------------------------------------------------------------------- */
@@ -1534,4 +1540,8 @@ details.card[open] > summary {
 
 .jobs code {
   white-space: nowrap;
+}
+
+.jobs td:nth-child(7) {
+  max-width: 260px;
 }
