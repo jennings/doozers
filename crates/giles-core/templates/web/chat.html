@@ -1,14 +1,23 @@
-{% extends "web/app.html" %}
+{% extends "web/chats_base.html" %}
 
 {% block title %}{{ title }} - Giles{% endblock %}
 
-{% block content %}
-<div class="chat" hx-headers='{"X-CSRF-Token": "{{ csrf }}"}' hx-ext="sse" sse-connect="/chats/{{ chat }}/events?after={{ cursor }}">
-<p class="page-head"><a href="/">All chats</a>{% if let Some(agent) = agent %} <span class="detail">with {{ agent }}</span>{% endif %}</p>
-<p id="chat-notice" class="notice" hidden></p>
+{% block main_class %}chats has-chat{% endblock %}
+
+{% block pane %}
+<section class="chat-pane" aria-label="Chat" hx-headers='{"X-CSRF-Token": "{{ csrf }}"}' hx-ext="sse" sse-connect="/chats/{{ chat }}/events?after={{ cursor }}">
+<header class="chat-head">
+<a class="all-chats" href="/">All chats</a>
+<h2>{{ title }}</h2>
+{%- if let Some(agent) = agent %}
+<span class="muted">with {{ agent }}</span>
+{%- endif %}
+</header>
+<div class="chat-column">
+<p id="chat-notice" class="banner banner-warn" hidden></p>
 <div id="messages" class="messages" sse-swap="message" hx-swap="beforeend">
 {%- if truncated %}
-<p class="notice">Older messages aren't shown.</p>
+<p class="chat-notice">Older messages aren't shown.</p>
 {%- endif %}
 {%- for item in items %}
 {{ item|safe }}
@@ -16,4 +25,5 @@
 </div>
 {{ compose|safe }}
 </div>
+</section>
 {% endblock %}
