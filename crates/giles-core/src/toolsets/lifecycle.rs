@@ -22,6 +22,7 @@ use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use giles_types::{
     CallContext, Error, Result, Skill, SkillSummary, ToolCall, ToolCallHandle, ToolSpec, Toolset,
+    UserId,
 };
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tokio::time::Instant;
@@ -30,7 +31,7 @@ use tracing::{error, info, warn};
 
 use super::cache::{CacheKey, ToolCache};
 use crate::admin::PluginRunState;
-use crate::config::{InstanceName, ToolsetInstance, ToolsetTransport};
+use crate::config::{Auth, InstanceName, ToolsetInstance, ToolsetTransport};
 
 /// The first restart delay after a crash or a failed start (PLAN section 7.5).
 pub const RESTART_BACKOFF_MIN: Duration = Duration::from_secs(1);
@@ -195,9 +196,12 @@ impl Drop for CallGuard {
 }
 
 /// The [`Toolset`] registered for a managed instance. Its tools are what the supervisor offers;
-/// a call gets the supervisor's connection, starting a stopped stdio server first.
+/// a call gets the supervisor's connection, starting a stopped stdio server first. A server each
+/// user signs in to (`auth.oauth`) is [per-user](Toolset::per_user): each user's tools are listed
+/// over the connection when asked for.
 pub(crate) struct ManagedToolset {
     instance: InstanceName,
+    per_user: bool,
     tools: watch::Receiver<Vec<ToolSpec>>,
     requests: mpsc::Sender<Reply>,
     /// The instance's `skills` directories.
@@ -260,6 +264,19 @@ impl Toolset for ManagedToolset {
             Some((list, tools))
         });
         Some(changes.boxed())
+    }
+
+    fn per_user(&self) -> bool {
+        self.per_user
+    }
+
+    /// `user`'s tools, listed over the supervisor's connection; [`list_tools`](Self::list_tools)
+    /// unless the toolset is [per-user](Toolset::per_user).
+    async fn user_tools(&self, user: &UserId) -> Result<Vec<ToolSpec>> {
+        if !self.per_user {
+            return self.list_tools().await;
+        }
+        self.lease().await?.toolset.user_tools(user).await
     }
 
     /// The skills of the instance's `skills` directories, with bare names; available whether or
@@ -329,6 +346,8 @@ impl Managed {
         let (requests_tx, requests) = mpsc::channel(REQUEST_BUFFER);
         let toolset = Arc::new(ManagedToolset {
             instance: instance.name.clone(),
+            per_user: matches!(&instance.transport,
+                ToolsetTransport::Http(remote) if matches!(remote.auth, Some(Auth::UserOAuth(_)))),
             tools,
             requests: requests_tx,
             skills: instance.skills.clone(),

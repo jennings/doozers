@@ -164,6 +164,11 @@ impl ToolSnapshot {
         Self { tools }
     }
 
+    /// This snapshot's tools and `more`, sorted by name.
+    pub(crate) fn with(&self, more: impl IntoIterator<Item = IndexedTool>) -> Self {
+        Self::new(self.tools.iter().cloned().chain(more).collect())
+    }
+
     /// Every tool, sorted by name.
     pub fn tools(&self) -> &[IndexedTool] {
         &self.tools

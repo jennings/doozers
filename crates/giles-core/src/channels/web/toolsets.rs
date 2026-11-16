@@ -31,7 +31,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use giles_proto::admin::v1 as pb;
 use giles_proto::admin::v1::admin_service_server::AdminService as AdminRpc;
-use giles_types::{AgentId, Timestamp};
+use giles_types::{AgentId, Timestamp, UserId};
 use serde_json::{Map, Value};
 use tonic::Request;
 use tracing::error;
@@ -272,11 +272,11 @@ struct ToolRow {
     description: String,
 }
 
-/// The tools new conversations get from the toolset `name`, by name.
-fn tools_of(registry: &Registry, name: &str) -> Vec<ToolRow> {
+/// The tools `user`'s new conversations get from the toolset `name`, by name.
+async fn tools_of(registry: &Registry, user: &UserId, name: &str) -> Vec<ToolRow> {
     registry
-        .tools()
-        .snapshot()
+        .tools_for(Some(user))
+        .await
         .tools()
         .iter()
         .filter(|tool| {
@@ -349,11 +349,12 @@ async fn detail_page(
         .as_ref()
         .and_then(|plugin| plugin.error.clone())
         .or_else(|| view.failure.clone());
+    let tools = tools_of(&pages.registry, &user.user, &view.name).await;
     http::render(&ToolsetPage {
         shell: Shell::new(&user, Nav::McpServers),
         csrf: &user.csrf,
         restartable: plugin.as_ref().is_some_and(|plugin| plugin.restartable),
-        tools: tools_of(&pages.registry, &view.name),
+        tools,
         name: view.name,
         stored,
         created,

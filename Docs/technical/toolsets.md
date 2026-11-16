@@ -137,6 +137,9 @@ after it, nothing starts any more.
 - `call` asks the supervisor for the connection over a channel and calls it. The lease it gets holds
   the connection and counts the call as in flight until the returned events are dropped, so idle
   stop never cuts a call short.
+- For a server each user signs in to (`auth.oauth`), `per_user` is true, and `user_tools(user)` asks
+  the supervisor for the connection the same way and lists that user's tools over it
+  ([Each user's sign-in](#each-users-sign-in)).
 - `list_skills` and `get_skill` read the instance's `skills` directories (`skills::discover` on a
   blocking thread, bare names, a later directory overriding an earlier one, broken skills logged and
   skipped), whether or not the server runs. The agent's skill index reads the same directories
@@ -357,15 +360,20 @@ plugin's `oauth` stays client credentials (`Auth::OAuth`). `toolsets::oauth` doe
   `auth.oauth` and when the user's tokens were last stored. Neither half holds the manager's lock,
   since both wait on the network.
 - **Connections.** `UserOAuthToolset::connect` tries the signed-in users in id order and keeps the
-  first connection that works as the lister: its tools, `list_changed` stream, and skills are the
-  toolset's, and its end is the toolset's end for the supervisor. With no one signed in, the
-  connection fails as `Unavailable` and the supervisor retries with its backoff until a sign-in
-  restarts it. A user's connection is `McpToolset::connect_http_oauth`: the transport is `rmcp`'s
-  `AuthClient` over an `AuthorizationManager` initialized from the user's tokens
-  (`initialize_from_store`, which drops tokens of another issuer), reconfigured with the client
-  secret if the tokens belong to the configured client. `AuthClient` reads the access token from the
-  store on every request, refreshes it within 30 s of expiry or after a 401, and retries once.
-- **Calls.** `call` goes over the requester's own connection: the lister's, an open one made
+  first connection that works: its server version is the toolset's, and its end is the toolset's end
+  for the supervisor. Nothing else comes from it. With no one signed in, the connection fails as
+  `Unavailable` and the supervisor retries with its backoff until a sign-in restarts it. A user's
+  connection is `McpToolset::connect_http_oauth`: the transport is `rmcp`'s `AuthClient` over an
+  `AuthorizationManager` initialized from the user's tokens (`initialize_from_store`, which drops
+  tokens of another issuer), reconfigured with the client secret if the tokens belong to the
+  configured client. `AuthClient` reads the access token from the store on every request, refreshes
+  it within 30 s of expiry or after a 401, and retries once.
+- **Tools.** The toolset is per-user (`Toolset::per_user`). Its `list_tools` is empty, it has no
+  `tool_changes` and no skills, and `user_tools(user)` lists the tools over the user's own
+  connection, or none if they haven't signed in. The registry asks for them as each of the user's
+  sessions starts ([Registry](registry.md#tool-index)), so no user's model sees tool names or
+  descriptions from another user's account. A group session gets none.
+- **Calls.** `call` goes over the requester's own connection: the first one, an open one made
   earlier, or a new one. A turn without a requester (a config job) and a requester who isn't signed
   in get an `InvalidRequest`, which the agent loop turns into an error tool result; the turn goes
   on. No call uses another user's token.
@@ -560,3 +568,8 @@ failed write is logged.
   tests (`rename/tests.rs`) cover the offline rename of a stored toolset: the row and the agents'
   globs; the refusals; the case of a name; a failure undone with the row put back exactly; and a run
   that stopped after the row finished by running it again.
+- `crates/giles-core/tests/toolset_oauth.rs`, against a fake authorization server and an MCP server
+  whose tools depend on the account: a user signs in, and their tokens are stored, used, refreshed,
+  and deleted. With two users signed in, each is offered only the tools their own account lists, and
+  no one else gets any. The dispatcher's tests cover calling a per-user toolset's tool, which the
+  index doesn't list.

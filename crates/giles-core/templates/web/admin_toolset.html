@@ -72,7 +72,7 @@
 <section class="section">
 <h2>Tools</h2>
 {%- if tools.is_empty() %}
-<p>No tools are offered to new conversations yet. A server that is still starting, or failed to start, offers none.</p>
+<p>No tools are offered to your new conversations yet. A server that is still starting, or failed to start, offers none.{% if callback.is_some() %} This server offers you the tools of your own account once you sign in on <a href="/connections">Connections</a>.{% endif %}</p>
 {%- else %}
 <div class="table-wrap">
 <table class="table">

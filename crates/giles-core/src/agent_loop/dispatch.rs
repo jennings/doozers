@@ -412,9 +412,12 @@ fn resolve_call(
         debug!(tool = %name, "call to a tool the session doesn't offer");
         return Err(ToolOutput::error(TOOL_UNAVAILABLE));
     };
-    // The session keeps its list when a toolset drops a tool; calls to it fail here.
+    // The session keeps its list when a toolset drops a tool; calls to it fail here. A per-user
+    // toolset's tools aren't in the index: the requester's own connection decides.
     let served = registry.tools().snapshot();
-    if served.get(name).is_none_or(|now| now.target != tool.target) {
+    let per_user = matches!(&tool.target, ToolTarget::Toolset { instance, .. }
+        if registry.toolset(instance.as_str()).is_some_and(|toolset| toolset.per_user()));
+    if !per_user && served.get(name).is_none_or(|now| now.target != tool.target) {
         debug!(tool = %name, "call to a tool that is no longer served");
         return Err(ToolOutput::error(TOOL_UNAVAILABLE));
     }

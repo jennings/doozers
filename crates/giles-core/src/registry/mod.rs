@@ -19,7 +19,8 @@ use std::fmt;
 use std::sync::{Arc, PoisonError, RwLock};
 use std::time::Duration;
 
-use giles_types::{AgentId, Channel, Environment, EnvironmentInfo, Provider, Toolset};
+use futures::future::join_all;
+use giles_types::{AgentId, Channel, Environment, EnvironmentInfo, Provider, Toolset, UserId};
 use tokio::sync::watch;
 use tracing::{info, warn};
 
@@ -340,9 +341,45 @@ impl Registry {
         &self.config
     }
 
-    /// The tool index.
+    /// The tool index: the tools every user is offered.
     pub fn tools(&self) -> &ToolIndex {
         &self.tools
+    }
+
+    /// The tools a session of `user` is offered now: the index's
+    /// [`snapshot`](ToolIndex::snapshot), plus what each [per-user](Toolset::per_user) toolset
+    /// lists for `user` (`None`, as in a group session: none of them). A toolset that can't list
+    /// the user's tools is logged and offers them none.
+    pub async fn tools_for(&self, user: Option<&UserId>) -> Arc<ToolSnapshot> {
+        let snapshot = self.tools.snapshot();
+        let Some(user) = user else {
+            return snapshot;
+        };
+        let per_user: Vec<_> = self
+            .toolsets()
+            .into_iter()
+            .filter(|(_, toolset)| toolset.per_user())
+            .collect();
+        if per_user.is_empty() {
+            return snapshot;
+        }
+        let lists = join_all(per_user.iter().map(|(name, toolset)| async move {
+            match toolset.user_tools(user).await {
+                Ok(tools) => {
+                    let (kept, rejected) = prefix_tools(name, tools);
+                    for error in &rejected {
+                        warn!(toolset = %name, %user, %error, "tool skipped");
+                    }
+                    kept
+                }
+                Err(error) => {
+                    warn!(toolset = %name, %user, %error, "cannot list the user's tools");
+                    Vec::new()
+                }
+            }
+        }))
+        .await;
+        Arc::new(snapshot.with(lists.into_iter().flatten()))
     }
 
     /// Registers a core tool: its implementation, and its spec in the tool index (replacing any
@@ -407,7 +444,9 @@ impl Registry {
     /// [`Toolset::tool_changes`] first, then indexes [`Toolset::list_tools`], then applies every
     /// later list the stream yields (new sessions see them; running ones keep their
     /// snapshot). A failed `list_tools` is logged and keeps the instance's previous tools (none
-    /// on first registration) until a change arrives. Must be called inside a Tokio runtime.
+    /// on first registration) until a change arrives. A [per-user](Toolset::per_user) toolset
+    /// gets no tools in the index: each user's are listed for their sessions
+    /// ([`tools_for`](Self::tools_for)). Must be called inside a Tokio runtime.
     /// The instance must be in the [live configuration](Self::live_config), so a toolset added at
     /// runtime ([`LiveConfig::add_toolset`](crate::config::LiveConfig::add_toolset)) can be
     /// registered.
@@ -425,6 +464,13 @@ impl Registry {
         toolset: Arc<dyn Toolset>,
     ) -> Result<Option<Arc<dyn Toolset>>, RegistryError> {
         self.check_configured(Kind::Toolset, name)?;
+        if toolset.per_user() {
+            // Each user's tools are listed for their sessions ([`Self::tools_for`]).
+            let old = insert(&self.toolsets, name, toolset);
+            let generation = self.tools.begin(name);
+            self.tools.apply(name, generation, Vec::new());
+            return Ok(old);
+        }
         let changes = toolset.tool_changes();
         let listed = toolset.list_tools().await;
         let old = insert(&self.toolsets, name, toolset);

@@ -162,17 +162,23 @@ taken before still list the tools, but a call to one finds no toolset and is ans
   stable for caching), `get(name)` by binary search giving an `IndexedTool { spec, target }` where
   `target` is `ToolTarget::Core` or `ToolTarget::Toolset { instance, tool }` (the bare name to
   call). A session keeps the snapshot it started with; changes reach new sessions only.
+- A per-user toolset (`Toolset::per_user`, a server each user signs in to) has no tools in the
+  index. `Registry::tools_for(Some(user))` adds what each per-user toolset's `user_tools(user)`
+  lists to the snapshot, prefixed by the same rules, listing all of them concurrently. A toolset
+  that fails to list is logged and adds nothing. `tools_for(None)` is the snapshot alone. Sessions
+  start with `tools_for`, so no user is offered tools another user's account listed.
 
-`register_toolset` subscribes to `Toolset::tool_changes()` first, then awaits `list_tools()`, and
-only then, with no further `await`, installs the object in the map, starts a new generation, indexes
-the list, and spawns a task applying each later list from the stream. It is therefore cancel-safe:
-dropping the future during `list_tools` (a timeout around a hung server) changes nothing, and the
-previous object and its watcher stay in place. A failed `list_tools` is logged and leaves the
-instance's previous tools in place (none at first) until a change arrives. Each new generation
-aborts the previous object's watcher, and any update tagged with an old generation is dropped, so a
-replaced object can't overwrite its successor's list. Removing the instance drops its entry and
-aborts the watcher too, and a stale update doesn't bring the entry back. Watchers hold only a weak
-reference to the index and stop when it is dropped.
+`register_toolset` of a per-user toolset installs the object and an empty list, without listing or
+watching. For any other toolset, it subscribes to `Toolset::tool_changes()` first, then awaits
+`list_tools()`, and only then, with no further `await`, installs the object in the map, starts a new
+generation, indexes the list, and spawns a task applying each later list from the stream. It is
+therefore cancel-safe: dropping the future during `list_tools` (a timeout around a hung server)
+changes nothing, and the previous object and its watcher stay in place. A failed `list_tools` is
+logged and leaves the instance's previous tools in place (none at first) until a change arrives.
+Each new generation aborts the previous object's watcher, and any update tagged with an old
+generation is dropped, so a replaced object can't overwrite its successor's list. Removing the
+instance drops its entry and aborts the watcher too, and a stale update doesn't bring the entry
+back. Watchers hold only a weak reference to the index and stop when it is dropped.
 
 `set_toolset_tools(instance, tools)` replaces an instance's list directly (tests use it to offer
 tools without a toolset object), with the same rules; `remove_toolset` removes it. The toolset host

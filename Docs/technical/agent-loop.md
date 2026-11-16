@@ -37,12 +37,14 @@ reused byte for byte by every request of every turn.
 
 ### Tools
 
-`SessionTools::for_agent(registry.tools().snapshot(), agent)` keeps the snapshot's tools whose
+`SessionTools::for_agent(registry.tools_for(user).await, agent)` keeps the snapshot's tools whose
 offered name (`<instance>__<tool>` or a bare core tool) matches one of the agent's `tools` globs,
 and leaves out the workspace tools (`ENVIRONMENT_TOOLS`) unless the agent's `environments` isn't
-empty. In v1 there are no roles, so the allowlist alone decides (§6.4); call-time enforcement is the
-tool dispatcher's job. The snapshot is sorted by name, and filtering keeps the order. A tool a
-toolset later drops stays in the list; calling it gets `tool unavailable`.
+empty. `user` is the session's user in a direct or job session, and none in a group session, so a
+group gets no per-user toolset's tools ([Registry](registry.md#tool-index)). In v1 there are no
+roles, so the allowlist alone decides (§6.4); call-time enforcement is the tool dispatcher's job.
+The snapshot is sorted by name, and filtering keeps the order. A tool a toolset later drops stays in
+the list; calling it gets `tool unavailable`.
 
 Globs: `*` matches any run of characters (none included), `?` exactly one, anything else itself,
 case-sensitively, over the whole name. `memory*` matches `memory_add`, `memory_edit`,
@@ -394,9 +396,11 @@ When a call starts (not when the batch arrives, so a tool dropped meanwhile is c
 error result `tool unavailable` when the session doesn't offer the tool (outside the allowlist, or
 no such tool), the registry no longer serves it under that name and target (a toolset dropped it),
 its toolset isn't registered, or it's a core tool with no implementation registered (a spec added
-with `ToolIndex::set_core_tool` alone). The session's tool list is the agent's allowlist (§6.4); v1
-has no roles, so there is no second check by the requester's role. With roles, a forbidden call
-would get `not permitted for <user>` here, before it runs.
+with `ToolIndex::set_core_tool` alone). A per-user toolset's tools aren't in the index, so for them
+only the registration is checked, and the requester's own connection decides the rest. The session's
+tool list is the agent's allowlist (§6.4); v1 has no roles, so there is no second check by the
+requester's role. With roles, a forbidden call would get `not permitted for <user>` here, before it
+runs.
 
 Then a call to a tool matching the agent's `ask` globs waits for approval
 (`TurnApprovals::approve_call`, [Approvals](approvals.md)); a denial is its error result. The wait

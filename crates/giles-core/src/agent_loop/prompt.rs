@@ -96,11 +96,11 @@ impl SessionPrompt {
     }
 }
 
-/// The tools a session offers: the registry's snapshot at session start, filtered by the agent's
-/// `tools` allowlist globs (PLAN section 6.4: in v1, with no roles, the allowlist alone decides)
-/// and, for the environment tools, by whether it has an environment ([`SessionTools::for_agent`]),
-/// sorted by name. A tool that a toolset later drops stays listed; calling it gets "tool
-/// unavailable".
+/// The tools a session offers: what the registry offered its user at session start, filtered by
+/// the agent's `tools` allowlist globs (PLAN section 6.4: in v1, with no roles, the allowlist alone
+/// decides) and, for the environment tools, by whether it has an environment
+/// ([`SessionTools::for_agent`]), sorted by name. A tool that a toolset later drops stays listed;
+/// calling it gets "tool unavailable".
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionTools {
     tools: Vec<IndexedTool>,
@@ -456,8 +456,9 @@ pub async fn build(
     })
 }
 
-/// The whole prompt prefix for a session starting now: the registry's current tools filtered by
-/// the agent's allowlist, and [`build`].
+/// The whole prompt prefix for a session starting now: the tools the registry offers the
+/// session's user ([`Registry::tools_for`]; none of a per-user toolset's in a group session),
+/// filtered by the agent's allowlist, and [`build`].
 ///
 /// # Errors
 ///
@@ -468,7 +469,12 @@ pub async fn assemble(
     agent: &AgentConfig,
     session: &Session,
 ) -> Result<SessionPrompt, PromptError> {
-    let tools = SessionTools::for_agent(&registry.tools().snapshot(), agent);
+    let user = if session.kind == SessionKind::Group {
+        None
+    } else {
+        session.user.as_ref()
+    };
+    let tools = SessionTools::for_agent(&*registry.tools_for(user).await, agent);
     build(registry, memory_dbs, agent, session, Arc::new(tools)).await
 }
 

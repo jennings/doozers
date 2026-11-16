@@ -19,13 +19,26 @@ use crate::provider::ToolSpec;
 /// Names here are bare; the core adds the `<instance>__` prefix (PLAN section 6.5).
 #[async_trait]
 pub trait Toolset: Send + Sync {
-    /// The tools, with bare names.
+    /// The tools every user is offered, with bare names. The registry offers none of a
+    /// [`per_user`](Self::per_user) toolset's.
     async fn list_tools(&self) -> Result<Vec<ToolSpec>>;
 
     /// Updated tool lists, for toolsets whose tools change at runtime (MCP `list_changed`). Each
     /// item is the whole new list. `None` if the list is fixed.
     fn tool_changes(&self) -> Option<BoxStream<'static, Vec<ToolSpec>>> {
         None
+    }
+
+    /// Whether each user is offered their own tools ([`user_tools`](Self::user_tools)), as for a
+    /// server each user signs in to with their own account.
+    fn per_user(&self) -> bool {
+        false
+    }
+
+    /// The tools `user` is offered, with bare names: [`list_tools`](Self::list_tools) unless the
+    /// toolset is [`per_user`](Self::per_user).
+    async fn user_tools(&self, _user: &UserId) -> Result<Vec<ToolSpec>> {
+        self.list_tools().await
     }
 
     /// The skills this toolset provides, with bare names.

@@ -382,9 +382,9 @@ the sign-in of the person who asked.
 5. Optionally, enter **OAuth scopes**, separated by spaces.
 6. Select **Add**, then sign in on **Connections**.
 
-The server shows as failed until someone signs in. Its tools appear once the first user signs in. If
-you reach Giles through a domain name or a reverse proxy, set [`public_url`](#login-links) so the
-callback URL is the one your browser can open.
+The server shows as failed until someone signs in. Once you sign in, your conversations get the
+tools your own account offers. If you reach Giles through a domain name or a reverse proxy, set
+[`public_url`](#login-links) so the callback URL is the one your browser can open.
 
 The form has more settings, all optional:
 
