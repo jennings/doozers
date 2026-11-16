@@ -212,6 +212,17 @@ impl ManagedToolset {
         Error::unavailable(format!("toolset {}: stopped", self.instance))
     }
 
+    /// The supervisor's connection, relaunching an idle stdio server first. It counts as busy
+    /// until the lease is dropped.
+    async fn lease(&self) -> Result<Lease> {
+        let (reply, lease) = oneshot::channel();
+        self.requests
+            .send(reply)
+            .await
+            .map_err(|_| self.stopped())?;
+        lease.await.map_err(|_| self.stopped())?
+    }
+
     /// The skills in the instance's `skills` directories, bare-named (a later directory
     /// overrides an earlier one), read on a blocking thread. Skipped skills are logged. The
     /// agent's skill index reads the same directories with the `<instance>__` prefix
@@ -278,12 +289,7 @@ impl Toolset for ManagedToolset {
     /// [`Error::Unavailable`] with the reason. If the supervisor is stopped while the call runs,
     /// its events end with the same error.
     async fn call(&self, call: ToolCall, ctx: CallContext) -> Result<ToolCallHandle> {
-        let (reply, lease) = oneshot::channel();
-        self.requests
-            .send(reply)
-            .await
-            .map_err(|_| self.stopped())?;
-        let lease = lease.await.map_err(|_| self.stopped())??;
+        let lease = self.lease().await?;
         let handle = lease.toolset.call(call, ctx).await?;
         let events = handle.events.map(move |event| {
             let _held = &lease;
