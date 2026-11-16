@@ -292,46 +292,76 @@ struct ChatItem {
     agent: Option<String>,
     active: String,
     active_at: String,
+    /// The chat the page shows.
+    current: bool,
+}
+
+/// The chat list beside every chat page: the user's chats, most recently active first, with
+/// `open` marked current, and the agents a new chat can be started with.
+struct ChatList {
+    chats: Vec<ChatItem>,
+    agents: Vec<AgentChoice>,
+}
+
+impl ChatList {
+    async fn load(
+        app: &WebApp,
+        user: &WebUser,
+        open: Option<&ConversationId>,
+    ) -> Result<Self, giles_store::Error> {
+        let channel = app.inner.channel.instance().as_str();
+        let listed = app
+            .inner
+            .store
+            .channel_conversations(channel, &user.user, CHAT_LIST_LIMIT)
+            .await?;
+        let config = app.inner.agents.get();
+        let chats = listed
+            .into_iter()
+            .filter(|c| is_chat_id(c.conversation.as_str()))
+            .map(|c| ChatItem {
+                current: open == Some(&c.conversation),
+                id: c.conversation.to_string(),
+                title: chat_title(c.first_text.as_deref()),
+                agent: chat_agent(c.conversation.as_str())
+                    .map(|agent| agent_label(&config, &agent)),
+                active: c.last_active_at.strftime("%Y-%m-%d %H:%M UTC").to_string(),
+                active_at: c.last_active_at.to_string(),
+            })
+            .collect();
+        Ok(Self {
+            chats,
+            agents: agent_choices(&config, user),
+        })
+    }
+
+    /// The open chat's title, from its first message: "New chat" before it has one, and "Chat"
+    /// when it is too old to be in the list.
+    fn title(&self, empty: bool) -> String {
+        match self.chats.iter().find(|chat| chat.current) {
+            Some(chat) => chat.title.clone(),
+            None if empty => "New chat".to_owned(),
+            None => "Chat".to_owned(),
+        }
+    }
 }
 
 #[derive(Template)]
 #[template(path = "web/chats.html")]
 struct ChatsPage {
     shell: Shell,
-    chats: Vec<ChatItem>,
-    agents: Vec<AgentChoice>,
+    list: ChatList,
 }
 
-/// `GET /`: the user's chats, most recently active first, and the agents a new chat can be
-/// started with.
+/// `GET /`: the chat list, and no chat open.
 async fn chats(State(app): State<WebApp>, user: WebUser) -> Response {
-    let channel = app.inner.channel.instance().as_str();
-    let listed = match app
-        .inner
-        .store
-        .channel_conversations(channel, &user.user, CHAT_LIST_LIMIT)
-        .await
-    {
-        Ok(listed) => listed,
-        Err(err) => return internal_error("cannot list the web chats", &err),
-    };
-    let config = app.inner.agents.get();
-    let chats = listed
-        .into_iter()
-        .filter(|c| is_chat_id(c.conversation.as_str()))
-        .map(|c| ChatItem {
-            id: c.conversation.to_string(),
-            title: chat_title(c.first_text.as_deref()),
-            agent: chat_agent(c.conversation.as_str()).map(|agent| agent_label(&config, &agent)),
-            active: c.last_active_at.strftime("%Y-%m-%d %H:%M UTC").to_string(),
-            active_at: c.last_active_at.to_string(),
-        })
-        .collect();
-    http::render(&ChatsPage {
-        shell: Shell::new(&user, Nav::Chats),
-        chats,
-        agents: agent_choices(&config, &user),
-    })
+    match ChatList::load(&app, &user, None).await {
+        Ok(list) => http::render(&ChatsPage {
+            shell: Shell::new(&user, Nav::Chats),
+            list,
+        }),
+        Err(err) => internal_error("cannot list the web chats", &err),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -393,7 +423,8 @@ fn chosen_agent(
 #[template(path = "web/chat.html")]
 struct ChatPage<'a> {
     shell: Shell,
-    title: &'a str,
+    list: ChatList,
+    title: String,
     /// The agent the chat was started with, if one was chosen.
     agent: Option<String>,
     chat: &'a str,
@@ -465,9 +496,14 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
                 ),
             }),
     );
+    let list = match ChatList::load(&app, &user, Some(&chat)).await {
+        Ok(list) => list,
+        Err(err) => return internal_error("cannot list the web chats", &err),
+    };
     http::render(&ChatPage {
         shell: Shell::new(&user, Nav::Chats),
-        title: "Chat",
+        title: list.title(rows.is_empty() && items.is_empty()),
+        list,
         agent,
         chat: chat.as_str(),
         csrf: &user.csrf,

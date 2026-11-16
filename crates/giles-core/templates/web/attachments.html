@@ -2,6 +2,6 @@
 {%- if item.image -%}
 <p class="attachment"><img src="/blobs/{{ item.id }}" alt="{{ item.name }}"></p>
 {%- else -%}
-<p class="attachment"><a href="/blobs/{{ item.id }}">{{ item.name }}</a></p>
+<p class="attachment"><a href="/blobs/{{ item.id }}"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>{{ item.name }}</a></p>
 {%- endif -%}
 {%- endfor -%}

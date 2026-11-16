@@ -273,7 +273,7 @@ ul {
   }
 }
 
-.user {
+.account {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -401,7 +401,6 @@ ul {
   line-height: 1.55;
 }
 
-section,
 .section {
   display: flex;
   flex-direction: column;
@@ -1170,9 +1169,16 @@ details.card[open] > summary {
 }
 
 .chat-column {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   width: 100%;
   max-width: 880px;
   margin: 0 auto;
+
+  & > .banner {
+    margin: 16px 28px 0;
+  }
 }
 
 .messages {

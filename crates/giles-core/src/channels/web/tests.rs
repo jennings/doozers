@@ -480,16 +480,38 @@ async fn the_chat_list_shows_this_instances_chats_newest_first() {
 
     let html = body_text(env.get("/").await).await;
     let second = html
-        .find(&format!(r#"<a href="/chats/{}">second chat</a>"#, chat()))
+        .find(&format!(
+            r#"<a href="/chats/{}"><span class="chat-item-title">second chat</span>"#,
+            chat()
+        ))
         .expect(&html);
     let first = html
         .find(&format!(
-            r#"<a href="/chats/{older}">first &#60;chat&#62;</a>"#
+            r#"<a href="/chats/{older}"><span class="chat-item-title">first &#60;chat&#62;</span>"#
         ))
         .expect(&html);
     assert!(second < first, "{html}");
     assert!(!html.contains("irc chat"), "{html}");
     assert!(html.contains(r#"href="/chats/new""#));
+    assert!(html.contains("Pick a chat or start one."), "{html}");
+    assert!(!html.contains("aria-current=\"page\"><span"), "{html}");
+
+    // A chat's page lists the chats too, with the open one marked and its title above it.
+    let page = body_text(env.get(&format!("/chats/{}", chat())).await).await;
+    assert!(
+        page.contains(&format!(
+            r#"<a href="/chats/{}" aria-current="page"><span class="chat-item-title">second chat</span>"#,
+            chat()
+        )),
+        "{page}"
+    );
+    assert!(page.contains("<h2>second chat</h2>"), "{page}");
+    assert!(
+        page.contains(&format!(
+            r#"<a href="/chats/{older}"><span class="chat-item-title">first &#60;chat&#62;</span>"#
+        )),
+        "{page}"
+    );
 }
 
 #[tokio::test]
@@ -1190,7 +1212,10 @@ async fn a_posted_message_reaches_the_agent_and_the_reply_reaches_the_page() {
     assert!(page.contains("<p>ping</p>"), "{page}");
     assert!(page.contains("You said: <em>ping</em>"), "{page}");
     let list = body_text(env.get("/").await).await;
-    assert!(list.contains(">ping</a>"), "{list}");
+    assert!(
+        list.contains(r#"<span class="chat-item-title">ping</span>"#),
+        "{list}"
+    );
 
     env.shutdown.cancel();
     sessions.closed().await;
@@ -1773,7 +1798,10 @@ async fn pages_show_what_the_user_wrote_without_the_time_prefix() {
     assert!(page.contains("<p>what is on today?</p>"), "{page}");
     assert!(!page.contains("PDT"), "{page}");
     let list = body_text(env.get("/").await).await;
-    assert!(list.contains(">what is on today?</a>"), "{list}");
+    assert!(
+        list.contains(r#"<span class="chat-item-title">what is on today?</span>"#),
+        "{list}"
+    );
 }
 
 #[tokio::test]
@@ -2209,7 +2237,7 @@ async fn a_chat_can_be_started_with_any_agent_and_keeps_it() {
     assert_eq!(chat_agent(id), Some(AgentId::new("jeeves").unwrap()));
     let page = body_text(env.get(&location).await).await;
     assert!(
-        page.contains(r#"<span class="detail">with Jeeves (jeeves)</span>"#),
+        page.contains(r#"<span class="muted">with Jeeves (jeeves)</span>"#),
         "{page}"
     );
     let response = env

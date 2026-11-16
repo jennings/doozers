@@ -9,7 +9,7 @@
 </ul>
 {%- endfor %}
 </nav>
-<div class="user">
+<div class="account">
 <span class="avatar" aria-hidden="true">{{ shell.initial }}</span>
 <span class="user-name"><span class="sr-only">Signed in as </span>{{ shell.user }}</span>
 {%- if let Some(csrf) = shell.logout_csrf %}
