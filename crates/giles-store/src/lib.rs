@@ -41,7 +41,9 @@ mod workspaces;
 pub use blobs::{
     Blob, BlobMeta, BlobReader, BlobStore, SWEEP_GRACE, SweepGuard, SweepHold, SweepReport,
 };
-pub use conversations::{ConversationActivity, ConversationMessage, ConversationTranscript};
+pub use conversations::{
+    ConversationActivity, ConversationDeletion, ConversationMessage, ConversationTranscript,
+};
 pub use db::{OpenOptions, Store};
 pub use error::{BoxError, Error, Result};
 pub use inbox::{InboxEntry, InboxId, InboxState, NewInboxEvent};

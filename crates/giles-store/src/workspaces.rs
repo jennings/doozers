@@ -155,6 +155,8 @@ pub enum DeleteReason {
     CreationFailed,
     /// An operator deleted it on the workspaces page of the web UI.
     Operator,
+    /// Its chat was deleted.
+    ChatDeleted,
 }
 
 impl DeleteReason {
@@ -170,6 +172,7 @@ impl DeleteReason {
             Self::ChatArchived => "chat_archived",
             Self::CreationFailed => "creation_failed",
             Self::Operator => "operator",
+            Self::ChatDeleted => "chat_deleted",
         }
     }
 
@@ -184,6 +187,7 @@ impl DeleteReason {
             "chat_archived" => Self::ChatArchived,
             "creation_failed" => Self::CreationFailed,
             "operator" => Self::Operator,
+            "chat_deleted" => Self::ChatDeleted,
             other => return Err(Error::corrupt(format!("unknown delete reason {other:?}"))),
         })
     }
@@ -202,6 +206,7 @@ impl fmt::Display for DeleteReason {
             Self::ChatArchived => "its chat was archived",
             Self::CreationFailed => "creating it failed",
             Self::Operator => "an operator deleted it",
+            Self::ChatDeleted => "its chat was deleted",
         })
     }
 }
