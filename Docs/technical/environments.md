@@ -33,12 +33,13 @@ digits) and the plugin labels its resources with it, so reconciliation needs no 
 
 `deleted_at` and `delete_reason` are set on `deleting` and `deleted` rows. The reasons
 (`DeleteReason`): `user_reset`, `model_reset`, `model_delete`, `inactive` (the sweep),
-`job_run_ended`, `removed_outside_giles` (reconciliation, or a call that found the workspace
+`job_run_ended`, `removed_outside_doozers` (reconciliation, or a call that found the workspace
 missing), `chat_archived` (reserved for the chat-archive hook), `creation_failed`, `operator`
 (deleted on the web UI's workspaces page), and `chat_deleted` (its web chat was deleted). A failed
 creation isn't reported to the model: it saw the error. An operator's delete is:
 `DeleteReason::Operator` reads "an operator deleted it" in the model's error. (Migrations 0006 and
-0010 added the last two reasons; the table's `CHECK` had to be rebuilt each time.)
+0010 added the last two reasons, and 0011 renamed `removed_outside_giles`. The table's `CHECK` had
+to be rebuilt each time.)
 
 ## Calls
 
@@ -63,7 +64,7 @@ creation isn't reported to the model: it saw the error. An operator's delete is:
   (`last_used_at`), and returns the record, the environment's client, and a notice for the model
   when the workspace was started or recreated. The core tools call it before each workspace tool
   call. If the plugin says the workspace doesn't exist, the row becomes `deleted`
-  (`removed_outside_giles`) and the call fails with `WorkspaceError::Gone`.
+  (`removed_outside_doozers`) and the call fails with `WorkspaceError::Gone`.
 - The operator calls, in `workspaces/manage.rs`, for
   [the web UI's workspaces page](web-channel.md#workspaces-page): `overview()`, `stop_by_id(id)`,
   `delete_by_id(id)`, `managed_workspace(id)`, and `in_use(id)`. They act on `active` workspaces by
@@ -145,7 +146,7 @@ list, is gone, while asking first could mistake a workspace created in between f
   whose row isn't visible yet, and anything younger is left until it is old enough.
 - A `deleting` row that no turn has leased is deleted in the plugin (which succeeds if there is
   nothing to delete) and becomes `deleted`.
-- An `active` row the plugin doesn't list becomes `deleted` (`removed_outside_giles`), so the next
+- An `active` row the plugin doesn't list becomes `deleted` (`removed_outside_doozers`), so the next
   time the model asks it is told, and its owner can create another. This also covers a restored
   backup and a plugin that lost its state.
 - A `creating` row older than the grace period becomes `deleting` (`creation_failed`) before the

@@ -17,7 +17,7 @@
 //!   [`RECONCILE_GRACE`] (a create in flight has a row, but a create that failed halfway, or a
 //!   restored backup, doesn't);
 //! - finishes `deleting` rows: the plugin is told to delete, then the row is `deleted`;
-//! - marks `active` rows the plugin doesn't have `deleted` ([`DeleteReason::RemovedOutsideGiles`]),
+//! - marks `active` rows the plugin doesn't have `deleted` ([`DeleteReason::RemovedOutsideDoozers`]),
 //!   so the model is told;
 //! - gives up on `creating` rows older than the grace period (they become `deleting`).
 //!
@@ -378,7 +378,7 @@ impl Workspaces {
                     let lost = !held.contains(&row.id)
                         && inner
                             .store
-                            .workspace_mark_gone(&row.id, DeleteReason::RemovedOutsideGiles, now)
+                            .workspace_mark_gone(&row.id, DeleteReason::RemovedOutsideDoozers, now)
                             .await?;
                     if lost {
                         tracing::warn!(

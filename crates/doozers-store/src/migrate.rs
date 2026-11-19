@@ -62,6 +62,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "0010_workspace_chat_deleted_reason",
         sql: include_str!("migrations/0010_workspace_chat_deleted_reason.sql"),
     },
+    Migration {
+        name: "0011_workspace_removed_outside_doozers",
+        sql: include_str!("migrations/0011_workspace_removed_outside_doozers.sql"),
+    },
 ];
 
 /// The schema version this binary writes.
@@ -382,6 +386,52 @@ mod tests {
             "INSERT INTO workspaces (id, environment, agent, channel, conversation, options,
                  description, state, created_at, last_used_at)
              VALUES ('ws-3', 'box', 'jeeves', 'web', 'c1', '{}', 'a box', 'active', 4, 4)",
+            [],
+        );
+        assert!(second.is_err(), "the one-active-workspace index came along");
+    }
+
+    #[test]
+    fn the_doozers_reason_migration_renames_the_stored_reason() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &MIGRATIONS[..10], None).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspaces (id, environment, agent, channel, conversation, options,
+                 description, state, created_at, last_used_at, deleted_at, delete_reason)
+             VALUES ('ws-1', 'box', 'jeeves', 'web', 'c1', '{}', 'a box', 'deleted', 1, 1, 2,
+                 'removed_outside_giles'),
+                    ('ws-2', 'box', 'jeeves', 'web', 'c1', '{}', 'a box', 'deleted', 3, 3, 4,
+                 'operator'),
+                    ('ws-3', 'box', 'jeeves', 'web', 'c1', '{}', 'a box', 'active', 5, 5, NULL,
+                 NULL);",
+        )
+        .unwrap();
+
+        assert_eq!(migrate(&mut conn, MIGRATIONS, None).unwrap(), 10);
+        let rows: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, delete_reason FROM workspaces ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                (
+                    "ws-1".to_owned(),
+                    Some("removed_outside_doozers".to_owned())
+                ),
+                ("ws-2".to_owned(), Some("operator".to_owned())),
+                ("ws-3".to_owned(), None),
+            ]
+        );
+        let old = "UPDATE workspaces SET delete_reason = 'removed_outside_giles' WHERE id = 'ws-1'";
+        assert!(conn.execute(old, []).is_err(), "the old name is gone");
+        let second = conn.execute(
+            "INSERT INTO workspaces (id, environment, agent, channel, conversation, options,
+                 description, state, created_at, last_used_at)
+             VALUES ('ws-4', 'box', 'jeeves', 'web', 'c1', '{}', 'a box', 'active', 6, 6)",
             [],
         );
         assert!(second.is_err(), "the one-active-workspace index came along");

@@ -858,7 +858,7 @@ async fn a_workspace_the_environment_lost_is_reported_and_can_be_replaced() {
     );
     let output = turn.run(&setup.tool(ReadTool), json!({"path": "a"})).await;
     assert!(
-        err(&output).contains("removed outside Giles"),
+        err(&output).contains("removed outside Doozers"),
         "{}",
         text(&output)
     );

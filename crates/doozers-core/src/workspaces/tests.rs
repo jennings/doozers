@@ -575,7 +575,10 @@ async fn opening_reports_a_workspace_the_environment_lost_and_a_plugin_that_is_a
     assert!(err.to_string().contains("create a new one"), "{err}");
     assert!(h.workspaces.current(&owner).await.unwrap().is_none());
     let last = h.workspaces.last_deleted(&owner).await.unwrap().unwrap();
-    assert_eq!(last.delete_reason, Some(DeleteReason::RemovedOutsideGiles));
+    assert_eq!(
+        last.delete_reason,
+        Some(DeleteReason::RemovedOutsideDoozers)
+    );
     // And the owner can start over.
     let again = h.create(&owner).await;
     assert_ne!(again.id, record.id);
@@ -851,7 +854,10 @@ async fn reconciliation_marks_workspaces_the_environment_lost_so_the_model_is_to
     let last = h.workspaces.last_deleted(&owner).await.unwrap().unwrap();
     assert_eq!(last.id, record.id);
     assert_eq!(last.state, WorkspaceState::Deleted);
-    assert_eq!(last.delete_reason, Some(DeleteReason::RemovedOutsideGiles));
+    assert_eq!(
+        last.delete_reason,
+        Some(DeleteReason::RemovedOutsideDoozers)
+    );
     assert_eq!(h.record(&other.id).await.state, WorkspaceState::Active);
     // Nothing left to do the second time.
     assert_eq!(
@@ -1061,7 +1067,7 @@ async fn a_plugin_that_connects_is_reconciled_at_once() {
             .unwrap()
             .unwrap()
             .delete_reason,
-        Some(DeleteReason::RemovedOutsideGiles)
+        Some(DeleteReason::RemovedOutsideDoozers)
     );
     shutdown.cancel();
     sweep.closed().await;

@@ -147,7 +147,7 @@ pub enum DeleteReason {
     /// It belonged to an isolated job run, which ended.
     JobRunEnded,
     /// The environment no longer has it: removed by hand, or lost with the backend's state.
-    RemovedOutsideGiles,
+    RemovedOutsideDoozers,
     /// Its chat was archived.
     ChatArchived,
     /// Creating it failed or never finished. Nothing the model needs to be told: it saw the
@@ -168,7 +168,7 @@ impl DeleteReason {
             Self::ModelDelete => "model_delete",
             Self::Inactive => "inactive",
             Self::JobRunEnded => "job_run_ended",
-            Self::RemovedOutsideGiles => "removed_outside_giles",
+            Self::RemovedOutsideDoozers => "removed_outside_doozers",
             Self::ChatArchived => "chat_archived",
             Self::CreationFailed => "creation_failed",
             Self::Operator => "operator",
@@ -183,7 +183,7 @@ impl DeleteReason {
             "model_delete" => Self::ModelDelete,
             "inactive" => Self::Inactive,
             "job_run_ended" => Self::JobRunEnded,
-            "removed_outside_giles" => Self::RemovedOutsideGiles,
+            "removed_outside_doozers" => Self::RemovedOutsideDoozers,
             "chat_archived" => Self::ChatArchived,
             "creation_failed" => Self::CreationFailed,
             "operator" => Self::Operator,
@@ -202,7 +202,7 @@ impl fmt::Display for DeleteReason {
             Self::ModelDelete => "you deleted it",
             Self::Inactive => "it was deleted after a long time without use",
             Self::JobRunEnded => "the job run it belonged to ended",
-            Self::RemovedOutsideGiles => "it was removed outside Giles",
+            Self::RemovedOutsideDoozers => "it was removed outside Doozers",
             Self::ChatArchived => "its chat was archived",
             Self::CreationFailed => "creating it failed",
             Self::Operator => "an operator deleted it",
@@ -898,13 +898,13 @@ mod tests {
 
         assert!(
             store
-                .workspace_mark_gone(&id("ws-2"), DeleteReason::RemovedOutsideGiles, at(6))
+                .workspace_mark_gone(&id("ws-2"), DeleteReason::RemovedOutsideDoozers, at(6))
                 .await
                 .unwrap()
         );
         assert!(
             !store
-                .workspace_mark_gone(&id("ws-2"), DeleteReason::RemovedOutsideGiles, at(7))
+                .workspace_mark_gone(&id("ws-2"), DeleteReason::RemovedOutsideDoozers, at(7))
                 .await
                 .unwrap()
         );

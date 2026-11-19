@@ -476,7 +476,7 @@ impl Workspaces {
                 let now = inner.clock.now();
                 inner
                     .store
-                    .workspace_mark_gone(&record.id, DeleteReason::RemovedOutsideGiles, now)
+                    .workspace_mark_gone(&record.id, DeleteReason::RemovedOutsideDoozers, now)
                     .await?;
                 tracing::warn!(
                     workspace = %record.id,
