@@ -23,8 +23,8 @@ use tokio::io::AsyncWriteExt as _;
 
 use crate::media;
 
-/// What every file the core hands over is named after: `giles-media-<random>-<name>`.
-pub(crate) const FILE_PREFIX: &str = "giles-media-";
+/// What every file the core hands over is named after: `doozers-media-<random>-<name>`.
+pub(crate) const FILE_PREFIX: &str = "doozers-media-";
 
 /// The longest part of a file name taken from the media's name, in bytes (all ASCII).
 const MAX_NAME_LEN: usize = 100;
@@ -185,7 +185,7 @@ fn random_tag() -> io::Result<String> {
 /// The file name for `item`: [`FILE_PREFIX`], `tag`, and a safe form of the media's name (its
 /// last path component, with only ASCII letters, digits, `.`, `-`, and `_`, other characters as
 /// `_`, cut to [`MAX_NAME_LEN`] bytes keeping a short extension), `media` without one. A name
-/// without an extension gets the media type's, if Giles knows one, since servers often go by it.
+/// without an extension gets the media type's, if Doozers knows one, since servers often go by it.
 fn file_name(item: &MediaRef, tag: &str) -> String {
     let given = item
         .name
@@ -282,38 +282,41 @@ mod tests {
         let name = |name: Option<&str>, media_type: &str| file_name(&item(name, media_type), "t");
         assert_eq!(
             name(Some("q3.pdf"), "application/pdf"),
-            "giles-media-t-q3.pdf"
+            "doozers-media-t-q3.pdf"
         );
         assert_eq!(
             name(Some("../../etc/pass wd"), "text/plain"),
-            "giles-media-t-pass_wd.txt"
+            "doozers-media-t-pass_wd.txt"
         );
         assert_eq!(
             name(Some("C:\\x\\a b.PNG"), "image/png"),
-            "giles-media-t-a_b.PNG"
+            "doozers-media-t-a_b.PNG"
         );
-        assert_eq!(name(Some("voice"), "audio/ogg"), "giles-media-t-voice.ogg");
-        assert_eq!(name(None, "image/jpeg"), "giles-media-t-media.jpeg");
+        assert_eq!(
+            name(Some("voice"), "audio/ogg"),
+            "doozers-media-t-voice.ogg"
+        );
+        assert_eq!(name(None, "image/jpeg"), "doozers-media-t-media.jpeg");
         assert_eq!(
             name(Some(".."), "application/x-what"),
-            "giles-media-t-media"
+            "doozers-media-t-media"
         );
         assert_eq!(
             name(Some("café.txt"), "text/plain"),
-            "giles-media-t-caf_.txt"
+            "doozers-media-t-caf_.txt"
         );
         let long = format!("{}.tar", "x".repeat(300));
         let cut = name(Some(&long), "application/x-tar");
-        assert_eq!(cut, format!("giles-media-t-{}.tar", "x".repeat(96)));
+        assert_eq!(cut, format!("doozers-media-t-{}.tar", "x".repeat(96)));
         let long = "y".repeat(300);
         assert_eq!(
             name(Some(&long), "text/plain"),
-            format!("giles-media-t-{}.txt", "y".repeat(100))
+            format!("doozers-media-t-{}.txt", "y".repeat(100))
         );
     }
 
     async fn blobs(dir: &Path) -> BlobStore {
-        let db = Store::open(dir.join("giles.db")).await.unwrap();
+        let db = Store::open(dir.join("doozers.db")).await.unwrap();
         BlobStore::open(dir.join("blobs"), db).await.unwrap()
     }
 
@@ -401,8 +404,8 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         let outside = tmp.path().join("outside.txt");
         std::fs::write(&outside, "keep").unwrap();
-        std::fs::write(dir.join("giles-media-1-old.txt"), "old").unwrap();
-        symlink(&outside, dir.join("giles-media-2-link")).unwrap();
+        std::fs::write(dir.join("doozers-media-1-old.txt"), "old").unwrap();
+        symlink(&outside, dir.join("doozers-media-2-link")).unwrap();
         std::fs::write(dir.join("server-file"), "mine").unwrap();
         let media_dir = MediaDir::new(dir.clone());
         assert_eq!(media_dir.sweep().unwrap(), 2);

@@ -113,7 +113,7 @@ impl Served {
 
     /// The events the SDK holds on disk, unacknowledged.
     pub fn spooled(&self) -> usize {
-        std::fs::read_dir(self.data.join("giles-sdk/events")).map_or(0, Iterator::count)
+        std::fs::read_dir(self.data.join("doozers-sdk/events")).map_or(0, Iterator::count)
     }
 }
 

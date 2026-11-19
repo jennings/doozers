@@ -156,7 +156,7 @@ mod tests {
             ("please /env reset", None),
             ("/new please", None),
             ("/stop now", None),
-            ("/new@giles", None),
+            ("/new@doozers", None),
             ("/new.", None),
             ("new", None),
             ("/ new", None),

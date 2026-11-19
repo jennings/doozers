@@ -16,7 +16,7 @@ use doozers_core::paths::DataRoot;
 use doozers_core::plugin_host::{LaunchError, Launcher};
 use doozers_core::sandbox::Spec;
 
-/// A data root with `giles.toml` declaring the channel plugins `channels` (TOML tables).
+/// A data root with `doozers.toml` declaring the channel plugins `channels` (TOML tables).
 struct Home {
     _dir: tempfile::TempDir,
     root: DataRoot,
@@ -42,7 +42,7 @@ impl Home {
             &LoadOptions {
                 builtins: Builtins::V1,
                 env: &env,
-                giles_exe: None,
+                doozers_exe: None,
             },
         )
         .unwrap()
@@ -63,7 +63,7 @@ impl Home {
     }
 
     fn launcher(&self) -> Launcher {
-        self.launcher_with(PathBuf::from("/nonexistent/giles"), Ok(()))
+        self.launcher_with(PathBuf::from("/nonexistent/doozers"), Ok(()))
             .handshake_timeout(Duration::from_millis(500))
     }
 
@@ -210,7 +210,7 @@ async fn exit_76_is_no_shared_protocol_and_not_retryable() {
     let home = Home::new(&unsandboxed("old"));
     home.script(
         "old",
-        "echo \"plugin speaks 7, core offers $GILES_PLUGIN_PROTOCOLS\" >&2; exit 76",
+        "echo \"plugin speaks 7, core offers $DOOZERS_PLUGIN_PROTOCOLS\" >&2; exit 76",
     );
     let error = launch_err(&home, &home.launcher(), "old").await;
     assert!(
@@ -262,9 +262,9 @@ async fn an_early_exit_logs_scrubbed_stderr_under_the_launch_span() {
     let data = home.root.plugin_data_dir(Kind::Channel, "leaky").unwrap();
     let data = data.display();
     let mut expected = vec![
-        format!("GILES_PLUGIN_DATA={data}"),
-        "GILES_PLUGIN_MAGIC=giles-plugin:5b2f0c7e9a1d4836".to_owned(),
-        "GILES_PLUGIN_PROTOCOLS=1".to_owned(),
+        format!("DOOZERS_PLUGIN_DATA={data}"),
+        "DOOZERS_PLUGIN_MAGIC=doozers-plugin:5b2f0c7e9a1d4836".to_owned(),
+        "DOOZERS_PLUGIN_PROTOCOLS=1".to_owned(),
         format!("HOME={data}"),
         "PATH=/usr/bin:/bin".to_owned(),
         format!("TMPDIR={data}/tmp"),
@@ -307,7 +307,7 @@ async fn a_failing_trampoline_is_a_non_retryable_sandbox_error() {
     let home = Home::new("[channel.boxed]\nsandbox = { read = [\"/opt\"] }\n");
     let plugin = home.script("boxed", "exit 0");
     let out = home.scratch("trampoline");
-    let trampoline = home.scratch("fake-giles");
+    let trampoline = home.scratch("fake-doozers");
     write_script(
         &trampoline,
         &format!(
@@ -355,7 +355,7 @@ async fn sandboxed_instances_wait_for_a_working_sandbox() {
     let home = Home::new("[channel.boxed]\n");
     home.script("boxed", "exit 0");
     let launcher = home.launcher_with(
-        PathBuf::from("/nonexistent/giles"),
+        PathBuf::from("/nonexistent/doozers"),
         Err("Landlock is disabled".into()),
     );
     let error = launch_err(&home, &launcher, "boxed").await;

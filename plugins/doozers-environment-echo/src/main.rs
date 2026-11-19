@@ -17,7 +17,7 @@
 //!
 //! Run as a remote plugin (PLAN section 7.6) with the SDK's `serve` subcommand, e.g.
 //! `doozers-environment-echo serve --listen 127.0.0.1:0 --data <dir> --no-auth`. It prints
-//! `listening on <address>` to stdout once it listens. Giles launches it with `socket`.
+//! `listening on <address>` to stdout once it listens. Doozers launches it with `socket`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io;
@@ -47,7 +47,7 @@ async fn main() -> ExitCode {
         .with_writer(io::stderr)
         .with_ansi(false)
         .with_env_filter(
-            EnvFilter::try_from_env("GILES_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_env("DOOZERS_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
     EnvironmentPlugin::new("echo", env!("CARGO_PKG_VERSION"))

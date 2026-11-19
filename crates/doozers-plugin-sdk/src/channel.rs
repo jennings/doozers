@@ -1,4 +1,4 @@
-//! Serving a [`Channel`] as `giles.channel.v1.ChannelService` (PLAN section 8.5).
+//! Serving a [`Channel`] as `doozers.channel.v1.ChannelService` (PLAN section 8.5).
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -152,8 +152,8 @@ impl ChannelPlugin {
     /// different config fails with `FAILED_PRECONDITION`.
     ///
     /// It returns when the core asks the plugin to shut down or goes away (stdin closes), after
-    /// giving open calls a few seconds to finish. Run by hand, it explains that it's a Giles plugin
-    /// and returns a failure status. Startup failures are printed to stderr.
+    /// giving open calls a few seconds to finish. Run by hand, it explains that it's a Doozers
+    /// plugin and returns a failure status. Startup failures are printed to stderr.
     ///
     /// Call it first thing in `main`, before anything opens or closes file descriptors. It uses the
     /// ambient tokio runtime, which must enable I/O and timers (`#[tokio::main]` does).
@@ -214,14 +214,14 @@ impl ChannelPlugin {
     /// `main`. This is what a shipped plugin's `main` calls instead of [`serve`](Self::serve) or
     /// [`serve_remote`](Self::serve_remote).
     ///
-    /// - `socket` is how Giles launches the plugin: [`serve`](Self::serve). Run by hand, it
-    ///   explains that it's a Giles plugin.
+    /// - `socket` is how Doozers launches the plugin: [`serve`](Self::serve). Run by hand, it
+    ///   explains that it's a Doozers plugin.
     /// - `serve [options]` is a plugin its operator runs, for a core whose instance has an
     ///   `address`: [`serve_remote`](Self::serve_remote) on a TCP listener, with TLS if the
     ///   options give a certificate, and checking a static bearer token. The options are
     ///   `--listen`, `--data`, `--tls-cert`, `--tls-key`, `--token-file`, and `--no-auth`, or the
     ///   same as keys of a TOML file named by `--config` (a flag wins). The token is the
-    ///   `GILES_CHANNEL_<NAME>_TOKEN` environment variable (`<NAME>` is the plugin's name in
+    ///   `DOOZERS_CHANNEL_<NAME>_TOKEN` environment variable (`<NAME>` is the plugin's name in
     ///   capitals, with `_` for anything but letters and digits) or `--token-file`, a file only
     ///   its owner can access; without either, `serve` refuses to start unless `--no-auth` says
     ///   to accept any caller. It prints `listening on <address>` to stdout once it listens.
@@ -229,7 +229,7 @@ impl ChannelPlugin {
     ///   exits with status 2).
     ///
     /// These options are transport only. The plugin's own settings reach `configure` in both
-    /// modes, from the instance's `config` in the core's `giles.toml`; `serve` has no file of its
+    /// modes, from the instance's `config` in the core's `doozers.toml`; `serve` has no file of its
     /// own for them.
     ///
     /// As with [`serve`](Self::serve), call it first thing in `main`, with tokio's runtime

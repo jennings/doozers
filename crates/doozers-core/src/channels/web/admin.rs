@@ -93,7 +93,7 @@ pub(super) fn call_failed(rpc: &str, title: &str, status: &tonic::Status) -> Res
             return error_page(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Something went wrong",
-                "Giles couldn't do that. The error is in its log.",
+                "Doozers couldn't do that. The error is in its log.",
             );
         }
     };

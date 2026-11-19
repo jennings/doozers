@@ -89,7 +89,7 @@ the router reads them.
 A plain chat goes to whichever agent the stored routes pick. The chat list also has a picker, a
 `GET` form to `/chats/new?agent=<id>`, listing the agents the user may start a chat with
 (`agent_choices`, read from the running configuration, `WebApp`'s `LiveConfig`, so an agent added
-while Giles runs is offered at once). v1 has one user, the owner, who may use every agent; with
+while Doozers runs is offered at once). v1 has one user, the owner, who may use every agent; with
 roles (PLAN section 3.1), that function is where a member's `agents` globs apply. The chat it opens
 has the id `<agent>.<hex>`, and the router sends its messages to that agent ahead of every route
 ([Identity and Routing](identity-and-routing.md#routing)), so a new agent needs no route. A chat's
@@ -145,7 +145,7 @@ scrubbed of secrets):
 - `proxy.identity_header` (required in `proxy`): the header naming the user. `proxy.listen`
   (optional TCP address) requires `proxy.secret` (at least 16 bytes; held as a `config::Secret`, so
   `Debug` output of `WebConfig` redacts it) and takes `proxy.secret_header` (default
-  `X-Giles-Proxy-Secret`, must differ from the identity header); without `listen`, `secret` and
+  `X-Doozers-Proxy-Secret`, must differ from the identity header); without `listen`, `secret` and
   `secret_header` are errors and the listener is the Unix socket. Neither header may be
   `Authorization`, `Cookie`, `Host`, `X-CSRF-Token`, `X-Forwarded-Proto`, or `Last-Event-ID`.
 
@@ -165,7 +165,7 @@ one is created or redeemed.
 `POST /login` redeems it (removed under the lock: single use, even with concurrent posts), creates a
 session token (256 random bits) with `Store::web_session_create(token, user, now, now + 30 days)`,
 deletes the browser's previous cookie session if it had one, and answers 303 to `/` with
-`Set-Cookie: giles_session=<token>; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax` (`; Secure`
+`Set-Cookie: doozers_session=<token>; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax` (`; Secure`
 over HTTPS). A link that doesn't exist, was used, or expired gets the same 410 page either way. Both
 answers are `Cache-Control: no-store`. The `Referrer-Policy: no-referrer` security header keeps the
 token out of `Referer`.
@@ -175,7 +175,7 @@ the owner, which needs a valid link anyway.
 
 ### The session cookie
 
-The middleware reads `giles_session` (`WEB_SESSION_TTL`, 30 days), looks the token up with
+The middleware reads `doozers_session` (`WEB_SESSION_TTL`, 30 days), looks the token up with
 `Store::web_session(token, now)` (expired rows don't count), and builds the `WebUser`: `user` and
 `sender` are the session's user id, so a link login posts as `web:owner`. If the owner's identities
 no longer include `web:<user>`, the session logs nobody in. A cookie that names no live session gets
@@ -194,7 +194,7 @@ there.
 
 - `WebApp::bind_proxy(&DataRoot) -> Result<Option<ProxyListener>, ProxyError>`: for the Unix socket,
   `check_socket_dir`, then `DataRoot::proxy_socket()` (`run/proxy.sock` or the `$TMPDIR` fallback).
-  An existing socket that accepts a connection is `InUse` (another Giles); a stale one is removed;
+  An existing socket that accepts a connection is `InUse` (another Doozers); a stale one is removed;
   anything that isn't a socket is `NotASocket` and left alone. The new socket is chmod 0600 (the
   directory is 0700 already). For TCP, a plain bind. `doozers serve` binds it before
   `start_sessions`, so a failure stops startup, and logs `trusted-proxy listener open at=<where>`.
@@ -231,7 +231,7 @@ pages. The queue is in memory:
   (`Sessions::channel_status`) like a plugin's.
 - At most `MAX_PENDING` (256) events wait; `post` then returns `Busy`, and the form shows "too many
   messages are waiting" (503 for a plain post). A restart loses pending events, but only ones the
-  core never stored, i.e. posts the user saw accepted while Giles wasn't taking events.
+  core never stored, i.e. posts the user saw accepted while Doozers wasn't taking events.
 
 Validation: the text must not be blank and is at most `MAX_MESSAGE_BYTES` (32 KiB). htmx posts get
 the form back (empty on success, with the text and an error otherwise, as 200 because htmx swaps
@@ -475,12 +475,12 @@ but change only in `agent.toml` ([Scheduler](scheduler.md)).
 
 PLAN sections 8.7 and 10; code in `admin.rs` (pages) and `qr.rs` (QR codes). The admin pages are a
 client of the admin service ([Admin service](admin.md)), like `doozers status`, but in-process:
-`WebApp::install_admin(builder, admin: Arc<dyn AdminService>)` takes the generated `giles.admin.v1`
-server trait, and `doozers serve` passes the same `Arc<AdminService>` it serves on the admin socket
-(`AdminListener::serve` takes the `Arc`). So the pages show exactly what the CLI shows, and there's
-no token to handle: the socket's token keeps local processes (plugins included) out of the service,
-and these routes are guarded by the web login instead. Tests pass a fake implementation of the
-trait.
+`WebApp::install_admin(builder, admin: Arc<dyn AdminService>)` takes the generated
+`doozers.admin.v1` server trait, and `doozers serve` passes the same `Arc<AdminService>` it serves
+on the admin socket (`AdminListener::serve` takes the `Arc`). So the pages show exactly what the CLI
+shows, and there's no token to handle: the socket's token keeps local processes (plugins included)
+out of the service, and these routes are guarded by the web login instead. Tests pass a fake
+implementation of the trait.
 
 - Who: the routes sit behind the same authentication middleware as the chat pages, so no login is
   the 401 login page; then the `WebUser` must be the owner (`identity::owner()`), else a 403 page.
@@ -564,7 +564,7 @@ than the admin service: there are no agent RPCs yet (PLAN section 8.7).
 - Tools are chosen with checkboxes (`agents::tool_picker`), shared by the create and edit forms.
   `agent.toml` keeps `tools` as a list of globs; a box stands for one entry: a core tool's name
   (`CORE_TOOLS`, with a one-line note each) or `<instance>__*` for each toolset in the running
-  configuration, of `giles.toml` or stored. A box is posted as the field `tool:<entry>` (browsers
+  configuration, of `doozers.toml` or stored. A box is posted as the field `tool:<entry>` (browsers
   send only ticked boxes, so the forms read them through a flattened map). Any other entry is the
   "Other tools" text (`tools`): `split` separates the two when the form is filled in, `compose`
   joins them on save (boxes in the picker's order, then the text as written, without repeats), so a
@@ -848,7 +848,7 @@ it.
   agent's page, or plain text if it's gone), with Edit, Up, Down, and Remove. Up is left out for the
   first route and Down for the last. A route with a problem (`RouteView::problems`: never used,
   channel instance or agent not configured) has a warning row under it. A notice says how many
-  `[[routes]]` `giles.toml` still has (`Config::legacy_routes`).
+  `[[routes]]` `doozers.toml` still has (`Config::legacy_routes`).
 - Buttons are plain `POST` forms with the CSRF token in a hidden field, so the pages work without
   scripts and removing is never a link. Routes in paths and forms are the store's stable ids
   (`RouteId`), never positions: a page opened before another change can't act on a different route;
@@ -878,8 +878,8 @@ every POST. [Environment workspaces](environments.md#calls) describes the calls 
   is this web instance and the conversation is a chat id; a job run shows its session. Above the
   list, each environment shows its free space, or why it isn't known (not connected, failed, no
   longer configured). A workspace the plugin didn't answer for shows `unknown` for its state, disk
-  use, and details, and what Giles stored of its description. There is no timeout of its own and no
-  cache: the page waits for the plugins like any call to them does.
+  use, and details, and what Doozers stored of its description. There is no timeout of its own and
+  no cache: the page waits for the plugins like any call to them does.
 - What a plugin reports (description, working directory, `details`) is the plugin's text: the
   template escapes it and nothing interprets it. `details` is rendered as a nested definition list
   in the plugin's order.
@@ -926,14 +926,14 @@ for what `ListPlugins` knows (state, last error, and tool count, built by the pl
 | `POST /admin/mcp-servers/<name>/restart` | `RestartPlugin` (`Toolset`), then 303 to the page       |
 
 - **The list** has one row per `ToolsetManager::list` entry, with Edit and Remove for stored
-  toolsets only, which are remote servers. A toolset of `giles.toml` (`ToolsetSource::File`), a
+  toolsets only, which are remote servers. A toolset of `doozers.toml` (`ToolsetSource::File`), a
   stdio server, is listed with how it runs (from the running configuration), marked, and read-only,
   and a page for editing, renaming, or removing one is a 409 with the manager's `Unsupported`
   message. The state and tool count come from `ListPlugins` by instance name; a stored toolset that
   failed to start is there as `Failed` with its reason, because `serve` merges the manager into the
   admin service's `PluginControl`. Where the service has nothing, the row shows the manager's
   `failure`.
-- **The toolset page** shows the settings from the stored spec (a toolset of `giles.toml` has no
+- **The toolset page** shows the settings from the stored spec (a toolset of `doozers.toml` has no
   spec to show), the state, the tools the viewer's new conversations get (`Registry::tools_for`,
   prefixed name and description), and a Restart form when the service knows the instance. The
   restart route exists next to the others so it can return to this page; `RestartPlugin` is the same
@@ -953,8 +953,8 @@ for what `ListPlugins` knows (state, last error, and tool count, built by the pl
   refuses `new` as a toolset's name, because it is the address of the form.
 - **Errors** come back on the form with what was typed and `<key>: <reason>` from the manager or the
   form: 400 for a value that isn't valid, 409 for a name that is taken (`Exists`, an instance of
-  `giles.toml`) or a toolset the manager can't start as a whole, and 409 for a stale edit. Anything
-  else is logged and answered 500, and a toolset that is gone is a 404.
+  `doozers.toml`) or a toolset the manager can't start as a whole, and 409 for a stale edit.
+  Anything else is logged and answered 500, and a toolset that is gone is a 404.
 - **Stale edits.** The edit form carries the `updated_at` the toolset had when the form was made.
   The post gives it to `ToolsetManager::update` as `expected_updated_at`. A toolset changed
   meanwhile gives `Stale`, shown as a 409 with the typed values, the old `updated_at`, and a link
@@ -971,18 +971,18 @@ for what `ListPlugins` knows (state, last error, and tool count, built by the pl
   CSRF-checked POST form that carries the name. The POST calls `ToolsetManager::rename` (the checks
   run again under the manager's lock, so a change between the two steps is caught) and answers 303
   to the page under the new name. The Rename link is shown for stored toolsets only. A toolset of
-  `giles.toml` is the same 409 as for edit. What the manager refuses comes back on the form with the
-  typed name, or on the error page:
+  `doozers.toml` is the same 409 as for edit. What the manager refuses comes back on the form with
+  the typed name, or on the error page:
 
   - On the form, 400 for a name that isn't valid and for `Refused` (a glob that would stop matching,
     or an `agent.toml` that isn't valid TOML or that the edit form can't edit, with the agents and
     globs listed by the manager).
   - On the form, 409 for a name that can't be used: another stored toolset, an instance of
-    `giles.toml`, or the toolset's own name (all `Problem::of`).
+    `doozers.toml`, or the toolset's own name (all `Problem::of`).
   - On the form, 500 for `Failed`, which shows the step, the error, and the undo errors if there are
     any. The preview can show it too, for an agent file that can't be read, and says nothing was
     changed.
-  - On the error page, 404 for a toolset that is gone, 409 for a toolset of `giles.toml`, and 500
+  - On the error page, 404 for a toolset that is gone, 409 for a toolset of `doozers.toml`, and 500
     for a database error (`Store`).
 
   The page says that running conversations keep the old tool names.
@@ -1001,7 +1001,7 @@ answer is `no-store`.
 | `GET /connections/<name>/callback`     | `finish_sign_in` for `<name>` with `code`, `state`, and `iss`; 303 back |
 | `POST /connections/<name>/sign-out`    | `check_csrf`, then `sign_out`; 303 back                        |
 
-- **GETs that leave Giles.** The sign-in and the callback are `GET`s, as the redirects are. The
+- **GETs that leave Doozers.** The sign-in and the callback are `GET`s, as the redirects are. The
   pages' `form-action 'self'` would stop a form post that redirects to another origin. The sign-in
   link carries the CSRF token as `?csrf=`. Otherwise another site, or a link in an agent's reply,
   could start a sign-in that a server approving silently would finish, replacing the user's tokens.
@@ -1038,7 +1038,7 @@ The fragments `message.html`, `tool_call.html`, `approval.html`, `compose.html`,
 handlers (the CSP and `allowEval: false` forbid them). The chat page is `hx-ext="sse"` with
 `sse-connect`; `#messages` has `sse-swap="message"` and `hx-swap="beforeend"`. The compose form
 replaces itself (`hx-target="this"`, `hx-swap="outerHTML"`); approval forms use `hx-swap="none"`.
-Every form also works as a plain form post. Styles are classes in `assets/giles.css`.
+Every form also works as a plain form post. Styles are classes in `assets/doozers.css`.
 
 ## Tests
 
@@ -1112,8 +1112,8 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   token (a wrong or missing one is 403, the header works as well as the field); the list is in order
   with escaped values, the agent links, no Up on the first route and no Down on the last, warnings
   for a route that never matches or points at a gone instance or agent, and the notice for
-  `[[routes]]` still in `giles.toml`; adding stores the route and the router's `RouteList` picks it
-  for the next message, at the end or before a chosen route; an invalid form (unknown instance or
+  `[[routes]]` still in `doozers.toml`; adding stores the route and the router's `RouteList` picks
+  it for the next message, at the end or before a chosen route; an invalid form (unknown instance or
   agent, bad kind, control characters) is shown again with the problem, its values and nothing
   stored; a duplicate, a shadowed route, and a route that would hide another are 409; edit, remove
   (not by `GET`), and move change which route wins in the router's list; a move that would hide a
@@ -1123,7 +1123,7 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
   token; the list shows the workspace with its live state, disk use, free space, description,
   details, agent and web-chat links, and the job-run and other-channel owners without a chat link; a
-  failing or disconnected environment shows `unknown` and is named, with what Giles stored still
+  failing or disconnected environment shows `unknown` and is named, with what Doozers stored still
   shown; plugin text is escaped; stopping a workspace nothing is using needs no confirmation, and
   stopping one a turn is using asks first (the button is a link, the page says what ends), then
   stops without changing the row; deleting has a plain confirmation, or the in-use warning, then
@@ -1135,14 +1135,14 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   remote servers never answer, and the admin tests' fake service): anonymous requests get 401 and a
   non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
   token (field or header); the list shows state, tool count, and error from the service, in order,
-  with escaped values, and the stdio toolset of `giles.toml` without Edit or Remove; the form has
+  with escaped values, and the stdio toolset of `doozers.toml` without Edit or Remove; the form has
   only the settings of a remote server; creating stores the spec, adds the toolset to the running
   configuration, and the agent form offers its box; a post shaped like a stdio server is a 400 at
   `url` and stores nothing; an invalid form (a missing secret, a bad duration, a bad URL, plain
   `http` to another machine) is a 400 on the form with the key and the typed values and stores
-  nothing; a stored name, a name of `giles.toml`, and a channel's name are 409, and `new` and an
+  nothing; a stored name, a name of `doozers.toml`, and a channel's name are 409, and `new` and an
   invalid name are 400; an edit replaces the settings and one made from an older `updated_at` is a
-  409 with a reload link; editing or removing a toolset of `giles.toml` is a 409; the removal page
+  409 with a reload link; editing or removing a toolset of `doozers.toml` is a 409; the removal page
   lists the agents that mention the toolset and removing takes the box away; values are escaped on
   every page; a secret's value and a token stored as text never appear, and saving that toolset with
   a secret starts it; Restart goes through the admin service and returns to the page, and refuses a
@@ -1151,9 +1151,9 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
 - Renaming a toolset: the preview lists the agents whose globs change and changes nothing; posting
   renames the toolset, rewrites the agent's file, and redirects to the new name, and the old name is
   a 404; a glob such as `box*` is a 400 with the manager's reason and the typed name, on the preview
-  and on the post, and nothing changes; a stored name, a name of `giles.toml`, and an invalid name
-  come back on the form; the name is escaped; a toolset of `giles.toml` has no Rename link and is a
-  409; every rename route is 401 without a login and 403 for a non-owner, and the POST needs the
+  and on the post, and nothing changes; a stored name, a name of `doozers.toml`, and an invalid name
+  come back on the form; the name is escaped; a toolset of `doozers.toml` has no Rename link and is
+  a 409; every rename route is 401 without a login and 403 for a non-owner, and the POST needs the
   CSRF token. An agent's `agent.toml` made unreadable (skipped when running as root) fails the
   check: the preview and the post are a 500 on the form with the step, the reason, "Nothing was
   changed", and the typed name, and the toolset and the agent are as they were. Undoing a failed

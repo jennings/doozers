@@ -24,7 +24,7 @@ fn seed_last_run(home: &Home) {
         .build()
         .unwrap()
         .block_on(async {
-            let store = doozers_store::Store::open(home.root().join("data/giles.db"))
+            let store = doozers_store::Store::open(home.root().join("data/doozers.db"))
                 .await
                 .unwrap();
             store

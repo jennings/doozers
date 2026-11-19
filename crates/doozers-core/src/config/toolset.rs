@@ -1,10 +1,10 @@
 //! Validating one toolset against the rest of the configuration, whatever its source: a
-//! `[toolset.<name>]` table of `giles.toml` or a [`ToolsetSpec`] parsed from JSON (PLAN section
+//! `[toolset.<name>]` table of `doozers.toml` or a [`ToolsetSpec`] parsed from JSON (PLAN section
 //! 7.10).
 //!
 //! [`validate_toolset`] runs the per-toolset rules of instance validation (`Ctx::toolset`) and
 //! the checks that involve other instances: `name_clash` and `check_binary_dirs`. Loading
-//! `giles.toml` calls the same three, with every instance at once, so both sources follow the
+//! `doozers.toml` calls the same three, with every instance at once, so both sources follow the
 //! same rules.
 
 use std::cell::RefCell;
@@ -87,7 +87,7 @@ impl fmt::Display for ToolsetError {
 
 impl std::error::Error for ToolsetError {}
 
-/// Validates `spec` as the toolset `name`, exactly as loading `giles.toml` validates a
+/// Validates `spec` as the toolset `name`, exactly as loading `doozers.toml` validates a
 /// `[toolset.<name>]` table:
 ///
 /// - the keys and values: which keys fit a stdio or a remote toolset, `command`, `url`, `env`
@@ -100,7 +100,7 @@ impl std::error::Error for ToolsetError {}
 ///   passes its own name, and renaming passes its old name (so the new name only has to be free of
 ///   every other toolset, even if it differs from the old one only in case);
 /// - binary directories: the toolset's `write` and `unix` grants must not overlap the directory of
-///   a binary Giles runs (the `doozers` binary, plugins, every stdio server including this one),
+///   a binary Doozers runs (the `doozers` binary, plugins, every stdio server including this one),
 ///   and no other instance's grant may overlap the directory of this toolset's server. Another
 ///   instance's own problems are not this toolset's, and the toolset being replaced is not
 ///   another instance: it is left out of these checks.
@@ -189,17 +189,17 @@ pub(super) fn name_clash(kind: Kind, other_name: &str, name: &str) -> String {
 }
 
 /// Checks the sandbox grants of `channels`, `environments`, and `toolsets` (all validated) against
-/// the directories holding the binaries and skills Giles reads or runs. Errors are in `file`.
+/// the directories holding the binaries and skills Doozers reads or runs. Errors are in `file`.
 ///
-/// Directories holding binaries Giles runs may be read but not written by any plugin: the `giles`
-/// binary, each launched channel and environment plugin, and each stdio server, as found now. A
-/// toolset's skill directories are read by the core for the model (PLAN section 6.6), so no plugin
-/// may write there, so none can race those reads; they must not overlap the plugins' data
+/// Directories holding binaries Doozers runs may be read but not written by any plugin: the
+/// `doozers` binary, each launched channel and environment plugin, and each stdio server, as found
+/// now. A toolset's skill directories are read by the core for the model (PLAN section 6.6), so no
+/// plugin may write there, so none can race those reads; they must not overlap the plugins' data
 /// directories.
 ///
 /// With `focus`, the toolset just validated (one of `toolsets`), only what involves it is checked:
 /// its own grants and skills against everything, and every other instance's grants against its
-/// binary and skill directories. Without, everything is checked, as when loading `giles.toml`.
+/// binary and skill directories. Without, everything is checked, as when loading `doozers.toml`.
 pub(super) fn check_binary_dirs<'a>(
     file: &Path,
     root: &DataRoot,
@@ -215,8 +215,8 @@ pub(super) fn check_binary_dirs<'a>(
     let mut binary_dirs = BinaryDirs::default();
     // What the focused toolset alone contributes to `binary_dirs`.
     let mut focus_dirs = BinaryDirs::default();
-    if let Some(exe) = &options.giles_exe {
-        binary_dirs.add(exe, "the giles binary".to_owned());
+    if let Some(exe) = &options.doozers_exe {
+        binary_dirs.add(exe, "the doozers binary".to_owned());
     }
     let mut sandboxes: Vec<(Kind, &InstanceName, &Sandbox)> = Vec::new();
     for channel in channels {
@@ -313,7 +313,7 @@ mod tests {
     use super::*;
     use crate::config::{Auth, ConfigHash};
 
-    /// The smallest valid `giles.toml`.
+    /// The smallest valid `doozers.toml`.
     const MINIMAL: &str = "[owner]\nidentities = [\"web:owner\"]\n";
 
     /// The environment tests validate with: only `GITHUB_TOKEN` is set.
@@ -321,7 +321,7 @@ mod tests {
         (name == "GITHUB_TOKEN").then(|| "env-github-token".into())
     }
 
-    /// A data root with a loaded `giles.toml` and `secrets.toml`.
+    /// A data root with a loaded `doozers.toml` and `secrets.toml`.
     struct Fixture {
         _dir: TempDir,
         root: DataRoot,
@@ -331,16 +331,16 @@ mod tests {
     }
 
     impl Fixture {
-        fn new(giles_toml: &str, secrets_toml: &str) -> Self {
+        fn new(doozers_toml: &str, secrets_toml: &str) -> Self {
             let dir = tempfile::tempdir().unwrap();
             let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
-            std::fs::write(root.config_file(), format!("{MINIMAL}{giles_toml}")).unwrap();
+            std::fs::write(root.config_file(), format!("{MINIMAL}{doozers_toml}")).unwrap();
             std::fs::write(root.secrets_file(), secrets_toml).unwrap();
             std::fs::set_permissions(root.secrets_file(), std::fs::Permissions::from_mode(0o600))
                 .unwrap();
             let options = LoadOptions {
                 env: &test_env,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             };
             let config = Config::load_with(&root, &options).unwrap_or_else(|e| panic!("{e}"));
@@ -604,7 +604,7 @@ mod tests {
                 "t",
                 json!({ "command": "/x", "env": { name: "v" } }),
                 &format!("env.{name}"),
-                "is set by Giles",
+                "is set by Doozers",
             );
         }
         fixture.assert_invalid(
@@ -733,7 +733,7 @@ mod tests {
         // Providers and channels have their own names.
         fixture.assert_valid("web", spec.clone());
         fixture.assert_valid("Anthropic", spec.clone());
-        // Another toolset differing only in case is a clash, as in `giles.toml`.
+        // Another toolset differing only in case is a clash, as in `doozers.toml`.
         fixture.assert_invalid(
             "GitHub",
             spec.clone(),
@@ -878,7 +878,7 @@ mod tests {
         );
 
         // Instances that already overlap (the binary appeared after loading) aren't blamed on
-        // an unrelated toolset, though loading `giles.toml` again refuses them.
+        // an unrelated toolset, though loading `doozers.toml` again refuses them.
         executable(tools, "d/server");
         fixture.assert_valid("unrelated", json!({ "url": "https://x" }));
         let err = Config::load_with(&fixture.root, &fixture.options).unwrap_err();
@@ -918,8 +918,8 @@ mod tests {
     }
 
     #[test]
-    fn a_toolset_in_giles_toml_keeps_the_hash_of_its_spec() {
-        // Written the way `giles.toml` has always hashed it (the table as written), a toolset
+    fn a_toolset_in_doozers_toml_keeps_the_hash_of_its_spec() {
+        // Written the way `doozers.toml` has always hashed it (the table as written), a toolset
         // whose table holds only keys the spec has gets the same hash as that spec: the tool-list
         // cache key doesn't change.
         let fixture = Fixture::new(

@@ -591,10 +591,10 @@ async fn a_silent_server_is_pinged_then_given_up() {
     let mut peer = server.accept().await;
     peer.register(MODERN_CAPS, Some(MODERN_REQ)).await;
     client.connected().await;
-    peer.expect("PING :giles").await;
+    peer.expect("PING :doozers").await;
     // Any line resets the clock; then silence.
     peer.send(":irc.test PONG irc.test :giles").await;
-    peer.expect("PING :giles").await;
+    peer.expect("PING :doozers").await;
     assert!(
         client
             .error()
@@ -632,7 +632,7 @@ async fn a_taken_nick_gets_an_underscore() {
 async fn dropping_the_channel_quits() {
     let (_server, mut peer, client) = connected(json!({})).await;
     drop(client);
-    peer.expect("QUIT :Giles is shutting down").await;
+    peer.expect("QUIT :Doozers is shutting down").await;
 }
 
 #[tokio::test]

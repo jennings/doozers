@@ -1,6 +1,6 @@
 # Chat commands
 
-Giles handles these messages itself, and they never reach the agent.
+Doozers handles these messages itself, and they never reach the agent.
 
 | Message                    | Effect                                                               |
 | -------------------------- | -------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ any messages you sent before `/new`. Only later messages start the fresh session
 
 `/new` keeps the conversation's [workspace](environments.md), so the agent still has its files in
 the fresh session. `/env reset` deletes the workspace, with everything in it, and creates a new one
-in the same environment with the same options. Giles replies when it's done, or tells you why it
+in the same environment with the same options. Doozers replies when it's done, or tells you why it
 couldn't. If the conversation has no workspace, it says so.
 
 A reset deletes the files at once, so use it when you want the agent to start over. If the agent is
@@ -61,7 +61,7 @@ These end a waiting request as if you'd answered `no`:
 - you send any other message, which the agent then sees
 - you send `/stop`
 
-Waiting requests don't survive a restart of Giles. If a request has ended and you still want the
+Waiting requests don't survive a restart of Doozers. If a request has ended and you still want the
 tool to run, ask the agent again.
 
 In scheduled jobs nobody is there to answer, so tools that need approval are denied unless the job

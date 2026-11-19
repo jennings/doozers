@@ -1,6 +1,6 @@
 # Container image
 
-The `Dockerfile` at the repository root builds a Linux image with `giles` and the first-party
+The `Dockerfile` at the repository root builds a Linux image with `doozers` and the first-party
 plugins (PLAN section 14.2); [Running in a container](../user/container.md) covers using it. It is a
 two-stage BuildKit build: `docker build .` works on any machine with Docker, and nothing is built on
 the host first.
@@ -22,7 +22,7 @@ only when the pin changes. Protobuf code generation uses the vendored `protoc` (
 [Cargo workspace](workspace.md)); no system `protoc` is installed.
 
 It then copies the context and runs `cargo build --release --locked` for the binaries the image
-ships: `giles`, `doozers-channel-irc`, `doozers-channel-email`, `doozers-channel-whatsapp`,
+ships: `doozers`, `doozers-channel-irc`, `doozers-channel-email`, `doozers-channel-whatsapp`,
 `doozers-channel-discord`, and `doozers-environment-docker`. `doozers-channel-echo` is a test-only
 plugin and stays out. The list is the `bins` variable in that `RUN` step; a new first-party plugin
 is added there.
@@ -63,21 +63,21 @@ mounts across runs (for example by exporting them into the Actions cache) is a l
 The runtime stage is `debian:bookworm-slim` with three packages:
 
 - `ca-certificates` and `tzdata`, for plugins and MCP servers that use the system's roots and time
-  zone database. (Giles' own TLS clients trust the bundled Mozilla roots, and `jiff` falls back to a
-  built-in copy of the time zone database.)
-- `tini`, which runs as PID 1. Plugins and MCP servers run in their own process groups, and Giles
+  zone database. (Doozers' own TLS clients trust the bundled Mozilla roots, and `jiff` falls back to
+  a built-in copy of the time zone database.)
+- `tini`, which runs as PID 1. Plugins and MCP servers run in their own process groups, and Doozers
   kills a whole group when it stops one; descendants it didn't spawn itself are reparented to PID 1,
-  and `giles` as PID 1 wouldn't reap them, so they would stay zombies. `tini` reaps them and
-  forwards signals, so `docker stop`'s SIGTERM still reaches `giles`.
+  and `doozers` as PID 1 wouldn't reap them, so they would stay zombies. `tini` reaps them and
+  forwards signals, so `docker stop`'s SIGTERM still reaches `doozers`.
 
 The binaries go in `/usr/local/bin/`, where plugin discovery finds them on `$PATH`
 ([Plugin host](plugin-host.md)), so the data root holds only data. The license texts go in
-`/usr/share/doc/giles/`.
+`/usr/share/doc/doozers/`.
 
-The image runs as `giles`, uid and gid 10001: a fixed id, so a bind-mounted data root can be
+The image runs as `doozers`, uid and gid 10001: a fixed id, so a bind-mounted data root can be
 `chown`ed to it, outside the ranges of system accounts and of the first login accounts. `/data` is
-created owned by it with mode 0700 and declared a `VOLUME`; `GILES_HOME=/data` points Giles at it,
-and it is also the working directory. A fresh named volume copies that ownership from the image.
+created owned by it with mode 0700 and declared a `VOLUME`; `DOOZERS_HOME=/data` points Doozers at
+it, and it is also the working directory. A fresh named volume copies that ownership from the image.
 
 The WhatsApp plugin is in the image but inert until an instance of component `whatsapp` is
 configured: the core launches a plugin only for a configured instance, so the smoke test (which
@@ -90,8 +90,8 @@ configured, so the smoke test only checks that the binary is there and never con
 configured instance keeps its catch-up state (`discord-state.json`) in
 `/data/data/channel/<instance>/` and needs outbound TCP 443 only (REST, the Gateway, and the CDN).
 
-`EXPOSE 8080` documents the web port; `giles.toml` must still set `http_listen = "0.0.0.0:8080"`,
-since the default listens on loopback only. The entrypoint is `tini -- giles` with `serve` as the
+`EXPOSE 8080` documents the web port; `doozers.toml` must still set `http_listen = "0.0.0.0:8080"`,
+since the default listens on loopback only. The entrypoint is `tini -- doozers` with `serve` as the
 default command, so the container runs `doozers serve`, and arguments after the image name replace
 the subcommand (`docker run --rm <image> --version`).
 
@@ -102,7 +102,7 @@ is `MIT OR Apache-2.0`, except `plugins/doozers-channel-whatsapp`, which is `AGP
 label override in `ci.yml` sets the same expression, since GitHub's own repository license detection
 would otherwise replace it.
 
-`/usr/share/doc/giles/` holds `LICENSE-MIT` and `LICENSE-APACHE`, the AGPL text
+`/usr/share/doc/doozers/` holds `LICENSE-MIT` and `LICENSE-APACHE`, the AGPL text
 (`LICENSE-AGPL-3.0`), and `THIRD-PARTY`, which names the AGPL component of the WhatsApp plugin and
 is the source offer for its binary: the repository at the image's commit (the
 `org.opencontainers.image.revision` label, set by the CI metadata step) and the pinned
@@ -113,8 +113,8 @@ for the last two), and the smoke test checks that they're in the image.
 
 `plugins/doozers-environment-docker/Dockerfile` builds a second image,
 `ghcr.io/jennings/doozers-environment-docker`, with the same build context. It runs the Docker
-environment plugin in `serve` mode ([Plugin SDK](plugin-sdk.md)) for a Giles core to reach with
-`address`, so the engine socket is mounted into the plugin's container and never into Giles's.
+environment plugin in `serve` mode ([Plugin SDK](plugin-sdk.md)) for a Doozers core to reach with
+`address`, so the engine socket is mounted into the plugin's container and never into Doozers'.
 
 - **Build stage.** The same Rust base and pinned toolchain. It builds only
   `doozers-environment-docker` and `doozers-workspace-helper`, the helper for both `x86_64` and
@@ -125,7 +125,7 @@ environment plugin in `serve` mode ([Plugin SDK](plugin-sdk.md)) for a Giles cor
 - **Runtime stage.** `debian:bookworm-slim` with `tini`, the binaries in `/usr/local/bin/`, and the
   licenses. The entrypoint is `doozers-environment-docker serve --listen 0.0.0.0:7443 --data /data`;
   arguments such as `--config <file>` are appended, and flags win over the file's `listen` and
-  `data`. The token comes from `GILES_ENVIRONMENT_DOCKER_TOKEN` or `token_file`.
+  `data`. The token comes from `DOOZERS_ENVIRONMENT_DOCKER_TOKEN` or `token_file`.
 - **Root.** The process runs as root. Its power comes from the mounted socket, and an unprivileged
   uid can't open a socket owned by `root:docker` or, under rootless Podman, by the host user that
   root in the container maps to. On SELinux hosts the container also needs
@@ -138,22 +138,22 @@ The `.dockerignore` keeps this Dockerfile out of the context, so editing it does
 
 ## Compose file
 
-`compose.yaml` at the repository root runs both images as the services `giles` and
-`doozers-environment-docker` on the project's default network, where Giles reaches the plugin by its
-service name over plain HTTP
-([Running in a container](../user/container.md#run-giles-with-docker-compose)).
+`compose.yaml` at the repository root runs both images as the services `doozers` and
+`doozers-environment-docker` on the project's default network, where Doozers reaches the plugin by
+its service name over plain HTTP
+([Running in a container](../user/container.md#run-doozers-with-docker-compose)).
 Each service names its published image and the Dockerfile that builds it, so `docker compose up`
 pulls the images and `--build` builds them from the checkout, tagged with the published names.
 
-- **Token.** `GILES_ENVIRONMENT_DOCKER_TOKEN` from `.env` goes into both containers. The plugin
-  reads it as its token, and `giles.toml` refers to it with `{ env = ... }` as the bearer
+- **Token.** `DOOZERS_ENVIRONMENT_DOCKER_TOKEN` from `.env` goes into both containers. The plugin
+  reads it as its token, and `doozers.toml` refers to it with `{ env = ... }` as the bearer
   credential, so the token needs no `secrets.toml` entry.
 - **Socket.** `CONTAINER_ENGINE_SOCKET` has no default. Compose refuses to start without it, so the
-  file never mounts the rootful `/var/run/docker.sock` of the Giles host by accident.
+  file never mounts the rootful `/var/run/docker.sock` of the Doozers host by accident.
 - **SELinux.** The plugin's service sets `label=disable`, which the socket needs on SELinux hosts
   and other hosts ignore.
-- **Data root.** `./giles-home` is bind-mounted at `/data`. It, `.env`, `compose.override.yaml`, and
-  `doozers-environment-docker.toml` are in `.gitignore`.
+- **Data root.** `./doozers-home` is bind-mounted at `/data`. It, `.env`, `compose.override.yaml`,
+  and `doozers-environment-docker.toml` are in `.gitignore`.
 
 ## The sandbox in a container
 
@@ -167,4 +167,4 @@ image job checks it on GitHub's Ubuntu runners ([Continuous integration](ci.md))
 
 - `linux/arm64` images. The build is portable (it builds natively on arm64), but CI publishes only
   `linux/amd64`, since building under QEMU emulation is too slow; an arm64 runner can add it.
-- A `minimal` image with `giles` alone, as a second final stage.
+- A `minimal` image with `doozers` alone, as a second final stage.

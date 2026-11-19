@@ -1,9 +1,9 @@
 # Discord channel
 
 The design of `doozers-channel-discord`, the Discord channel plugin (PLAN sections 3.3, 8.5, and 10;
-tracked in [issue #12](https://github.com/jennings/giles/issues/12)). A bot account receives direct
-messages (DMs) over the Discord Gateway and sends over the REST API, as a separate process on the
-plugin SDK ([Plugin SDK](plugin-sdk.md)).
+tracked in [issue #12](https://github.com/jennings/doozers/issues/12)). A bot account receives
+direct messages (DMs) over the Discord Gateway and sends over the REST API, as a separate process on
+the plugin SDK ([Plugin SDK](plugin-sdk.md)).
 `ChannelInfo { identity_namespace: "discord", output: Blocks, can_initiate: true }`. User-facing
 setup, behavior, and settings:
 [Discord](../user/discord.md).
@@ -300,7 +300,7 @@ the resume URL would only help a restart inside those few minutes, and the catch
 anyway covers the same gap) or an outage longer than the window. The plugin therefore treats
 **every new session as possibly having missed messages**, and catches up over REST.
 
-State, in `<data dir>/discord-state.json` (the SDK's own state is `giles-sdk/`; this file is the
+State, in `<data dir>/discord-state.json` (the SDK's own state is `doozers-sdk/`; this file is the
 plugin's), written by a temp file, `fsync`, and rename:
 
 ```json
@@ -605,10 +605,10 @@ config error.
 The 4004 case also covers a token Discord reset after the Identify limit. The `NeedsAuth` URL is the
 Developer Portal's applications list, where the Bot page has "Reset Token"; the
 [user guide](../user/discord.md#status) says so, and says how to put the new token into
-`secrets.toml`. The new token takes a restart of Giles, not of the plugin: the core resolves secrets
-once, when it starts ([Registry and Startup](registry.md#the-running-configuration)), so a plugin
-restart relaunches it with the old token. A repeat of the last status is not sent again. No status
-carries the token, a user id, or message text.
+`secrets.toml`. The new token takes a restart of Doozers, not of the plugin: the core resolves
+secrets once, when it starts ([Registry and Startup](registry.md#the-running-configuration)), so a
+plugin restart relaunches it with the old token. A repeat of the last status is not sent again. No
+status carries the token, a user id, or message text.
 
 ## Configuration
 
@@ -635,11 +635,11 @@ needed beyond that, because of how plugins start:
 - The core launches a plugin only for a configured instance (`[channel.<name>]` with
   `component = "discord"`, [Plugin host](plugin-host.md)), so an image with no Discord instance
   never starts the plugin and never contacts Discord. The CI smoke test configures none.
-- The plugin has no configuration of its own outside `giles.toml`: a missing or malformed `token`
+- The plugin has no configuration of its own outside `doozers.toml`: a missing or malformed `token`
   fails `Configure` and the instance stays down with the message in the log and in `doozers status`.
 - Its one file, `discord-state.json`, lives in the instance's data directory
   (`data/channel/<instance>/`, which is on the `/data` volume), next to the SDK's own state
-  (`giles-sdk/`).
+  (`doozers-sdk/`).
 
 The image itself was not built when this was written (the development machine has no Docker); CI's
 image job builds it and runs the smoke test.

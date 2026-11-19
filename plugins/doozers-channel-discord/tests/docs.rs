@@ -20,7 +20,7 @@ fn documents(markdown: &str) -> Vec<toml::Table> {
     documents
 }
 
-/// Replaces `{ secret = ... }` and `{ env = ... }` with a plain value, as Giles does.
+/// Replaces `{ secret = ... }` and `{ env = ... }` with a plain value, as Doozers does.
 fn resolve(value: &mut serde_json::Value) {
     if let Some(table) = value.as_object_mut() {
         if table.len() == 1 && (table.contains_key("secret") || table.contains_key("env")) {

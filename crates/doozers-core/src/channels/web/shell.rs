@@ -82,7 +82,7 @@ impl Shell {
             .iter()
             .chain(&ADMIN)
             .find(|(nav, _, _)| *nav == current)
-            .map_or("Giles", |(_, label, _)| label);
+            .map_or("Doozers", |(_, label, _)| label);
         let name = user.user.as_str();
         Self {
             user: name.to_owned(),

@@ -342,7 +342,7 @@ pub struct ToolsetSpec {
 
 impl ToolsetSpec {
     /// Parses a spec from JSON, with the same keys as a `[toolset.<name>]` table. Keys the spec
-    /// doesn't have are ignored, as in `giles.toml`.
+    /// doesn't have are ignored, as in `doozers.toml`.
     ///
     /// # Errors
     ///
@@ -358,7 +358,7 @@ impl ToolsetSpec {
     }
 
     /// Parses a spec from TOML text: the keys of a `[toolset.<name>]` table, at the top level of
-    /// the text (as [`to_toml`](Self::to_toml) writes them). Unlike `giles.toml`, where an
+    /// the text (as [`to_toml`](Self::to_toml) writes them). Unlike `doozers.toml`, where an
     /// unknown key is a warning, a key the spec doesn't have is an error, so a typo in a file
     /// given to `doozers toolset set` isn't silently dropped.
     ///
@@ -423,7 +423,7 @@ impl ToolsetSpec {
     /// credentials as written, as references, so it never depends on a resolved secret value.
     ///
     /// It doesn't depend on key order, or on how a duration is spelled (`"5m"` and `"300s"` hash
-    /// alike), but only on what the spec says: unlike the hash of a `giles.toml` table, it knows
+    /// alike), but only on what the spec says: unlike the hash of a `doozers.toml` table, it knows
     /// no keys the spec lacks.
     pub fn config_hash(&self) -> ConfigHash {
         let table = toml::Table::try_from(self)
@@ -1000,7 +1000,7 @@ impl Ctx<'_> {
                 if DERIVED_ENV.contains(&name.as_str()) {
                     return Err(self.err(
                         at,
-                        format!("{name} is set by Giles (the server's data directory or PATH)"),
+                        format!("{name} is set by Doozers (the server's data directory or PATH)"),
                     ));
                 }
                 Ok((name.clone(), self.resolver.value(self.file, &at, value)?))

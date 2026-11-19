@@ -1,6 +1,6 @@
 //! The message model (PLAN section 5).
 //!
-//! Giles has its own content-block model, patterned on Anthropic's. Providers translate it to and
+//! Doozers has its own content-block model, patterned on Anthropic's. Providers translate it to and
 //! from their wire formats; the core never sees those.
 //!
 //! # Serialization

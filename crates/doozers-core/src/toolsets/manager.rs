@@ -1,10 +1,10 @@
-//! The toolsets stored in `giles.db`, and the one object that changes them (PLAN sections 7.10 and
-//! 11.2): [`ToolsetManager`]. The web pages, the admin RPCs, and the CLI all go through it. See
+//! The toolsets stored in `doozers.db`, and the one object that changes them (PLAN sections 7.10
+//! and 11.2): [`ToolsetManager`]. The web pages, the admin RPCs, and the CLI all go through it. See
 //! `Docs/technical/toolsets.md`.
 //!
 //! A stored toolset is a remote MCP server. A web login must not be able to choose a program for
-//! Giles to run on the host, its arguments, its environment, or its sandbox grants: installing
-//! and running code on the host is the operator's, in `giles.toml`. Connecting to a remote server
+//! Doozers to run on the host, its arguments, its environment, or its sandbox grants: installing
+//! and running code on the host is the operator's, in `doozers.toml`. Connecting to a remote server
 //! is not.
 //!
 //! # Changes
@@ -19,7 +19,7 @@
 //! The extra rules beyond `validate_toolset`:
 //!
 //! - the name `new` is reserved, because it is the address of the form for a new toolset;
-//! - a name that a `[toolset.<name>]` table of `giles.toml` uses belongs to that toolset;
+//! - a name that a `[toolset.<name>]` table of `doozers.toml` uses belongs to that toolset;
 //! - the spec has `url` (`validate_toolset` then refuses the keys of a stdio server next to it);
 //! - a credential is the value itself, which is stored in the secret store at the toolset's own
 //!   path, or a reference to that path, `{ secret = "toolsets/<name>/bearer-token" }`
@@ -34,7 +34,7 @@
 //! refers to `secrets.toml` (the ways before the secret store), is copied to the toolset's own
 //! path, and the spec rewritten.
 //!
-//! Toolsets in `giles.toml` keep working beside the stored ones. They show up in
+//! Toolsets in `doozers.toml` keep working beside the stored ones. They show up in
 //! [`list`](ToolsetManager::list) as [`ToolsetSource::File`] and can't be changed here
 //! ([`ToolsetManagerError::Unsupported`]).
 //!
@@ -44,7 +44,7 @@
 //! that pass. One that doesn't isn't started: it is kept as a failure with the reason, which the
 //! admin service lists as a `Failed` instance (the manager is a [`PluginControl`]) and the pages
 //! can show. Startup never fails on a stored toolset, and the owner fixes it in the web UI, which
-//! needs Giles running. Saving a failed toolset starts it, so does restarting it
+//! needs Doozers running. Saving a failed toolset starts it, so does restarting it
 //! ([`retry`](ToolsetManager::retry)), and removing it deletes it.
 //!
 //! # Removal
@@ -63,12 +63,12 @@
 //! change. A remote toolset has no data directory, so no data moves.
 //!
 //! 1. The new name must be valid and free among the toolsets (the stored ones and those of
-//!    `giles.toml`), as for a new toolset. The old
+//!    `doozers.toml`), as for a new toolset. The old
 //!    name is exempt, so a stored toolset can be renamed to its own name in another case. Then
 //!    every agent's `agent.toml` is read: a glob that matches the toolset's tools without
 //!    starting with `<old>__` (`github*`) can't be rewritten safely, and refuses the rename
 //!    ([`ToolsetManagerError::Refused`]) with the globs listed. Those checks are the ones of
-//!    `doozers toolset rename` with Giles stopped, which share their code with this.
+//!    `doozers toolset rename` with Doozers stopped, which share their code with this.
 //! 2. The toolset is stopped: its tools leave the registry, so a running session that still
 //!    lists them gets `tool unavailable`.
 //! 3. The `<old>__` globs of each agent are rewritten in its `agent.toml` with the agent edit
@@ -77,12 +77,12 @@
 //! 5. The toolset is renamed in the live configuration, each rewritten agent replaces the old
 //!    one there, and the toolset is started under the new name. A failed stored toolset is
 //!    renamed too (it is started if it validates now, and else stays failed under the new name);
-//!    a stored toolset whose name a toolset of `giles.toml` took leaves the agents' globs under
+//!    a stored toolset whose name a toolset of `doozers.toml` took leaves the agents' globs under
 //!    the name to that instance.
 //!
 //! A step that fails undoes the ones before it (the agents' files and the row are put back as
 //! they were, the toolset starts again under the old name), and the error says what couldn't be
-//! undone. Sessions that run keep the old tool names. Toolsets of `giles.toml` are
+//! undone. Sessions that run keep the old tool names. Toolsets of `doozers.toml` are
 //! [`ToolsetManagerError::Unsupported`].
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -146,7 +146,7 @@ pub enum ToolsetSource {
         /// update if the toolset changed since it was read.
         updated_at: Timestamp,
     },
-    /// A `[toolset.<name>]` table of `giles.toml`, which can't be changed here.
+    /// A `[toolset.<name>]` table of `doozers.toml`, which can't be changed here.
     File,
 }
 
@@ -159,7 +159,7 @@ pub struct ToolsetView {
     /// Where it is configured.
     pub source: ToolsetSource,
     /// The stored spec, to fill the edit form. Credentials are references (`Debug` leaves them
-    /// out). `None` for a toolset of `giles.toml`, and for a stored one whose JSON can't be read
+    /// out). `None` for a toolset of `doozers.toml`, and for a stored one whose JSON can't be read
     /// ([`failure`](Self::failure) says why).
     pub spec: Option<ToolsetSpec>,
     /// Why a stored toolset isn't running: it failed validation at startup, or the change that
@@ -184,7 +184,7 @@ pub enum ToolsetManagerError {
     /// The spec or the name is wrong.
     #[error("{}{reason}", key_prefix(.key))]
     Invalid {
-        /// The key of the spec with the problem, as the `giles.toml` table writes it (`url`,
+        /// The key of the spec with the problem, as the `doozers.toml` table writes it (`url`,
         /// `auth.bearer`), so a form can show the reason next to the field. The root if the
         /// problem is with the toolset as a whole: its name, or what it conflicts with.
         key: KeyPath,
@@ -220,8 +220,8 @@ pub enum ToolsetManagerError {
         /// Changes that couldn't be undone, which the owner puts right by hand.
         undo_errors: Vec<String>,
     },
-    /// The toolset is configured in `giles.toml`, which Giles doesn't write: edit it there.
-    #[error("this toolset is configured in giles.toml, so it can only be changed there")]
+    /// The toolset is configured in `doozers.toml`, which Doozers doesn't write: edit it there.
+    #[error("this toolset is configured in doozers.toml, so it can only be changed there")]
     Unsupported,
     /// The database failed.
     #[error("cannot store the toolsets: {0}")]
@@ -348,7 +348,7 @@ enum Target {
 impl ToolsetManager {
     /// Validates every stored toolset and adds the ones that pass to the live configuration and
     /// the host. A toolset that fails isn't started; it is logged and reported as failed (see the
-    /// module docs). Call it once the host has started the toolsets of `giles.toml`, before the
+    /// module docs). Call it once the host has started the toolsets of `doozers.toml`, before the
     /// sessions recover, so the toolsets are registered in time.
     ///
     /// # Errors
@@ -390,7 +390,7 @@ impl ToolsetManager {
         Ok(manager)
     }
 
-    /// Every toolset, stored and from `giles.toml`, ordered by name ignoring case.
+    /// Every toolset, stored and from `doozers.toml`, ordered by name ignoring case.
     ///
     /// # Errors
     ///
@@ -447,8 +447,8 @@ impl ToolsetManager {
     ///
     /// [`ToolsetManagerError::Exists`] if a stored toolset has the name, ignoring ASCII case;
     /// [`ToolsetManagerError::Invalid`] if the name or the spec is refused (the key says where),
-    /// including a name that a toolset of `giles.toml` uses; [`ToolsetManagerError::Store`] if the
-    /// database failed. Nothing is stored unless the toolset is added. If the row is stored but
+    /// including a name that a toolset of `doozers.toml` uses; [`ToolsetManagerError::Store`] if
+    /// the database failed. Nothing is stored unless the toolset is added. If the row is stored but
     /// the toolset can't be started after all, the error is `Invalid` at the root and the toolset
     /// is failed.
     pub async fn add(
@@ -497,7 +497,7 @@ impl ToolsetManager {
     /// # Errors
     ///
     /// [`ToolsetManagerError::NotFound`] if no stored toolset has the name;
-    /// [`ToolsetManagerError::Unsupported`] if the name is a toolset of `giles.toml`;
+    /// [`ToolsetManagerError::Unsupported`] if the name is a toolset of `doozers.toml`;
     /// [`ToolsetManagerError::Stale`]; [`ToolsetManagerError::Invalid`] as for
     /// [`add`](Self::add); [`ToolsetManagerError::Store`]. Nothing changes unless the toolset is
     /// updated.
@@ -572,7 +572,7 @@ impl ToolsetManager {
     /// # Errors
     ///
     /// [`ToolsetManagerError::NotFound`] if no stored toolset has the name;
-    /// [`ToolsetManagerError::Unsupported`] if the name is a toolset of `giles.toml`;
+    /// [`ToolsetManagerError::Unsupported`] if the name is a toolset of `doozers.toml`;
     /// [`ToolsetManagerError::Store`].
     pub async fn retry(&self, name: &str) -> Result<ToolsetView, ToolsetManagerError> {
         let _changing = self.changing.lock().await;
@@ -597,7 +597,7 @@ impl ToolsetManager {
     /// # Errors
     ///
     /// [`ToolsetManagerError::NotFound`] if no stored toolset has the name;
-    /// [`ToolsetManagerError::Unsupported`] if the name is a toolset of `giles.toml`;
+    /// [`ToolsetManagerError::Unsupported`] if the name is a toolset of `doozers.toml`;
     /// [`ToolsetManagerError::Store`].
     pub async fn remove(&self, name: &str) -> Result<Removed, ToolsetManagerError> {
         let _changing = self.changing.lock().await;
@@ -629,7 +629,7 @@ impl ToolsetManager {
     }
 
     /// What `name` is: a stored toolset (the name matches ignoring ASCII case), one of
-    /// `giles.toml`, or nothing.
+    /// `doozers.toml`, or nothing.
     fn target(&self, rows: &[StoredToolset], name: &str) -> Target {
         if let Some(row) = rows.iter().find(|row| row.name.eq_ignore_ascii_case(name)) {
             return Target::Stored(row.clone());
@@ -683,7 +683,7 @@ impl ToolsetManager {
         let options = LoadOptions {
             builtins: Builtins::V1,
             env: &no_env,
-            giles_exe: None,
+            doozers_exe: None,
         };
         validate_toolset(
             name,
@@ -699,7 +699,7 @@ impl ToolsetManager {
     }
 
     /// What must hold for `name` to be a toolset's name, before the spec is looked at: it isn't
-    /// the address of the form for a new toolset and no toolset of `giles.toml` has it. Whether
+    /// the address of the form for a new toolset and no toolset of `doozers.toml` has it. Whether
     /// another stored toolset has it is the caller's business.
     fn check_name(&self, name: &str) -> Result<(), ToolsetError> {
         let whole = |reason: String| ToolsetError {
@@ -713,17 +713,17 @@ impl ToolsetManager {
             )));
         }
         let config = self.config.get();
-        // The names before the spec: a name `giles.toml` has is that toolset's whatever the
+        // The names before the spec: a name `doozers.toml` has is that toolset's whatever the
         // spec says.
         if let Some(other) = self.file_toolset(&config, name) {
             return Err(whole(format!(
-                "the name is taken by `[toolset.{other}]` in giles.toml"
+                "the name is taken by `[toolset.{other}]` in doozers.toml"
             )));
         }
         Ok(())
     }
 
-    /// The toolset of `giles.toml`, the ones that aren't stored, whose name is `name` ignoring
+    /// The toolset of `doozers.toml`, the ones that aren't stored, whose name is `name` ignoring
     /// ASCII case. A provider or a channel with the name is another instance and doesn't count.
     fn file_toolset(&self, config: &Config, name: &str) -> Option<String> {
         let state = lock(&self.state);
@@ -784,7 +784,7 @@ impl ToolsetManager {
 
     /// A stored toolset that is in the live configuration but can't run (the host refused it):
     /// takes it out of the configuration and records `reason`, so it shows as failed, a name
-    /// that is free again, and not as a toolset of `giles.toml`.
+    /// that is free again, and not as a toolset of `doozers.toml`.
     pub(super) fn withdraw(&self, name: &str, reason: String) {
         if let Ok(instance) = InstanceName::new(name) {
             self.config.remove_toolset(&instance);
@@ -1012,7 +1012,7 @@ fn remote_only(spec: &ToolsetSpec) -> Result<(), ToolsetError> {
         return Err(ToolsetError {
             key: KeyPath::root().key("url"),
             reason: "a stored toolset is a remote server: set `url`. Configure a stdio server as \
-                     `[toolset.<name>]` in giles.toml"
+                     `[toolset.<name>]` in doozers.toml"
                 .to_owned(),
         });
     }

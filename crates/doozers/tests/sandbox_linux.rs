@@ -4,7 +4,7 @@
 //!
 //! Every sandboxed launch needs Landlock. On a kernel without it (the Apple `container` kernel
 //! has none) each test says so on stderr and passes, except
-//! [`without_landlock_nothing_runs`], which runs only there. With `GILES_REQUIRE_LANDLOCK=1`
+//! [`without_landlock_nothing_runs`], which runs only there. With `DOOZERS_REQUIRE_LANDLOCK=1`
 //! (CI's Linux job) a missing Landlock fails the tests instead.
 #![cfg(target_os = "linux")]
 
@@ -30,12 +30,12 @@ fn landlock_abi() -> Option<u32> {
         Ok(other) => panic!("{other:?}"),
         Err(err) => {
             assert!(
-                std::env::var_os("GILES_REQUIRE_LANDLOCK").is_none_or(|v| v != "1"),
-                "GILES_REQUIRE_LANDLOCK=1, but the sandbox can't run here: {err}"
+                std::env::var_os("DOOZERS_REQUIRE_LANDLOCK").is_none_or(|v| v != "1"),
+                "DOOZERS_REQUIRE_LANDLOCK=1, but the sandbox can't run here: {err}"
             );
             eprintln!(
                 "skipping: the Linux sandbox can't run on this kernel ({err}); set \
-                 GILES_REQUIRE_LANDLOCK=1 to fail instead"
+                 DOOZERS_REQUIRE_LANDLOCK=1 to fail instead"
             );
             None
         }
@@ -90,10 +90,10 @@ impl Env {
             .arg(spec_file)
             .arg("--")
             .args(command)
-            .env("GILES_HOME", self.dir.path())
+            .env("DOOZERS_HOME", self.dir.path())
             .env("SECRET_TOKEN", "leaked")
             .env("LANG", "C")
-            .env_remove("GILES_LOG")
+            .env_remove("DOOZERS_LOG")
             .env_remove("RUST_LOG")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -237,7 +237,7 @@ fn data_dir_and_its_tmp_are_writable() {
     let env = Env::new();
     let script = r#"
         set -e
-        echo data > "$HOME/f" && cat "$GILES_PLUGIN_DATA/f"
+        echo data > "$HOME/f" && cat "$DOOZERS_PLUGIN_DATA/f"
         echo tmp > "$TMPDIR/t" && cat "$TMPDIR/t"
         mkdir sub && echo nested > sub/x && cat sub/x && mv sub/x y && rm -r sub y
         echo long > g && truncate -s 2 g && cat g && echo
@@ -469,7 +469,7 @@ fn unix_sockets_need_a_grant() {
         UnixListener::bind(&granted).unwrap(),
         UnixListener::bind(&other).unwrap(),
     ];
-    let name = format!("giles-sandbox-test-{}", std::process::id());
+    let name = format!("doozers-sandbox-test-{}", std::process::id());
     let _abstract =
         UnixListener::bind_addr(&SocketAddr::from_abstract_name(name.as_bytes()).unwrap()).unwrap();
     let actions = [
@@ -802,7 +802,7 @@ fn rust_runtime_runs_under_the_sandbox() {
 }
 
 /// The variable that turns [`probe`] into the probe: actions, one per line.
-const PROBE: &str = "GILES_SANDBOX_PROBE";
+const PROBE: &str = "DOOZERS_SANDBOX_PROBE";
 
 /// Runs one probe action and describes the result: `ok` or `errno <n>`.
 #[allow(unsafe_code)]

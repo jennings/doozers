@@ -12,8 +12,8 @@ use jiff::civil::Time;
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
+use super::doozers::parse_timezone;
 use super::error::{ConfigError, KeyPath, UnknownKey};
-use super::giles::parse_timezone;
 use super::model::ModelRef;
 use super::names::{InstanceName, invalid_name_reason, is_valid_name};
 
@@ -240,7 +240,7 @@ struct RawJob {
 
 /// Loads `agent.toml` from `dir` for agent `id`. `providers` are the configured provider instances
 /// every model must name, and `environments` the configured environment instances. Also returns
-/// the keys Giles doesn't recognize, which are ignored.
+/// the keys Doozers doesn't recognize, which are ignored.
 pub(crate) fn load(
     id: &str,
     dir: &Path,
@@ -252,7 +252,7 @@ pub(crate) fn load(
 }
 
 /// Validates `source` as the `agent.toml` in `dir` of agent `id`, as [`load`] does once it has
-/// read the file. Job prompt files are looked up in `dir`. A key Giles doesn't recognize is not
+/// read the file. Job prompt files are looked up in `dir`. A key Doozers doesn't recognize is not
 /// an error: it's ignored and returned, in file order. A recognized key with a bad value is.
 pub(crate) fn parse(
     id: &str,
@@ -274,7 +274,7 @@ pub(crate) fn parse(
             Err(err(
                 path,
                 format!(
-                    "no provider instance {:?} (`[provider.{0}]` in giles.toml) for model {model}",
+                    "no provider instance {:?} (`[provider.{0}]` in doozers.toml) for model {model}",
                     model.provider.as_str()
                 ),
             ))
@@ -298,7 +298,9 @@ pub(crate) fn parse(
         if !environments.contains(name.as_str()) {
             return Err(err(
                 at,
-                format!("no environment instance {name:?} (`[environment.{name}]` in giles.toml)"),
+                format!(
+                    "no environment instance {name:?} (`[environment.{name}]` in doozers.toml)"
+                ),
             ));
         }
         let instance =

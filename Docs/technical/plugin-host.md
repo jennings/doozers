@@ -86,7 +86,7 @@ arrived.
 ## Spawning
 
 The program is the trampoline,
-`<giles exe> sandbox-exec run/sandbox/channel/<instance>.json -- <binary> socket`. The trampoline
+`<doozers exe> sandbox-exec run/sandbox/channel/<instance>.json -- <binary> socket`. The trampoline
 inherits the core's environment and builds the plugin's scrubbed one itself. With
 `unsandboxed = true` the host skips the trampoline, logs `running the plugin unsandboxed` at warn
 level on every launch, and runs `<binary> socket` itself with exactly the environment the trampoline
@@ -120,10 +120,10 @@ file and a rename), outside every plugin's grants. From PLAN section 12.4:
 | `network` | the grant; the config loader already applied the channel default (on) |
 | `execute` | none: the backends always allow the command itself |
 | `unsandboxed` | the instance's `unsandboxed` |
-| `env` | `GILES_PLUGIN_MAGIC` (the cookie) and `GILES_PLUGIN_PROTOCOLS` (`1`) |
+| `env` | `DOOZERS_PLUGIN_MAGIC` (the cookie) and `DOOZERS_PLUGIN_PROTOCOLS` (`1`) |
 
 The binary's directory isn't granted: a binary installed in, say, a home directory would expose the
-whole directory. The trampoline adds `GILES_PLUGIN_DATA`, `HOME`, `TMPDIR`, `PATH`, and `LANG`.
+whole directory. The trampoline adds `DOOZERS_PLUGIN_DATA`, `HOME`, `TMPDIR`, `PATH`, and `LANG`.
 
 ## The process
 
@@ -143,7 +143,7 @@ whole directory. The trampoline adds `GILES_PLUGIN_DATA`, `HOME`, `TMPDIR`, `PAT
   process or group can have it. Once reaped, the group id could be reused, so the host never signals
   the group again. `wait` wakes on `SIGCHLD` (checking every second as a safety net) and is
   cancel-safe.
-- `close_stdin()`: the plugin sees end-of-file, which a Giles plugin takes as the core being gone.
+- `close_stdin()`: the plugin sees end-of-file, which a Doozers plugin takes as the core being gone.
 - `terminate(grace)`: `SIGTERM` to the process group, up to `grace` for the plugin to exit, then
   `kill()`.
 - `kill()`: `SIGKILL` to the process group if the plugin is still unreaped, then waits for it (5 s
@@ -387,8 +387,8 @@ While the plugin runs, the task waits for the first of:
   reset.
 - The process exiting (`PluginProcess::wait`, which kills the rest of its group before reaping).
 - A failed health check: every `HEALTH_INTERVAL` (30 s) a `grpc.health.v1` `Check` of
-  `giles.channel.v1.ChannelService`, which must answer `SERVING` within `HEALTH_TIMEOUT` (10 s). One
-  failure stops the plugin and counts as a crash.
+  `doozers.channel.v1.ChannelService`, which must answer `SERVING` within `HEALTH_TIMEOUT` (10 s).
+  One failure stops the plugin and counts as a crash.
 
 After a crash or a failed check, the task relaunches after a delay from `FIRST_BACKOFF` (1 s),
 doubling up to `MAX_BACKOFF` (5 min); the delay starts over at 1 s if the plugin ran for at least
@@ -449,8 +449,8 @@ different kinds with one name never share a file.
 
 `PluginHost::new(launcher, ChannelWiring { registry, sessions, blobs })` and then `start(&config)`
 start supervising every plugin channel after the sessions start, and return once each has had its
-first launch attempt, before `giles started` (see [The `doozers` binary](daemon.md)). Each launched
-plugin is wired at once by `ChannelWiring::attach(&plugin, max_blob)` (a remote one by
+first launch attempt, before `doozers started` (see [The `doozers` binary](daemon.md)). Each
+launched plugin is wired at once by `ChannelWiring::attach(&plugin, max_blob)` (a remote one by
 `attach_remote`): its `RemoteChannel` is registered with `Registry::register_channel` (so replies
 and `Registry::pending` see it) and attached with
 `Sessions::attach_channel(instance, component, channel)` (so its events flow). A shutdown signal
@@ -464,7 +464,7 @@ crashed stays registered (its `RemoteChannel` fails every call) until its relaun
 `[environment.<instance>]` plugins (PLAN section 8.8) use the same launch, remote connection,
 supervision, and `Describe` cache, through `KindSpec` `ENVIRONMENT`: `Describe` must report
 `PLUGIN_KIND_ENVIRONMENT` with environment capabilities, `Configure` returns no identity namespace,
-and the health check is of `giles.environment.v1.EnvironmentService`. `PluginHost` keeps one
+and the health check is of `doozers.environment.v1.EnvironmentService`. `PluginHost` keeps one
 `Supervision` per kind (the supervisor logs under `environment{name=<name>}`), and `restart` takes
 the kind.
 
@@ -529,9 +529,9 @@ description, `stop_after`, `delete_after`, `options_schema`, `connections`, `cli
   (over `run/admin.sock`) shows the running plugin's state, pid, version, binary, and requested
   grants, and `RestartPlugin` relaunches it.
 - `plugins/doozers-channel-echo/tests/host_sandbox.rs`: the echo plugin through the trampoline (the
-  test binary acting as `doozers sandbox-exec`, since Cargo gives that package no path to `giles`):
-  a working sandboxed launch where the host can sandbox (macOS, Linux with Landlock); on a Linux
-  kernel without Landlock, a clean non-retryable failure with the trampoline's message.
+  test binary acting as `doozers sandbox-exec`, since Cargo gives that package no path to
+  `doozers`): a working sandboxed launch where the host can sandbox (macOS, Linux with Landlock); on
+  a Linux kernel without Landlock, a clean non-retryable failure with the trampoline's message.
 - `crates/doozers/tests/serve.rs`: `doozers serve` with plugins that fail to launch (one through the
   real trampoline, refused by `min_abi = 1000` on Linux and by its missing `/bin/sh` grant on macOS)
   keeps running, logs the retryable one's backoff and the other as waiting for a new binary, and

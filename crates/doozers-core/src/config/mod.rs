@@ -1,11 +1,11 @@
-//! Configuration: `giles.toml`, `secrets.toml`, and `agents/<agent>/agent.toml` (PLAN sections
+//! Configuration: `doozers.toml`, `secrets.toml`, and `agents/<agent>/agent.toml` (PLAN sections
 //! 7.7 and 11.2).
 //!
 //! [`Config::load`] reads and validates everything once, at startup; changes need a restart (PLAN
 //! section 1.1), except agents created, edited, or removed in the web UI, which change the running
 //! configuration through [`LiveConfig`]. Every problem is a [`ConfigError`] naming the file, the
 //! key path, and the reason.
-//! Unknown keys in `giles.toml` and `agent.toml` are ignored and reported
+//! Unknown keys in `doozers.toml` and `agent.toml` are ignored and reported
 //! ([`Config::unknown_keys`]), except inside an instance's free-form `config` table, which belongs
 //! to the component; a recognized key with a value of the wrong type is an error. A
 //! `[toolset.<name>]` table with `url` is ignored whatever else it holds, and reported separately
@@ -15,8 +15,8 @@
 
 mod agent;
 mod discovery;
+mod doozers;
 mod error;
-mod giles;
 mod hash;
 mod instances;
 mod live;
@@ -46,9 +46,11 @@ pub use agent::{
     DEFAULT_MAX_ITERATIONS_JOBS, DEFAULT_MEMORY_CAP, Job, JobPrompt, JobSession, parse_cron,
 };
 pub use discovery::{discover_plugin, find_program};
+pub use doozers::{
+    CoreConfig, DEFAULT_HTTP_LISTEN, Identity, OwnerConfig, resolve_secret_key_file,
+};
 pub use doozers_types::Kind;
 pub use error::{ConfigError, IgnoredToolsetTable, KeyPath, Position, Segment, UnknownKey};
-pub use giles::{CoreConfig, DEFAULT_HTTP_LISTEN, Identity, OwnerConfig, resolve_secret_key_file};
 pub use hash::ConfigHash;
 pub use instances::{
     Auth, ChannelInstance, ChannelRuntime, DEFAULT_DELETE_AFTER, DEFAULT_MAX_BLOB,
@@ -76,7 +78,7 @@ pub struct LoadOptions<'a> {
     pub env: &'a dyn Fn(&str) -> Option<OsString>,
     /// The running `doozers` binary, whose directory no grant may write to. `None` skips that
     /// check.
-    pub giles_exe: Option<PathBuf>,
+    pub doozers_exe: Option<PathBuf>,
 }
 
 impl Default for LoadOptions<'static> {
@@ -86,7 +88,7 @@ impl Default for LoadOptions<'static> {
         Self {
             builtins: Builtins::V1,
             env: &process_env,
-            giles_exe: std::env::current_exe().ok(),
+            doozers_exe: std::env::current_exe().ok(),
         }
     }
 }
@@ -113,10 +115,10 @@ pub struct Config {
     /// the toolsets stored in the database, which the toolset manager adds through
     /// [`LiveConfig`], by instance name.
     pub toolsets: BTreeMap<InstanceName, ToolsetInstance>,
-    /// Every `[toolset.<name>]` table of `giles.toml` with `url`, in file order.
+    /// Every `[toolset.<name>]` table of `doozers.toml` with `url`, in file order.
     ignored_toolsets: Vec<IgnoredToolsetTable>,
-    /// Every key of `giles.toml` and the agents' `agent.toml` files that Giles doesn't recognize.
-    /// They are ignored; the daemon logs each once at startup.
+    /// Every key of `doozers.toml` and the agents' `agent.toml` files that Doozers doesn't
+    /// recognize. They are ignored; the daemon logs each once at startup.
     pub unknown_keys: Vec<UnknownKey>,
     /// `[[routes]]` as written, unvalidated. Routes are managed in the web UI and stored in the
     /// database; these are imported once by [`Routes::open`](crate::routes::Routes::open) and then
@@ -154,7 +156,7 @@ impl Config {
         Self::from_source(root, options, &file, &source).map_err(|e| e.located(&file, &source))
     }
 
-    /// Validates `source`, the contents of `file` (`giles.toml`), and loads everything it refers
+    /// Validates `source`, the contents of `file` (`doozers.toml`), and loads everything it refers
     /// to.
     fn from_source(
         root: &DataRoot,
@@ -162,7 +164,7 @@ impl Config {
         file: &Path,
         source: &str,
     ) -> Result<Self, ConfigError> {
-        let (mut raw, mut unknown): (giles::RawGiles, Vec<KeyPath>) =
+        let (mut raw, mut unknown): (doozers::RawDoozers, Vec<KeyPath>) =
             parse_toml_lenient(file, source)?;
         // The same document as plain TOML, for hashing each instance's table as written.
         let document: toml::Table =
@@ -181,7 +183,7 @@ impl Config {
         let mut ignored_toolsets = Vec::new();
         let mut toolset_specs = BTreeMap::new();
         for (name, table) in std::mem::take(&mut raw.toolset) {
-            if giles::is_remote_toolset(&table) {
+            if doozers::is_remote_toolset(&table) {
                 ignored_toolsets.push(IgnoredToolsetTable::new(file, source, name));
                 continue;
             }
@@ -190,7 +192,7 @@ impl Config {
                 .key(name.as_str());
             // A toolset ran a plugin named by `component` before `command` was required.
             if let Some(component) = table.get("component") {
-                let binary = format!("giles-toolset-{}", component.as_str().unwrap_or(&name));
+                let binary = format!("doozers-toolset-{}", component.as_str().unwrap_or(&name));
                 return Err(ConfigError::at(
                     file,
                     path.key("component"),
@@ -262,7 +264,7 @@ impl Config {
             toolsets.insert(instance.name.clone(), instance);
         }
 
-        // Directories holding binaries Giles runs may be read but not written by any plugin.
+        // Directories holding binaries Doozers runs may be read but not written by any plugin.
         let toolset_refs: Vec<&ToolsetInstance> = toolsets.values().collect();
         toolset::check_binary_dirs(
             file,
@@ -279,7 +281,7 @@ impl Config {
             environments.keys().map(InstanceName::as_str).collect();
         let (agents, agent_unknown) = load_agents(root, &provider_names, &environment_names)?;
 
-        // In file order, as they are logged: `giles.toml`, then each agent's file.
+        // In file order, as they are logged: `doozers.toml`, then each agent's file.
         let mut unknown_keys: Vec<UnknownKey> = unknown
             .into_iter()
             .chain(ctx.unknown.into_inner())
@@ -302,7 +304,7 @@ impl Config {
         })
     }
 
-    /// The `[toolset.<name>]` tables of `giles.toml` with `url`, in file order. Loading ignores
+    /// The `[toolset.<name>]` tables of `doozers.toml` with `url`, in file order. Loading ignores
     /// them (remote toolsets are stored in the database); `doozers serve` logs each at startup.
     pub fn ignored_toolset_tables(&self) -> &[IgnoredToolsetTable] {
         &self.ignored_toolsets
@@ -312,7 +314,7 @@ impl Config {
     /// `agents/<id>/` under `root`, exactly as [`load`](Self::load) validates each agent at
     /// startup: the id as a directory name, every key, the models against this configuration's
     /// provider instances, the environments against its environment instances, and job prompt
-    /// files in the agent's directory. Keys Giles doesn't recognize are ignored, as at startup.
+    /// files in the agent's directory. Keys Doozers doesn't recognize are ignored, as at startup.
     /// Reads nothing else and writes nothing; the web UI checks an agent it creates with this
     /// before writing it.
     ///
@@ -346,8 +348,8 @@ impl Config {
 }
 
 /// Loads every agent: each directory in `agents/` whose name doesn't start with `.`. Files there
-/// are ignored. Also returns the keys of their `agent.toml` files that Giles doesn't recognize, by
-/// agent id, then in file order.
+/// are ignored. Also returns the keys of their `agent.toml` files that Doozers doesn't recognize,
+/// by agent id, then in file order.
 fn load_agents(
     root: &DataRoot,
     providers: &BTreeSet<&str>,

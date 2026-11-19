@@ -81,7 +81,7 @@ pub(super) async fn authenticate(
             return error_page(
                 StatusCode::FORBIDDEN,
                 "Not allowed",
-                "The proxy in front of Giles logged you in as someone Giles doesn't know. The \
+                "The proxy in front of Doozers logged you in as someone Doozers doesn't know. The \
                  operator can add your identity to `[owner] identities` as `web:<id>`; the log \
                  shows the id.",
             );

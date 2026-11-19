@@ -1,12 +1,12 @@
--- Giles memory database schema version 1 (data/agents/<agent>/memory.db). It has its own
--- migration list and user_version, separate from giles.db. Docs/technical/storage.md describes
+-- Doozers memory database schema version 1 (data/agents/<agent>/memory.db). It has its own
+-- migration list and user_version, separate from doozers.db. Docs/technical/storage.md describes
 -- every table.
 -- Conventions: times are Unix milliseconds (INTEGER), booleans are 0 or 1.
 
 -- What an agent remembers. A memory is visible to every session when shared; otherwise only to
 -- sessions of its owner: a user, or one group conversation. The owner is recorded with every
 -- memory (also a shared one, as its author). Config jobs have no requester, so they own nothing:
--- owner_kind 'none', which only shared memories can have. source_session is the giles.db session
+-- owner_kind 'none', which only shared memories can have. source_session is the doozers.db session
 -- the memory was written in. It is only recorded: that database is another file, so it can't be
 -- a foreign key.
 CREATE TABLE memories (

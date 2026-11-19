@@ -12,7 +12,7 @@ use crate::backend::WaEvent;
 use crate::config::Link;
 
 /// The advice that ends most error messages: restarting the plugin (the admin page's **Restart**
-/// button, or restarting Giles) starts the client again, which is how a new QR code is requested.
+/// button, or restarting Doozers) starts the client again, which is how a new QR code is requested.
 const RESTART: &str = "Restart this plugin to try again.";
 
 /// The status a client event changes the connection to, or `None` if it changes nothing the

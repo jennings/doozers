@@ -1,6 +1,6 @@
 //! The Docker backend against a real Docker API socket (Docker, or Podman's compatible API). Every
-//! test skips, saying why, when no socket answers; set `GILES_REQUIRE_DOCKER=1` to fail instead.
-//! The Linux helper is cross-built for the engine's architecture (`GILES_HELPER_DIR` names a
+//! test skips, saying why, when no socket answers; set `DOOZERS_REQUIRE_DOCKER=1` to fail instead.
+//! The Linux helper is cross-built for the engine's architecture (`DOOZERS_HELPER_DIR` names a
 //! directory that already has it).
 
 mod support;
@@ -138,7 +138,7 @@ async fn create_refuses_images_outside_the_allowlist_and_bad_options() {
 #[tokio::test]
 async fn create_then_exec_streams_output_and_reports_the_exit() {
     let (_, scope) = scope!("exec", |mut c: Config| {
-        c.env.insert("GILES_TEST_VAR".into(), "hello".into());
+        c.env.insert("DOOZERS_TEST_VAR".into(), "hello".into());
         c
     });
     let workspace = scope
@@ -167,7 +167,7 @@ async fn create_then_exec_streams_output_and_reports_the_exit() {
     let ran = scope
         .run(
             "w1",
-            "pwd; echo $HOME; echo $GILES_TEST_VAR; id -u; ls -d /workspace/.home",
+            "pwd; echo $HOME; echo $DOOZERS_TEST_VAR; id -u; ls -d /workspace/.home",
         )
         .await;
     assert_eq!(
@@ -582,7 +582,7 @@ async fn a_container_removed_outside_is_recreated_with_its_files() {
         .find(|c| {
             c.labels
                 .as_ref()
-                .and_then(|l| l.get("giles.instance"))
+                .and_then(|l| l.get("doozers.instance"))
                 .map(String::as_str)
                 == Some(scope_instance(&scope).as_str())
         })
@@ -626,7 +626,7 @@ async fn a_container_removed_outside_is_recreated_with_its_files() {
     ));
 }
 
-/// The instance name behind a scope: its workspaces' `giles.instance` label.
+/// The instance name behind a scope: its workspaces' `doozers.instance` label.
 fn scope_instance(scope: &support::Scope) -> String {
     scope.instance.clone()
 }
@@ -646,7 +646,7 @@ async fn concurrent_starts_recreate_the_container_once() {
         .find(|c| {
             c.labels
                 .as_ref()
-                .and_then(|l| l.get("giles.instance"))
+                .and_then(|l| l.get("doozers.instance"))
                 .map(String::as_str)
                 == Some(scope_instance(&scope).as_str())
         })
@@ -677,7 +677,7 @@ async fn delete_removes_the_container_and_volume_and_is_repeatable() {
     let (_, scope) = scope!("delete");
     scope.workspace("w1").await;
     scope.workspace("w2").await;
-    let label = format!("giles.instance={}", scope_instance(&scope));
+    let label = format!("doozers.instance={}", scope_instance(&scope));
     assert_eq!(labeled(&scope.docker, &label).await, (2, 2));
 
     scope.env.delete_workspace(&wid("w1")).await.unwrap();
@@ -889,7 +889,7 @@ async fn containers_get_the_configured_limits_and_nothing_extra() {
         .await
         .unwrap()
         .into_iter()
-        .find(|c| c.labels.as_ref().and_then(|l| l.get("giles.instance")) == Some(&instance))
+        .find(|c| c.labels.as_ref().and_then(|l| l.get("doozers.instance")) == Some(&instance))
         .unwrap();
     assert_eq!(container.state, Some(ContainerSummaryStateEnum::RUNNING));
     let inspect = scope
@@ -910,10 +910,10 @@ async fn containers_get_the_configured_limits_and_nothing_extra() {
     assert!(host.cap_add.unwrap_or_default().is_empty());
     assert!(host.devices.unwrap_or_default().is_empty());
     let labels = inspect.config.unwrap().labels.unwrap();
-    assert_eq!(labels["giles.workspace"], "w1");
+    assert_eq!(labels["doozers.workspace"], "w1");
     assert!(
-        labels["giles.image-digest"].starts_with("docker.io/library/alpine@sha256:")
-            || labels["giles.image-digest"].starts_with("sha256:"),
+        labels["doozers.image-digest"].starts_with("docker.io/library/alpine@sha256:")
+            || labels["doozers.image-digest"].starts_with("sha256:"),
         "{labels:?}"
     );
     let listed = scope.env.list_workspaces().await.unwrap();
@@ -933,7 +933,8 @@ async fn containers_get_the_configured_limits_and_nothing_extra() {
 #[tokio::test]
 async fn connecting_without_a_helper_for_the_engine_fails_clearly() {
     let Some(harness) = harness() else { return };
-    let empty = std::env::temp_dir().join(format!("giles-empty-helper-dir-{}", std::process::id()));
+    let empty =
+        std::env::temp_dir().join(format!("doozers-empty-helper-dir-{}", std::process::id()));
     std::fs::create_dir_all(&empty).unwrap();
     let config = Config {
         helper_dir: Some(empty),
@@ -1052,7 +1053,7 @@ async fn an_image_without_a_shell_is_refused_and_leaves_nothing_behind() {
         matches!(&error, Error::InvalidRequest(m) if m.contains("/bin/sh")),
         "{error:?}"
     );
-    let label = format!("giles.instance={}", scope_instance(&scope));
+    let label = format!("doozers.instance={}", scope_instance(&scope));
     assert_eq!(labeled(&scope.docker, &label).await, (0, 0));
     assert!(
         scope

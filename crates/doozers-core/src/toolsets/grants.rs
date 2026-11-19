@@ -289,7 +289,7 @@ mod tests {
     impl Setup {
         /// The data root in the home directory, as by default.
         fn new() -> Self {
-            Self::with_root("home/.giles")
+            Self::with_root("home/.doozers")
         }
 
         /// The data root at `root`, relative to the temporary directory; home is `home`.
@@ -397,7 +397,7 @@ mod tests {
     fn a_prefix_containing_the_data_root_narrows_to_the_directory() {
         let s = Setup::new();
         let base = s.base();
-        // `home/bin/server`: its prefix `home` contains the data root `home/.giles`.
+        // `home/bin/server`: its prefix `home` contains the data root `home/.doozers`.
         let found = s.file("home/bin/server", "");
         let plan = s.plan(&found, &|_| None);
         assert_eq!(plan.grants, [base.join("home/bin")]);
@@ -406,7 +406,7 @@ mod tests {
     #[test]
     fn a_binary_inside_the_data_root_gets_no_grant() {
         let s = Setup::new();
-        let found = s.file("home/.giles/bin/server", "");
+        let found = s.file("home/.doozers/bin/server", "");
         let plan = s.plan(&found, &|_| None);
         assert!(plan.grants.is_empty(), "{plan:?}");
     }
@@ -415,7 +415,7 @@ mod tests {
     fn the_home_directory_is_never_a_prefix() {
         // The data root outside home, so only the home rule stops `home/bin/server` from
         // granting all of `home`.
-        let s = Setup::with_root("srv/giles");
+        let s = Setup::with_root("srv/doozers");
         let base = s.base();
         let found = s.file("home/bin/server", "");
         let plan = s.plan(&found, &|_| None);

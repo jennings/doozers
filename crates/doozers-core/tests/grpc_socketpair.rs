@@ -88,7 +88,7 @@ fn bearer_value(token: &str) -> MetadataValue<Ascii> {
 // are a few bytes, so the message limits need this; it goes through the same `tonic::server::Grpc`
 // and `tonic_prost::ProstCodec` path generated services use, without codegen.
 
-/// Request and response of `giles.test.Bulk/Exchange`.
+/// Request and response of `doozers.test.Bulk/Exchange`.
 #[derive(Clone, PartialEq, prost::Message)]
 struct Payload {
     /// Length of `data` the server puts in its reply.
@@ -129,7 +129,7 @@ struct Bulk {
 }
 
 impl NamedService for Bulk {
-    const NAME: &'static str = "giles.test.Bulk";
+    const NAME: &'static str = "doozers.test.Bulk";
 }
 
 impl Service<http::Request<Body>> for Bulk {
@@ -261,7 +261,7 @@ async fn bulk_exchange(
         .ready()
         .await
         .map_err(|e| Status::unavailable(e.to_string()))?;
-    let path = http::uri::PathAndQuery::from_static("/giles.test.Bulk/Exchange");
+    let path = http::uri::PathAndQuery::from_static("/doozers.test.Bulk/Exchange");
     let codec = ProstCodec::<Payload, Payload>::default();
     let response = client.unary(Request::new(payload), path, codec).await?;
     Ok(response.into_inner())

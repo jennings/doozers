@@ -1,4 +1,4 @@
-//! The plugin's configuration: the `[environment.<name>.config]` table of `giles.toml`, or the
+//! The plugin's configuration: the `[environment.<name>.config]` table of `doozers.toml`, or the
 //! `[config]` table of a remote plugin's own config file.
 
 use std::collections::BTreeMap;
@@ -304,7 +304,7 @@ mod tests {
             cpus = 1.5
             pids = 512
             network = "none"
-            helper_dir = "/opt/giles"
+            helper_dir = "/opt/doozers"
 
             [env]
             CI = "1"
@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(settings.env, ["CI=1"]);
         assert_eq!(
             settings.helper_dir.as_deref(),
-            Some(Path::new("/opt/giles"))
+            Some(Path::new("/opt/doozers"))
         );
         assert_eq!(settings.registries["docker.io"].username, "me");
     }

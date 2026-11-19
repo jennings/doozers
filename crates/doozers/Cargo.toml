@@ -1,6 +1,6 @@
 [package]
 name = "doozers"
-description = "The Giles daemon binary and its command-line interface."
+description = "The Doozers daemon binary and its command-line interface."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,7 +25,7 @@ doozers-core.workspace = true
 # Timestamp conversions for the admin CLI commands.
 doozers-plugin-sdk = { workspace = true, default-features = false }
 doozers-proto.workspace = true
-# The database, for `giles <kind> rename`.
+# The database, for `doozers <kind> rename`.
 doozers-store.workspace = true
 doozers-types.workspace = true
 jiff = { workspace = true, features = ["tz-system"] }

@@ -2,12 +2,12 @@
 //!
 //! The URLs these requests go to (the protected-resource and authorization server metadata, the
 //! token and registration endpoints) come from the MCP server, so a malicious or compromised
-//! server could aim them at the network Giles runs in. Public addresses are always allowed. A
+//! server could aim them at the network Doozers runs in. Public addresses are always allowed. A
 //! loopback or private address only when the MCP server's own URL names one: a loopback or
 //! private IP literal, or `localhost`. What the MCP server's host name resolves to never widens
 //! this, since whoever runs the server may control that too. Link-local (cloud instance metadata),
 //! unspecified, broadcast, multicast, and reserved addresses are never allowed. The rule is the one
-//! `rmcp` applies with its own HTTP client, which Giles doesn't use.
+//! `rmcp` applies with its own HTTP client, which Doozers doesn't use.
 //!
 //! Hosts of proxies set in the environment (`HTTPS_PROXY` and the rest) aren't filtered: a
 //! proxied request resolves only the proxy, and the proxy resolves the target.

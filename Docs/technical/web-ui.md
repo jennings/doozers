@@ -1,8 +1,8 @@
 # Web interface design
 
-This page is the design system of Giles's web interface: how a page is laid out, which colors, type,
-and spacing it uses, which components it's built from, and how it behaves. Build every new page from
-it. The [web channel](web-channel.md) page covers routes, handlers, and templates; the
+This page is the design system of Doozers' web interface: how a page is laid out, which colors,
+type, and spacing it uses, which components it's built from, and how it behaves. Build every new
+page from it. The [web channel](web-channel.md) page covers routes, handlers, and templates; the
 [HTTP server](http.md) page covers the layout template, assets, and the Content Security Policy.
 
 ## Sources
@@ -13,13 +13,13 @@ routes) need per-user identity and aren't built.
 
 The implementation differs from the boards on purpose in four ways:
 
-- The boards load Inter and Space Grotesk from Google Fonts. Giles uses the system font stack: the
+- The boards load Inter and Space Grotesk from Google Fonts. Doozers uses the system font stack: the
   CSP allows no third-party requests, and we don't vendor fonts.
-- The boards are dark only. Giles also has a light theme, derived from the same roles, for an OS
+- The boards are dark only. Doozers also has a light theme, derived from the same roles, for an OS
   that prefers light.
 - The sidebar footer has an initial badge next to the user's name.
-- The boards style with inline `style=""`. Giles can't: the CSP blocks inline styles, so every rule
-  is a class in `crates/doozers-core/assets/giles.css`.
+- The boards style with inline `style=""`. Doozers can't: the CSP blocks inline styles, so every
+  rule is a class in `crates/doozers-core/assets/doozers.css`.
 
 ## Principles
 
@@ -130,8 +130,8 @@ page.
 
 From top to bottom:
 
-1. The brand: a 30 px square badge with radius 8 px, the accent fill, and a white "G", then "Giles"
-   at 18 px, weight 600. It links to `/`.
+1. The brand: a 30 px square badge with radius 8 px, the accent fill, and a white "G", then
+   "Doozers" at 18 px, weight 600. It links to `/`.
 2. Navigation groups. Each has a label (11 px, uppercase, 0.08em tracking, faint) and links 40 px
    tall with 12 px side padding and radius 8 px. The current page's link has the "nav current" fill,
    white text, weight 600, and `aria-current="page"`. The others are secondary text with no fill.
@@ -335,7 +335,7 @@ Control heights:
 
 ## Components
 
-Each component is a class in `giles.css`. Reuse these. Add a class only for something new, and
+Each component is a class in `doozers.css`. Reuse these. Add a class only for something new, and
 document it here.
 
 ### Shell and page
@@ -458,7 +458,7 @@ whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
   admin pages' state classes map onto these: `.pill-unknown` is neutral and `.pill-bad` is warn.
 - `.banner` is 14 px text, radius 10 px, and 12 px 16 px padding:
   - `.banner-info` (`role="status"`): the result of an action.
-  - `.banner-warn`: something the owner should fix, such as leftover `[[routes]]` in giles.toml.
+  - `.banner-warn`: something the owner should fix, such as leftover `[[routes]]` in doozers.toml.
   - `.banner-error` (`role="alert"`): a failed post or a configuration error. It has the warn border
     and can start with a `<strong>` title in warn text.
 

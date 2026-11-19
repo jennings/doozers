@@ -1,4 +1,4 @@
-//! Media between Giles and MCP servers (PLAN sections 5 and 7.10): images, audio, and blob
+//! Media between Doozers and MCP servers (PLAN sections 5 and 7.10): images, audio, and blob
 //! resources in tool results are stored in the blob store and become media blocks, and a stdio
 //! server gets `{"$media": "<id>"}` inputs as files in its `TMPDIR` ([`super::files`]).
 
@@ -102,7 +102,7 @@ mod tests {
 
     async fn blobs() -> (tempfile::TempDir, BlobStore) {
         let dir = tempfile::tempdir().unwrap();
-        let db = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let db = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let blobs = BlobStore::open(dir.path().join("blobs"), db).await.unwrap();
         (dir, blobs)
     }

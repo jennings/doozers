@@ -1,7 +1,7 @@
 //! `doozers toolset`: list, show, set, remove, rename, and restart the MCP toolsets of the running
 //! daemon, over the admin service's `ListToolsets`, `GetToolset`, `SetToolset`, `RemoveToolset`,
-//! `RenameToolset`, and `RestartPlugin` (PLAN section 7.10). With Giles stopped, `rename` works on
-//! the data root instead, like `doozers channel rename` ([`crate::rename`]).
+//! `RenameToolset`, and `RestartPlugin` (PLAN section 7.10). With Doozers stopped, `rename` works
+//! on the data root instead, like `doozers channel rename` ([`crate::rename`]).
 //!
 //! `show` prints a spec as TOML with an `# updated_at = <time>` comment, and `set` sends that time
 //! back as `expected_updated_at`, so `show`, an edit, and `set` can't overwrite a change made
@@ -103,11 +103,12 @@ fn remove(home: Option<&Path>, name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Renames a toolset. With Giles stopped, that is the offline rename of any toolset, `giles.toml`'s
-/// or stored, as `doozers channel rename` does for a channel. With Giles running, the daemon
-/// renames a stored toolset and says which agents' globs were rewritten (a toolset that couldn't
-/// start under its new name is reported on standard error: the rename is done), and refuses a
-/// `giles.toml` toolset. Whether it runs is whether it holds the data root's lock.
+/// Renames a toolset. With Doozers stopped, that is the offline rename of any toolset,
+/// `doozers.toml`'s or stored, as `doozers channel rename` does for a channel. With Doozers
+/// running, the daemon renames a stored toolset and says which agents' globs were rewritten (a
+/// toolset that couldn't start under its new name is reported on standard error: the rename is
+/// done), and refuses a `doozers.toml` toolset. Whether it runs is whether it holds the data root's
+/// lock.
 fn rename(home: Option<&Path>, args: &RenameArgs) -> anyhow::Result<()> {
     match rename::lock(home)? {
         Core::Stopped(stopped) => stopped.rename(Kind::Toolset, args),
@@ -218,11 +219,11 @@ fn with_hint(status: Status, sent_updated_at: bool) -> Status {
 }
 
 /// The spec as TOML, after the `# updated_at` comment for `set` to send back. A toolset of
-/// `giles.toml` has no stored spec.
+/// `doozers.toml` has no stored spec.
 fn format_show(toolset: &pb::Toolset) -> anyhow::Result<String> {
-    if toolset.source() == pb::ToolsetSource::GilesToml {
+    if toolset.source() == pb::ToolsetSource::DoozersToml {
         bail!(
-            "toolset `{}` is configured in giles.toml, which has the spec: edit it there",
+            "toolset `{}` is configured in doozers.toml, which has the spec: edit it there",
             toolset.name
         );
     }
@@ -278,7 +279,7 @@ fn format_list(toolsets: &[pb::Toolset], tz: &TimeZone) -> String {
         .map(|toolset| {
             let source = match toolset.source() {
                 pb::ToolsetSource::Stored => "stored",
-                pb::ToolsetSource::GilesToml => "giles.toml",
+                pb::ToolsetSource::DoozersToml => "doozers.toml",
                 pb::ToolsetSource::Unspecified => "unknown",
             };
             [
@@ -332,7 +333,7 @@ mod tests {
             source: if updated.is_some() {
                 pb::ToolsetSource::Stored
             } else {
-                pb::ToolsetSource::GilesToml
+                pb::ToolsetSource::DoozersToml
             }
             .into(),
             spec_toml: spec.map(str::to_owned),
@@ -373,7 +374,7 @@ mod tests {
     #[test]
     fn a_toolset_without_a_spec_is_not_shown() {
         let err = format_show(&toolset("github", None, None)).unwrap_err();
-        assert!(err.to_string().contains("giles.toml"), "{err}");
+        assert!(err.to_string().contains("doozers.toml"), "{err}");
 
         let mut damaged = toolset("files", None, Some(1));
         damaged.failure = Some("the stored spec can't be read: url: invalid type".into());
@@ -460,10 +461,10 @@ mod tests {
         assert_eq!(
             text,
             "\
-NAME    SOURCE      UPDATED                  PROBLEM
-files   stored      2027-01-15 08:00:05 UTC
-github  giles.toml  -
-notes   stored      2027-01-15 08:00:07 UTC  auth.bearer: no secret \"notes\" in secrets.toml
+NAME    SOURCE        UPDATED                  PROBLEM
+files   stored        2027-01-15 08:00:05 UTC
+github  doozers.toml  -
+notes   stored        2027-01-15 08:00:07 UTC  auth.bearer: no secret \"notes\" in secrets.toml
 "
         );
         assert_eq!(format_list(&[], &TimeZone::UTC), "No toolsets.\n");

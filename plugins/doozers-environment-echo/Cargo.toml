@@ -1,6 +1,6 @@
 [package]
 name = "doozers-environment-echo"
-description = "A test-only Giles environment plugin: in-memory workspaces and scripted commands."
+description = "A test-only Doozers environment plugin: in-memory workspaces and scripted commands."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

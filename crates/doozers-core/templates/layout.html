@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {#- htmx would otherwise inject an inline <style> for its request indicator, which the
-    Content-Security-Policy blocks; giles.css carries those rules instead. #}
+    Content-Security-Policy blocks; doozers.css carries those rules instead. #}
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
-<title>{% block title %}Giles{% endblock %}</title>
+<title>{% block title %}Doozers{% endblock %}</title>
 <link rel="stylesheet" href="{{ crate::http::assets::stylesheet_path() }}">
 <script src="{{ crate::http::assets::HTMX.path }}" defer></script>
 <script src="{{ crate::http::assets::HTMX_SSE.path }}" defer></script>
@@ -16,7 +16,7 @@
 {%- block body %}
 <main class="standalone">
 <section class="card solo">
-<a class="brand" href="/"><span class="brand-mark" aria-hidden="true">G</span> Giles</a>
+<a class="brand" href="/"><span class="brand-mark" aria-hidden="true">D</span> Doozers</a>
 {% block content %}{% endblock %}
 </section>
 </main>

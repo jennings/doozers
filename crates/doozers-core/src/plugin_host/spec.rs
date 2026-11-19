@@ -1,4 +1,4 @@
-//! The sandbox spec for one plugin launch: the instance's grants from `giles.toml` plus PLAN
+//! The sandbox spec for one plugin launch: the instance's grants from `doozers.toml` plus PLAN
 //! section 12.4's defaults, and the handshake environment of section 7.4.
 
 use std::path::Path;
@@ -8,7 +8,7 @@ use doozers_proto::handshake::{MAGIC_COOKIE, MAGIC_COOKIE_ENV, PROTOCOL_MAJOR, P
 use crate::config::{NetworkGrant, Sandbox};
 use crate::sandbox::{Network, Spec};
 
-/// The protocol majors the core offers in `GILES_PLUGIN_PROTOCOLS`.
+/// The protocol majors the core offers in `DOOZERS_PLUGIN_PROTOCOLS`.
 pub(crate) const OFFERED_PROTOCOLS: [u32; 1] = [PROTOCOL_MAJOR];
 
 /// The spec for launching `binary` (absolute, symlinks resolved) with `data_dir` under `sandbox`.
@@ -38,7 +38,7 @@ pub(crate) fn launch_spec(data_dir: &Path, binary: &Path, sandbox: &Sandbox) -> 
     spec
 }
 
-/// `GILES_PLUGIN_PROTOCOLS`: the offered majors, comma-separated.
+/// `DOOZERS_PLUGIN_PROTOCOLS`: the offered majors, comma-separated.
 fn offered_protocols() -> String {
     OFFERED_PROTOCOLS
         .iter()

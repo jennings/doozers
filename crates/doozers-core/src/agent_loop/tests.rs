@@ -318,7 +318,7 @@ impl Harness {
             std::fs::write(path, contents).unwrap();
         };
         write(
-            "giles.toml",
+            "doozers.toml",
             "[owner]\nidentities = [\"fake:owner\"]\ntimezone = \"America/Los_Angeles\"\n\
              [provider.anthropic]\nconfig = { api_key = { secret = \"anthropic\" } }\n\
              [provider.ollama]\ncomponent = \"openai\"\n\
@@ -338,7 +338,7 @@ impl Harness {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -377,7 +377,7 @@ impl Harness {
                 }),
             )
             .unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let (session, _) = store
             .open_session(
                 SessionKey {
@@ -663,7 +663,7 @@ async fn a_tool_round_trip_fills_the_slot_and_asks_again() {
     h.provider.push(response(
         vec![
             Block::text("Let me look."),
-            tool_use("t1", "github__list_issues", json!({"repo": "giles"})),
+            tool_use("t1", "github__list_issues", json!({"repo": "doozers"})),
         ],
         StopReason::ToolUse,
     ));
@@ -671,14 +671,14 @@ async fn a_tool_round_trip_fills_the_slot_and_asks_again() {
     let (turn, _) = h.turn(&["Any issues?"]);
     assert_eq!(h.agent_loop().run_turn(turn).await, TurnOutcome::Completed);
 
-    let ran = "list_issues ran with {\"repo\":\"giles\"}";
+    let ran = "list_issues ran with {\"repo\":\"doozers\"}";
     assert_eq!(
         h.transcript().await,
         [
             user("Any issues?"),
             assistant(vec![
                 Block::text("Let me look."),
-                tool_use("t1", "github__list_issues", json!({"repo": "giles"})),
+                tool_use("t1", "github__list_issues", json!({"repo": "doozers"})),
             ]),
             result("t1", ran, false),
             assistant(vec![Block::text("There are two.")]),
@@ -693,7 +693,7 @@ async fn a_tool_round_trip_fills_the_slot_and_asks_again() {
     let (call, ctx) = &calls[0];
     assert_eq!(call.id, "t1");
     assert_eq!(call.name, "list_issues");
-    assert_eq!(call.input, json!({"repo": "giles"}));
+    assert_eq!(call.input, json!({"repo": "doozers"}));
     assert_eq!(ctx.agent.as_str(), AGENT);
     assert_eq!(ctx.requester, Some(owner()));
     let conversation = ctx.conversation.as_ref().unwrap();

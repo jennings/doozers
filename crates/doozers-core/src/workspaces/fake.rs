@@ -108,7 +108,7 @@ impl Fake {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Puts a workspace there as if made outside Giles, `age` ago.
+    /// Puts a workspace there as if made outside Doozers, `age` ago.
     pub(crate) fn insert(&self, id: &str, age: Duration, running: bool) {
         let created_at = self.clock.now().checked_sub(age).unwrap();
         self.state().workspaces.insert(

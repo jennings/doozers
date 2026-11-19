@@ -118,7 +118,7 @@ async fn the_provider_gets_accepted_media_as_content_and_the_rest_as_references(
         std::fs::write(path, contents).unwrap();
     };
     write(
-        "giles.toml",
+        "doozers.toml",
         &format!(
             "[owner]\nidentities = [\"fake:owner\"]\ntimezone = \"UTC\"\n\
              [provider.anthropic]\nconfig = {{ api_key = \"sk-test\", base_url = \"{}\" }}\n\
@@ -135,7 +135,7 @@ async fn the_provider_gets_accepted_media_as_content_and_the_rest_as_references(
         &root,
         &LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..LoadOptions::default()
         },
     )

@@ -1,5 +1,5 @@
-//! `doozers-channel-discord`: the Giles Discord channel plugin. A bot account that receives and
-//! sends direct messages over the Discord Gateway and REST API. Run by Giles, not by hand. See
+//! `doozers-channel-discord`: the Doozers Discord channel plugin. A bot account that receives and
+//! sends direct messages over the Discord Gateway and REST API. Run by Doozers, not by hand. See
 //! `Docs/technical/discord.md`.
 //!
 //! The crate is a library and a binary so that its integration tests can reach the channel and the

@@ -32,7 +32,7 @@ const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 
 /// How a remote plugin checks the `authorization: Bearer <token>` the core sends on every call
-/// (the instance's `auth` in the core's `giles.toml`). Calls that fail the check get
+/// (the instance's `auth` in the core's `doozers.toml`). Calls that fail the check get
 /// `UNAUTHENTICATED`.
 #[derive(Clone)]
 #[non_exhaustive]
@@ -121,8 +121,8 @@ impl fmt::Debug for RemoteServer {
 
 impl RemoteServer {
     /// Serves on `listener`, keeping the plugin's state in `data_dir` (created if missing; the
-    /// SDK's own state goes in its `giles-sdk/` subdirectory, as with a launched plugin's
-    /// `GILES_PLUGIN_DATA`), and accepting the calls `auth` allows. Plain TCP until
+    /// SDK's own state goes in its `doozers-sdk/` subdirectory, as with a launched plugin's
+    /// `DOOZERS_PLUGIN_DATA`), and accepting the calls `auth` allows. Plain TCP until
     /// [`tls`](Self::tls); the core refuses plain TCP to a host other than its own unless the
     /// instance sets `insecure = true`. Runs until `SIGINT` or `SIGTERM` unless
     /// [`shutdown_on`](Self::shutdown_on) says otherwise.

@@ -40,7 +40,7 @@ fn defaults() {
     assert_eq!(settings.port, TLS_PORT);
     assert!(settings.tls);
     assert_eq!(settings.username, "giles");
-    assert_eq!(settings.realname, "Giles");
+    assert_eq!(settings.realname, "Doozers");
     assert_eq!(settings.namespace(), "irc:example");
     assert!(!settings.mask_identities);
     assert!(settings.channels.is_empty());

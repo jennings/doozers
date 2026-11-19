@@ -126,7 +126,7 @@ impl WebApp {
         }
     }
 
-    /// The web application of the runtime's web channel, if `giles.toml` configures one. Also
+    /// The web application of the runtime's web channel, if `doozers.toml` configures one. Also
     /// starts deleting expired web sessions every hour, until `shutdown`.
     pub fn from_runtime(runtime: &Runtime, shutdown: CancellationToken) -> Option<Self> {
         let channel = runtime.registry.web_channel()?;
@@ -224,7 +224,7 @@ pub(super) fn internal_error(what: &str, err: &dyn std::error::Error) -> Respons
     error_page(
         StatusCode::INTERNAL_SERVER_ERROR,
         "Something went wrong",
-        "Giles couldn't load this page. The error is in its log.",
+        "Doozers couldn't load this page. The error is in its log.",
     )
 }
 
@@ -768,7 +768,7 @@ fn encoded_filename(name: &str) -> String {
 
 /// `GET /blobs/<sha256>`: an attachment, for the logged-in user. Served with its stored media
 /// type, `nosniff` (from the security headers), and `Content-Security-Policy: sandbox`, and as a
-/// download unless it's a raster image, so a stored HTML or SVG blob can never run in Giles's
+/// download unless it's a raster image, so a stored HTML or SVG blob can never run in Doozers'
 /// origin.
 async fn blob(State(app): State<WebApp>, user: WebUser, Path(id): Path<String>) -> Response {
     let Ok(id) = id.parse::<MediaId>() else {

@@ -1,9 +1,9 @@
-//! The data root (`GILES_HOME`): where everything lives, and creating its layout (PLAN section
+//! The data root (`DOOZERS_HOME`): where everything lives, and creating its layout (PLAN section
 //! 11.1).
 //!
-//! [`DataRoot`] is the one place that knows the layout. Every other part of Giles asks it for paths
-//! instead of joining strings onto the root. Constructing a `DataRoot` does no I/O, so a CLI client
-//! can compute the same socket paths as the daemon; [`DataRoot::create_layout`] creates the
+//! [`DataRoot`] is the one place that knows the layout. Every other part of Doozers asks it for
+//! paths instead of joining strings onto the root. Constructing a `DataRoot` does no I/O, so a CLI
+//! client can compute the same socket paths as the daemon; [`DataRoot::create_layout`] creates the
 //! directories.
 //!
 //! Unix socket paths are short (`sun_path` is 104 bytes on macOS and 108 on Linux, including the
@@ -21,10 +21,10 @@ use std::path::{Component, Path, PathBuf};
 use crate::config::Kind;
 
 /// The environment variable that selects the data root.
-pub const GILES_HOME_ENV: &str = "GILES_HOME";
+pub const DOOZERS_HOME_ENV: &str = "DOOZERS_HOME";
 
-/// The data root's directory name under `$HOME` when `GILES_HOME` is not set.
-pub const DEFAULT_DIR_NAME: &str = ".giles";
+/// The data root's directory name under `$HOME` when `DOOZERS_HOME` is not set.
+pub const DEFAULT_DIR_NAME: &str = ".doozers";
 
 /// Size of `sockaddr_un.sun_path`, including the terminating NUL.
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -37,7 +37,7 @@ const SUN_PATH_LEN: usize = 104;
 /// Linux.
 pub const MAX_SOCKET_PATH_LEN: usize = SUN_PATH_LEN - 1;
 
-/// Mode of every directory Giles creates in the data root, and of `run/` and the socket directory
+/// Mode of every directory Doozers creates in the data root, and of `run/` and the socket directory
 /// even when they already exist.
 const PRIVATE_DIR_MODE: u32 = 0o700;
 
@@ -50,8 +50,8 @@ const SOCKET_NAMES: [&str; 2] = [ADMIN_SOCKET, PROXY_SOCKET];
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum PathsError {
-    /// Neither an explicit root, `GILES_HOME`, nor `HOME` is set.
-    #[error("cannot locate the data root: neither GILES_HOME nor HOME is set")]
+    /// Neither an explicit root, `DOOZERS_HOME`, nor `HOME` is set.
+    #[error("cannot locate the data root: neither DOOZERS_HOME nor HOME is set")]
     NoHome,
     /// The data root was given as an empty path.
     #[error("the data root path is empty")]
@@ -68,7 +68,7 @@ pub enum PathsError {
     /// Neither `<root>/run/` nor the `$TMPDIR` fallback gives a socket path short enough to bind.
     #[error(
         "socket path {} is longer than {MAX_SOCKET_PATH_LEN} bytes, and so is the fallback {}; \
-         choose a shorter GILES_HOME or TMPDIR",
+         choose a shorter DOOZERS_HOME or TMPDIR",
         .run_socket.display(),
         .fallback_socket.display()
     )]
@@ -110,8 +110,8 @@ pub enum PathsError {
     },
 }
 
-/// Chooses the data root path: `explicit` (the `--home` flag) if given, else `giles_home` (the
-/// `GILES_HOME` variable) if set and non-empty, else `$HOME/.giles`.
+/// Chooses the data root path: `explicit` (the `--home` flag) if given, else `doozers_home` (the
+/// `DOOZERS_HOME` variable) if set and non-empty, else `$HOME/.doozers`.
 ///
 /// The result may be relative; [`DataRoot::new`] makes it absolute.
 ///
@@ -121,7 +121,7 @@ pub enum PathsError {
 /// path.
 pub fn resolve_root(
     explicit: Option<&Path>,
-    giles_home: Option<&OsStr>,
+    doozers_home: Option<&OsStr>,
     home: Option<&OsStr>,
 ) -> Result<PathBuf, PathsError> {
     if let Some(path) = explicit {
@@ -130,7 +130,7 @@ pub fn resolve_root(
         }
         return Ok(path.to_path_buf());
     }
-    if let Some(path) = giles_home.filter(|p| !p.is_empty()) {
+    if let Some(path) = doozers_home.filter(|p| !p.is_empty()) {
         return Ok(PathBuf::from(path));
     }
     match home.filter(|p| !p.is_empty()) {
@@ -167,7 +167,7 @@ pub struct DataRoot {
 
 impl DataRoot {
     /// Builds the layout for `root`, choosing the socket directory: `<root>/run/` if every socket
-    /// path there fits in `sun_path`, else `<temp_dir>/giles-<hash of root>/`.
+    /// path there fits in `sun_path`, else `<temp_dir>/doozers-<hash of root>/`.
     ///
     /// `root` is made absolute against the current directory and normalized lexically (repeated
     /// and trailing separators and `.` components dropped; `..` and symlinks kept), so `/a/b`,
@@ -207,16 +207,16 @@ impl DataRoot {
     }
 
     /// Resolves the data root from the process environment: `explicit` (the `--home` flag), then
-    /// `GILES_HOME`, then `$HOME/.giles`, with the socket fallback under `$TMPDIR` (`/tmp` if it is
-    /// unset or empty).
+    /// `DOOZERS_HOME`, then `$HOME/.doozers`, with the socket fallback under `$TMPDIR` (`/tmp` if
+    /// it is unset or empty).
     ///
     /// # Errors
     ///
     /// As [`resolve_root`] and [`DataRoot::new`].
     pub fn from_env(explicit: Option<&Path>) -> Result<Self, PathsError> {
-        let giles_home = std::env::var_os(GILES_HOME_ENV);
+        let doozers_home = std::env::var_os(DOOZERS_HOME_ENV);
         let home = std::env::var_os("HOME");
-        let root = resolve_root(explicit, giles_home.as_deref(), home.as_deref())?;
+        let root = resolve_root(explicit, doozers_home.as_deref(), home.as_deref())?;
         let temp_dir = std::env::temp_dir();
         if temp_dir.as_os_str().is_empty() {
             Self::new(root, Path::new("/tmp"))
@@ -230,9 +230,9 @@ impl DataRoot {
         &self.root
     }
 
-    /// `giles.toml`: core settings, instances, routes, and roles (section 11.2).
+    /// `doozers.toml`: core settings, instances, routes, and roles (section 11.2).
     pub fn config_file(&self) -> PathBuf {
-        self.root.join("giles.toml")
+        self.root.join("doozers.toml")
     }
 
     /// `secrets.toml`, mode 0600 (section 11.2).
@@ -241,7 +241,7 @@ impl DataRoot {
     }
 
     /// `secret.key`, mode 0600: the default key file of the local secret store, which unlocks the
-    /// secrets in `giles.db`.
+    /// secrets in `doozers.db`.
     pub fn secret_key_file(&self) -> PathBuf {
         self.root.join("secret.key")
     }
@@ -299,9 +299,9 @@ impl DataRoot {
         self.root.join("data")
     }
 
-    /// `data/giles.db`: the SQLite database (section 11.4).
+    /// `data/doozers.db`: the SQLite database (section 11.4).
     pub fn database_file(&self) -> PathBuf {
-        self.data_dir().join("giles.db")
+        self.data_dir().join("doozers.db")
     }
 
     /// `data/blobs/`: the content-addressed blob store (section 11.5).
@@ -332,7 +332,7 @@ impl DataRoot {
     }
 
     /// `trash/`: what the web UI took out of service and kept, in a sub-directory per kind
-    /// (`trash/agents/<agent>-<time>/`, a removed agent's directory). Giles creates it when it
+    /// (`trash/agents/<agent>-<time>/`, a removed agent's directory). Doozers creates it when it
     /// first has something to put there, and never reads it. Backups leave it out.
     pub fn trash_dir(&self) -> PathBuf {
         self.root.join("trash")
@@ -349,10 +349,10 @@ impl DataRoot {
         self.run_dir().join("admin.token")
     }
 
-    /// `run/giles.lock`, mode 0600: the running core holds an exclusive `flock` on it, so only
+    /// `run/doozers.lock`, mode 0600: the running core holds an exclusive `flock` on it, so only
     /// one core uses a data root at a time. It holds that core's pid.
     pub fn lock_file(&self) -> PathBuf {
-        self.run_dir().join("giles.lock")
+        self.run_dir().join("doozers.lock")
     }
 
     /// `run/pids/<kind>/`: the pid files of the instances of `kind` (section 7.4).
@@ -577,9 +577,9 @@ fn checked_name(name: &str) -> Result<&str, PathsError> {
     }
 }
 
-/// `giles-<16 hex digits>`: a stable name for the root's fallback socket directory.
+/// `doozers-<16 hex digits>`: a stable name for the root's fallback socket directory.
 fn fallback_dir_name(root: &Path) -> String {
-    format!("giles-{:016x}", fnv1a64(root.as_os_str().as_bytes()))
+    format!("doozers-{:016x}", fnv1a64(root.as_os_str().as_bytes()))
 }
 
 /// 64-bit FNV-1a. Stable across Rust releases (unlike `DefaultHasher`), so a newer CLI finds an
@@ -618,17 +618,17 @@ mod tests {
     }
 
     #[test]
-    fn giles_home_beats_home() {
+    fn doozers_home_beats_home() {
         let root = resolve_root(None, Some(OsStr::new("/env")), Some(OsStr::new("/home/me")));
         assert_eq!(root.unwrap(), Path::new("/env"));
     }
 
     #[test]
-    fn default_is_dot_giles_under_home() {
+    fn default_is_dot_doozers_under_home() {
         let root = resolve_root(None, None, Some(OsStr::new("/home/me")));
-        assert_eq!(root.unwrap(), Path::new("/home/me/.giles"));
+        assert_eq!(root.unwrap(), Path::new("/home/me/.doozers"));
         let root = resolve_root(None, Some(OsStr::new("")), Some(OsStr::new("/home/me")));
-        assert_eq!(root.unwrap(), Path::new("/home/me/.giles"));
+        assert_eq!(root.unwrap(), Path::new("/home/me/.doozers"));
     }
 
     #[test]
@@ -686,13 +686,13 @@ mod tests {
     #[test]
     fn layout_paths() {
         let r = DataRoot::new("/g", Path::new("/tmp")).unwrap();
-        assert_eq!(r.config_file(), Path::new("/g/giles.toml"));
+        assert_eq!(r.config_file(), Path::new("/g/doozers.toml"));
         assert_eq!(r.secrets_file(), Path::new("/g/secrets.toml"));
         assert_eq!(r.agent_dir("ada").unwrap(), Path::new("/g/agents/ada"));
         assert_eq!(r.user_dir("bob").unwrap(), Path::new("/g/users/bob"));
         assert_eq!(r.skills_dir(), Path::new("/g/skills"));
         assert_eq!(r.plugins_dir(), Path::new("/g/plugins"));
-        assert_eq!(r.database_file(), Path::new("/g/data/giles.db"));
+        assert_eq!(r.database_file(), Path::new("/g/data/doozers.db"));
         assert_eq!(r.secret_key_file(), Path::new("/g/secret.key"));
         assert_eq!(r.blobs_dir(), Path::new("/g/data/blobs"));
         assert_eq!(
@@ -702,7 +702,7 @@ mod tests {
         assert_eq!(r.backups_dir(), Path::new("/g/backups"));
         assert_eq!(r.trash_dir(), Path::new("/g/trash"));
         assert_eq!(r.admin_token_file(), Path::new("/g/run/admin.token"));
-        assert_eq!(r.lock_file(), Path::new("/g/run/giles.lock"));
+        assert_eq!(r.lock_file(), Path::new("/g/run/doozers.lock"));
         assert_eq!(
             r.pid_file(Kind::Channel, "irc").unwrap(),
             Path::new("/g/run/pids/channel/irc.pid")
@@ -803,7 +803,7 @@ mod tests {
         let root = root_with_socket_len(MAX_SOCKET_PATH_LEN + 1);
         let r = DataRoot::new(&root, Path::new("/tmp")).unwrap();
         assert!(r.uses_socket_fallback());
-        let dir = format!("/tmp/giles-{:016x}", fnv1a64(root.as_os_str().as_bytes()));
+        let dir = format!("/tmp/doozers-{:016x}", fnv1a64(root.as_os_str().as_bytes()));
         assert_eq!(r.socket_dir(), Path::new(&dir));
         assert_eq!(r.admin_socket(), Path::new(&dir).join("admin.sock"));
         assert_eq!(r.proxy_socket(), Path::new(&dir).join("proxy.sock"));
@@ -1007,7 +1007,7 @@ mod tests {
     #[test]
     fn check_socket_dir_trusts_run() {
         // `run/` is inside the data root; there is nothing to check, even before it exists.
-        let r = DataRoot::new("/nonexistent/giles", Path::new("/tmp")).unwrap();
+        let r = DataRoot::new("/nonexistent/doozers", Path::new("/tmp")).unwrap();
         assert!(!r.uses_socket_fallback());
         r.check_socket_dir().unwrap();
     }

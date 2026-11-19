@@ -25,7 +25,7 @@ use self::support::{FakeServer, MODERN_CAPS, MODERN_REQ, WAIT};
 /// The plugin binary Cargo built for these tests.
 const PLUGIN: &str = env!("CARGO_BIN_EXE_doozers-channel-irc");
 
-/// A data root with the plugin installed and `giles.toml` routing the owner, account `stephen`
+/// A data root with the plugin installed and `doozers.toml` routing the owner, account `stephen`
 /// on network `testnet`, to agent `jeeves`, with channel `testnet` configured by `config`.
 struct Home {
     _dir: tempfile::TempDir,
@@ -67,7 +67,7 @@ impl Home {
             &LoadOptions {
                 builtins: Builtins::V1,
                 env: &env,
-                giles_exe: None,
+                doozers_exe: None,
             },
         )
         .unwrap()
@@ -77,7 +77,7 @@ impl Home {
         // Unsandboxed instances bypass the trampoline.
         Launcher::new(
             self.root.clone(),
-            PathBuf::from("/nonexistent/giles"),
+            PathBuf::from("/nonexistent/doozers"),
             Ok(()),
         )
         .env(|_| None)

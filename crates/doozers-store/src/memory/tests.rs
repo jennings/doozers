@@ -201,20 +201,20 @@ async fn reopening_keeps_the_data_and_does_not_migrate_again() {
 }
 
 #[tokio::test]
-async fn the_schema_version_is_independent_from_giles_db() {
+async fn the_schema_version_is_independent_from_doozers_db() {
     let dir = tempfile::tempdir().unwrap();
-    let giles = Store::open(dir.path().join("giles.db")).await.unwrap();
+    let doozers = Store::open(dir.path().join("doozers.db")).await.unwrap();
     let store = open_in(dir.path()).await;
-    assert_eq!(user_version(&giles).await, SCHEMA_VERSION);
+    assert_eq!(user_version(&doozers).await, SCHEMA_VERSION);
     assert_eq!(user_version(&store.store).await, MEMORY_SCHEMA_VERSION);
     assert!(has_table(&store.store, "memories").await);
     assert!(has_table(&store.store, "memory_search").await);
     assert!(!has_table(&store.store, "sessions").await);
-    assert!(!has_table(&giles, "memories").await);
+    assert!(!has_table(&doozers, "memories").await);
 }
 
 #[tokio::test]
-async fn a_database_from_a_newer_giles_is_refused() {
+async fn a_database_from_a_newer_doozers_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("memory.db");
     let store = MemoryStore::open(&path, OpenOptions::new()).await.unwrap();

@@ -113,7 +113,7 @@ media the model doesn't accept, by `ModelInfo::accepts` (`media::keep_accepted`,
 
 ### Request mapping
 
-| Giles                                          | Messages API                                                                               |
+| Doozers                                        | Messages API                                                                               |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `system` (text blocks only)                    | `system` text blocks, the last with `cache_control`; omitted when empty                    |
 | consecutive messages of the same role          | one message; messages left empty by dropped blocks are skipped first                       |
@@ -176,7 +176,7 @@ of the four breakpoint slots are used.
 It checks the `CompletionEvent` contract instead of trusting the stream: a block starting while
 another is open, a delta or stop for a block that isn't open, a delta of the wrong type, malformed
 JSON, and `message_stop` with a block open or without a stop reason are all `Error::Other`. The
-API's block indexes are matched as given, and Giles' indexes are renumbered from 0.
+API's block indexes are matched as given, and Doozers' indexes are renumbered from 0.
 
 | Messages API event                      | `CompletionEvent`                                                |
 | --------------------------------------- | ---------------------------------------------------------------- |
@@ -220,9 +220,9 @@ the input counts at the end). Every `Usage` event carries the running totals, so
 
 Stop reasons: `end_turn` is `EndTurn`, `tool_use` is `ToolUse`, `max_tokens` and
 `model_context_window_exceeded` are `MaxTokens`, and `refusal` is `Refusal`. `stop_sequence` and
-`pause_turn` are `EndTurn`: Giles sends no stop sequences and configures no server tools, so neither
-should occur; if one does, the turn ends with what was produced. An unknown reason is logged and
-ends the turn.
+`pause_turn` are `EndTurn`: Doozers sends no stop sequences and configures no server tools, so
+neither should occur; if one does, the turn ends with what was produced. An unknown reason is logged
+and ends the turn.
 
 Mid-stream `error` events map by error type: `overloaded_error`, `api_error`, `rate_limit_error`,
 and `timeout_error` are `Error::Unavailable` (retryable); `not_found_error` is `Error::NotFound`;
@@ -347,7 +347,7 @@ right after the same stored reference isn't repeated, and the agent loop filters
 
 ### Request mapping
 
-| Giles                                     | Chat Completions                                                               |
+| Doozers                                   | Chat Completions                                                               |
 | ----------------------------------------- | ------------------------------------------------------------------------------ |
 | `system` (text blocks only)               | one `system` message, the texts joined by blank lines; omitted when empty      |
 | `User` message                            | one `user` message; `content` is a string for a single text, else parts        |

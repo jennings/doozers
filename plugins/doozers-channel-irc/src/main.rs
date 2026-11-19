@@ -1,5 +1,5 @@
-//! `doozers-channel-irc`: the Giles IRC channel plugin. Giles launches it (`socket`); an operator
-//! can run it as a remote plugin (`serve`).
+//! `doozers-channel-irc`: the Doozers IRC channel plugin. Doozers launches it (`socket`); an
+//! operator can run it as a remote plugin (`serve`).
 
 use std::io;
 use std::process::ExitCode;
@@ -14,7 +14,7 @@ async fn main() -> ExitCode {
         .with_writer(io::stderr)
         .with_ansi(false)
         .with_env_filter(
-            EnvFilter::try_from_env("GILES_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_env("DOOZERS_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
     ChannelPlugin::new("irc", env!("CARGO_PKG_VERSION"))

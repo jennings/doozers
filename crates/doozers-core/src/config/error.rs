@@ -289,7 +289,7 @@ pub(crate) fn locate(source: &str, path: &KeyPath) -> Option<Position> {
     found.map(|offset| Position::of_offset(source, offset))
 }
 
-/// A key in a configuration file that Giles doesn't recognize. It is ignored, and reported, so a
+/// A key in a configuration file that Doozers doesn't recognize. It is ignored, and reported, so a
 /// misspelled key doesn't stop startup (a recognized key with a value of the wrong type does).
 ///
 /// Displayed as `<file>:<line>:<column>: unknown key `<key path>` (ignored)`, leaving out the
@@ -334,11 +334,11 @@ impl fmt::Display for UnknownKey {
     }
 }
 
-/// A `[toolset.<name>]` table of `giles.toml` with `url`. Remote toolsets are stored in the
+/// A `[toolset.<name>]` table of `doozers.toml` with `url`. Remote toolsets are stored in the
 /// database and managed in the web UI, so the table is ignored, whatever else it holds, and
 /// reported at every start.
 ///
-/// Displayed as `giles.toml: [toolset.<name>] is ignored: remote toolsets are managed in the web
+/// Displayed as `doozers.toml: [toolset.<name>] is ignored: remote toolsets are managed in the web
 /// UI (Admin → MCP servers) or with doozers toolset set`: the file's name, not its position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -469,13 +469,13 @@ mod tests {
 
     #[test]
     fn display_leaves_out_unknown_parts() {
-        let file = Path::new("/h/giles.toml");
+        let file = Path::new("/h/doozers.toml");
         let at = ConfigError::at(file, KeyPath::root().key("core"), "bad");
-        assert_eq!(at.to_string(), "/h/giles.toml: core: bad");
+        assert_eq!(at.to_string(), "/h/doozers.toml: core: bad");
         let whole = ConfigError {
             position: Some(Position { line: 3, column: 7 }),
             ..ConfigError::file(file, "worse")
         };
-        assert_eq!(whole.to_string(), "/h/giles.toml:3:7: worse");
+        assert_eq!(whole.to_string(), "/h/doozers.toml:3:7: worse");
     }
 }

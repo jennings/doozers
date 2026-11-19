@@ -1,6 +1,6 @@
 {% extends "web/app.html" %}
 
-{% block title %}{{ title }} - MCP servers - Giles{% endblock %}
+{% block title %}{{ title }} - MCP servers - Doozers{% endblock %}
 
 {% block head %}
 <script src="{{ crate::http::assets::mcp_server_form_script_path() }}" defer></script>
@@ -46,7 +46,7 @@
 <div class="field">
 <span class="field-label">Authentication</span>
 <div class="control-row">
-<select name="auth" aria-label="How Giles authenticates to the server">
+<select name="auth" aria-label="How Doozers authenticates to the server">
 <option value="none"{% if form.auth == "none" %} selected{% endif %}>No authentication</option>
 <option value="token"{% if form.auth == "token" %} selected{% endif %}>Bearer token</option>
 <option value="oauth"{% if form.auth == "oauth" %} selected{% endif %}>OAuth: each user signs in</option>
@@ -56,7 +56,7 @@
 <input type="hidden" name="bearer_stored" value="1">
 {%- endif %}
 </div>
-<p class="help">For a bearer token, Giles keeps the token encrypted and never shows it again. To change it, type the new one.</p>
+<p class="help">For a bearer token, Doozers keeps the token encrypted and never shows it again. To change it, type the new one.</p>
 </div>
 <div class="field-row">
 <div class="field">

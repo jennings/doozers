@@ -30,7 +30,7 @@ fn fast() -> Timing {
 fn settings(link: Link) -> Arc<Settings> {
     Arc::new(Settings {
         link,
-        device_name: "Giles".into(),
+        device_name: "Doozers".into(),
         max_blob: 1024,
     })
 }

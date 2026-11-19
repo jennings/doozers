@@ -144,7 +144,7 @@ impl ApprovalOutcome {
 
 /// The core hasn't taken the posted messages waiting for it ([`MAX_PENDING`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("too many messages are waiting for Giles; try again shortly")]
+#[error("too many messages are waiting for Doozers; try again shortly")]
 pub struct Busy;
 
 #[derive(Debug, Default)]
@@ -196,7 +196,10 @@ pub struct LoginLink {
 #[non_exhaustive]
 pub enum LoginLinkError {
     /// No such user. v1 has one, the owner (PLAN section 1.1).
-    #[error("there is no user `{0}`: this Giles has one user, `{owner}`", owner = identity::OWNER)]
+    #[error(
+        "there is no user `{0}`: this Doozers has one user, `{owner}`",
+        owner = identity::OWNER
+    )]
     UnknownUser(UserId),
     /// The user has no identity in the `web` namespace, so the router would drop their messages.
     #[error(
@@ -261,7 +264,7 @@ impl WebChannel {
     ///
     /// # Errors
     ///
-    /// The `giles.toml` key under the instance table and the reason, with secret values scrubbed.
+    /// The `doozers.toml` key under the instance table and the reason, with secret values scrubbed.
     pub fn from_instance(
         instance: &ChannelInstance,
         config: &Config,

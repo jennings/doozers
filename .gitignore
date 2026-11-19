@@ -1,7 +1,7 @@
 /target
 .DS_Store
 /Docs/book/
-/giles-home/
+/doozers-home/
 /.env
 /compose.override.yaml
 /doozers-environment-docker.toml

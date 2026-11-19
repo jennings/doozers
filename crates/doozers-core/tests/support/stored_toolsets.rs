@@ -1,5 +1,5 @@
 //! Remote toolsets for a test configuration: they reach the running configuration as stored
-//! toolsets do (PLAN section 7.10), from specs written as TOML. `giles.toml` ignores a
+//! toolsets do (PLAN section 7.10), from specs written as TOML. `doozers.toml` ignores a
 //! `[toolset.<name>]` table with `url`.
 #![allow(dead_code)] // Each test file uses a part of it.
 
@@ -21,7 +21,7 @@ pub fn add_toolsets(root: &DataRoot, config: &mut Config, toolsets: &[(&str, &st
         Secrets::load(&root.secrets_file()).unwrap_or_else(|error| panic!("secrets: {error}"));
     let options = LoadOptions {
         env: &|_| None,
-        giles_exe: None,
+        doozers_exe: None,
         ..LoadOptions::default()
     };
     for (name, spec) in toolsets {

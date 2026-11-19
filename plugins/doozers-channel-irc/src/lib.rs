@@ -1,4 +1,4 @@
-//! The Giles IRC channel (`doozers-channel-irc`): one IRC network per instance.
+//! The Doozers IRC channel (`doozers-channel-irc`): one IRC network per instance.
 //!
 //! The binary serves [`Irc`] through the plugin SDK; tests drive it directly against a local fake
 //! server. Design notes are in `Docs/technical/irc.md`, configuration in `Docs/user/irc.md`.

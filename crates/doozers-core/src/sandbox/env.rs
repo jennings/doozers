@@ -7,10 +7,10 @@ use super::spec::{PLUGIN_DATA_ENV, Spec};
 
 /// The complete environment of the sandboxed command; nothing else is inherited.
 ///
-/// - Every variable in [`Spec::env`] (validated `GILES_*` names and `LANG`).
+/// - Every variable in [`Spec::env`] (validated `DOOZERS_*` names and `LANG`).
 /// - Every variable named in [`Spec::inherit_env`] that `inherited` (the trampoline's own
 ///   environment) has, replacing one from [`Spec::env`].
-/// - `GILES_PLUGIN_DATA` and `HOME`: the data directory.
+/// - `DOOZERS_PLUGIN_DATA` and `HOME`: the data directory.
 /// - `TMPDIR`: [`Spec::tmp_dir`].
 /// - `PATH`: [`Spec::search_path`].
 /// - `LANG`: from the above, else `inherited`'s if set.
@@ -70,7 +70,7 @@ mod tests {
         assert_eq!(
             pairs(&env),
             [
-                ("GILES_PLUGIN_DATA", "/g/data/channel/irc"),
+                ("DOOZERS_PLUGIN_DATA", "/g/data/channel/irc"),
                 ("HOME", "/g/data/channel/irc"),
                 ("PATH", "/usr/bin:/bin"),
                 ("TMPDIR", "/g/data/channel/irc/tmp"),
@@ -82,16 +82,17 @@ mod tests {
     fn spec_variables_pass_and_lang_is_inherited() {
         let mut spec = Spec::new("/d");
         spec.env
-            .insert("GILES_PLUGIN_MAGIC".into(), "cookie".into());
-        spec.env.insert("GILES_PLUGIN_PROTOCOLS".into(), "1".into());
+            .insert("DOOZERS_PLUGIN_MAGIC".into(), "cookie".into());
+        spec.env
+            .insert("DOOZERS_PLUGIN_PROTOCOLS".into(), "1".into());
         spec.path = Some("/opt/bin:/usr/bin".into());
         let env = scrubbed_env(&spec, &inherited(&[("LANG", "en_US.UTF-8")]));
         assert_eq!(
             pairs(&env),
             [
-                ("GILES_PLUGIN_DATA", "/d"),
-                ("GILES_PLUGIN_MAGIC", "cookie"),
-                ("GILES_PLUGIN_PROTOCOLS", "1"),
+                ("DOOZERS_PLUGIN_DATA", "/d"),
+                ("DOOZERS_PLUGIN_MAGIC", "cookie"),
+                ("DOOZERS_PLUGIN_PROTOCOLS", "1"),
                 ("HOME", "/d"),
                 ("LANG", "en_US.UTF-8"),
                 ("PATH", "/opt/bin:/usr/bin"),
@@ -111,23 +112,23 @@ mod tests {
     #[test]
     fn only_named_variables_are_inherited() {
         let mut spec = Spec::new("/d");
-        spec.env.insert("GILES_X".into(), "from-spec".into());
-        for name in ["GITHUB_TOKEN", "GILES_X", "UNSET"] {
+        spec.env.insert("DOOZERS_X".into(), "from-spec".into());
+        for name in ["GITHUB_TOKEN", "DOOZERS_X", "UNSET"] {
             spec.inherit_env.insert(name.into());
         }
         let env = scrubbed_env(
             &spec,
             &inherited(&[
                 ("GITHUB_TOKEN", "ghp_1"),
-                ("GILES_X", "inherited"),
+                ("DOOZERS_X", "inherited"),
                 ("OTHER", "nope"),
             ]),
         );
         assert_eq!(
             pairs(&env),
             [
-                ("GILES_PLUGIN_DATA", "/d"),
-                ("GILES_X", "inherited"),
+                ("DOOZERS_PLUGIN_DATA", "/d"),
+                ("DOOZERS_X", "inherited"),
                 ("GITHUB_TOKEN", "ghp_1"),
                 ("HOME", "/d"),
                 ("PATH", "/usr/bin:/bin"),

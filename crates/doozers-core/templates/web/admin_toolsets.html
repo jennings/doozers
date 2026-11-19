@@ -1,13 +1,13 @@
 {% extends "web/app.html" %}
 
-{% block title %}MCP servers - Giles{% endblock %}
+{% block title %}MCP servers - Doozers{% endblock %}
 
 {% block content %}
 <div class="page-head">
 <h1>MCP servers</h1>
 <a class="button button-primary" href="/admin/mcp-servers/new">New MCP server</a>
 </div>
-<p class="lede">An MCP server gives agents more tools. Its tools are named <code>&lt;server&gt;__&lt;tool&gt;</code>, and an agent can use them once you tick the server in the agent's form. Here you add remote servers, and a change applies at once, without a restart. A server that Giles runs on this machine is configured in giles.toml and listed here read-only.</p>
+<p class="lede">An MCP server gives agents more tools. Its tools are named <code>&lt;server&gt;__&lt;tool&gt;</code>, and an agent can use them once you tick the server in the agent's form. Here you add remote servers, and a change applies at once, without a restart. A server that Doozers runs on this machine is configured in doozers.toml and listed here read-only.</p>
 {%- if toolsets.is_empty() %}
 <p>No MCP servers yet. Add a remote server with <a href="/admin/mcp-servers/new">New MCP server</a>.</p>
 {%- else %}
@@ -17,7 +17,7 @@
 <tbody>
 {%- for toolset in toolsets %}
 <tr id="toolset-{{ toolset.name }}">
-<td data-label="Name" class="m-title"><strong><a href="/admin/mcp-servers/{{ toolset.name }}">{{ toolset.name }}</a></strong>{% if toolset.from_file %} <span class="meta">giles.toml</span>{% endif %}</td>
+<td data-label="Name" class="m-title"><strong><a href="/admin/mcp-servers/{{ toolset.name }}">{{ toolset.name }}</a></strong>{% if toolset.from_file %} <span class="meta">doozers.toml</span>{% endif %}</td>
 <td data-label="Runs as" class="secondary m-meta">{{ toolset.transport }}</td>
 <td data-label="Location" class="m-body"><code>{{ toolset.location }}</code></td>
 <td data-label="State" class="m-aside"><span class="pill pill-{{ toolset.class }}">{{ toolset.state }}</span></td>
@@ -25,7 +25,7 @@
 <td data-label="Last error" class="long m-body m-label">{% if let Some(error) = toolset.error %}<span class="warn-text">{{ error }}</span>{% endif %}</td>
 <td class="row-actions">
 {%- if toolset.from_file %}
-<span class="muted">Edit it in giles.toml</span>
+<span class="muted">Edit it in doozers.toml</span>
 {%- else %}
 <a class="button button-small" href="/admin/mcp-servers/{{ toolset.name }}/edit">Edit</a>
 <a class="button button-small button-danger" href="/admin/mcp-servers/{{ toolset.name }}/remove">Remove</a>

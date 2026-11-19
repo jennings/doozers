@@ -238,7 +238,7 @@ fn failed(err: &ManageError, title: &str) -> Response {
             error_page(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Something went wrong",
-                "Giles couldn't use its workspaces. The error is in its log.",
+                "Doozers couldn't use its workspaces. The error is in its log.",
             )
         }
     }

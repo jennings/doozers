@@ -137,7 +137,7 @@ async fn the_confirmation_page_says_exactly_what_will_happen() {
         "<code>agents/jeeves/</code>",
         "<code>trash/agents/jeeves-&lt;date and time, UTC&gt;/</code>",
         "Nothing is deleted.",
-        "move that directory back to <code>agents/jeeves/</code> and restart Giles",
+        "move that directory back to <code>agents/jeeves/</code> and restart Doozers",
         "Stops the 1 job in its <code>agent.toml</code>",
         "Deletes the 2 jobs the agent scheduled itself",
         "That can't be undone.",
@@ -396,7 +396,7 @@ async fn removing_moves_the_files_aside_and_takes_the_agent_out_of_service() {
         env.root(),
         &LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..LoadOptions::default()
         },
     )

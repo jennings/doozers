@@ -1,6 +1,6 @@
 {% extends "web/app.html" %}
 
-{% block title %}Remove {{ name }} - MCP servers - Giles{% endblock %}
+{% block title %}Remove {{ name }} - MCP servers - Doozers{% endblock %}
 
 {% block content %}
 <a class="back" href="/admin/mcp-servers/{{ name }}">{{ name }}</a>
@@ -9,7 +9,7 @@
 <p>Removing the MCP server <code>{{ name }}</code> does this:</p>
 <ul>
 <li>Stops it at once and takes its tools away from new conversations. A conversation that is already going can't call them any more.</li>
-<li>Deletes its settings from Giles. The server itself isn't touched.</li>
+<li>Deletes its settings from Doozers. The server itself isn't touched.</li>
 <li>Leaves every agent's settings as they are.</li>
 </ul>
 {%- if agents.is_empty() %}

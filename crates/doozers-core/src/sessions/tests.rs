@@ -298,7 +298,7 @@ struct Setup {
 impl Setup {
     async fn new(policy: AgentPolicy) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let (acks_tx, acks) = mpsc::unbounded_channel();
         let (sent_tx, sent) = mpsc::unbounded_channel();
         let channel = Arc::new(FakeChannel {
@@ -1270,7 +1270,7 @@ async fn a_database_failure_leaves_the_event_unacked_and_reopens_the_stream() {
     let second = setup.channel.push_stream();
     let channel = setup.channel.clone();
     // A second connection makes every inbox insert fail.
-    let db = rusqlite::Connection::open(setup.dir.path().join("giles.db")).unwrap();
+    let db = rusqlite::Connection::open(setup.dir.path().join("doozers.db")).unwrap();
     db.execute_batch(
         "CREATE TRIGGER fail_inbox BEFORE INSERT ON inbox
          BEGIN SELECT RAISE(ABORT, 'injected'); END;",

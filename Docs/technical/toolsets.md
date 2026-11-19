@@ -3,7 +3,7 @@
 Code: `crates/doozers-core/src/toolsets/` (`doozers_core::toolsets`). Design: PLAN sections 7.5,
 7.6, 7.9, and 7.10. A toolset is an MCP server; the [MCP client](mcp.md) is the connection, and this
 module decides how to reach each toolset (`ToolsetLauncher`), a stdio `[toolset.<instance>]` table
-of `giles.toml` or a remote server [stored in the database](#stored-toolsets), and keeps it going
+of `doozers.toml` or a remote server [stored in the database](#stored-toolsets), and keeps it going
 until it is removed or the daemon stops (`ToolsetHost`).
 
 ## Connecting
@@ -91,7 +91,7 @@ Like a plugin launch ([Plugin host](plugin-host.md)), without the gRPC parts:
   section 11.6).
 - The spec: `read` and `execute` from the plan (plus configured `read`), configured `write`, `unix`,
   `min_abi`, `network` (off unless granted: the config loader's toolset default), `inherit_env` =
-  the names in `env`, and `path` from the plan. No `env`: MCP servers aren't Giles plugins and get
+  the names in `env`, and `path` from the plan. No `env`: MCP servers aren't Doozers plugins and get
   no handshake variables.
 - Sandboxed: the spec goes to `run/sandbox/toolset/<instance>.json` (0600, atomically), and the
   command is `doozers sandbox-exec <spec> -- <program> <args>` with the `env` values set on the
@@ -109,23 +109,23 @@ Like a plugin launch ([Plugin host](plugin-host.md)), without the gRPC parts:
   `TMPDIR` (`McpMedia::new(blobs).files_in(spec.tmp_dir())`), which the sandbox lets it read
   ([MCP Client](mcp.md#mapping-mcp-to-the-toolset-trait)).
 
-`env` may not set `HOME`, `TMPDIR`, `PATH`, or `GILES_PLUGIN_DATA`: the sandbox derives them
+`env` may not set `HOME`, `TMPDIR`, `PATH`, or `DOOZERS_PLUGIN_DATA`: the sandbox derives them
 (`sandbox::DERIVED_ENV`), and config loading refuses them.
 
 ## Lifecycle
 
 `ToolsetHost::start(launcher, &registry)` runs in `serve` right after the registry is built
-([The `giles` Binary](daemon.md#doozers-serve-lifecycle)). For each configured toolset it:
+([The `doozers` Binary](daemon.md#doozers-serve-lifecycle)). For each configured toolset it:
 
 1. Looks up the [tool-list cache](#tool-list-cache) (stdio servers only) and offers a hit at once.
 2. Registers a `ManagedToolset` with `Registry::register_toolset`. It stays registered until the
-   toolset is [replaced or removed](#changing-toolsets-while-giles-runs), so the dispatcher needs
+   toolset is [replaced or removed](#changing-toolsets-while-doozers-runs), so the dispatcher needs
    nothing beyond the registry.
 3. Spawns the instance's supervisor task (`toolsets/lifecycle.rs`, under a `toolset{name=<name>}`
    span), which owns the connection and makes the first start.
 
 `started()` waits for every first start to succeed or fail; `serve` waits for it alongside the
-plugin launches before logging `giles started`. `stop()` cancels every supervisor and waits for
+plugin launches before logging `doozers started`. `stop()` cancels every supervisor and waits for
 them, dropping every connection (a stdio server's process group is killed). It is for shutdown;
 after it, nothing starts any more.
 
@@ -163,15 +163,15 @@ connection, or a start that fails with a retryable error leads to `Down` with a 
 `RESTART_BACKOFF_MIN` (1 s), doubling up to `RESTART_BACKOFF_MAX` (5 min); a connection that lasted
 `HEALTHY_RESET` (10 min) starts the backoff over. A non-retryable failure (`InvalidRequest`: the
 host can't sandbox, the sandbox trampoline failed with 125 or macOS's 71, rejected credentials, no
-shared protocol) isn't retried until it's restarted by hand or Giles restarts, and the instance's
+shared protocol) isn't retried until it's restarted by hand or Doozers restarts, and the instance's
 tools are withdrawn, cached or not: every call would fail. While a stdio server will be retried, its
 tools stay offered, and calls fail with the reason and when the next attempt is due, as for a server
 that's restarting.
 
 **Remote servers** (PLAN section 7.6): the same backoff, but while one is unreachable (at boot or
 later) its tools are withdrawn, so new sessions don't get them; sessions that already have them get
-`tool unavailable` from the dispatcher, which checks the live index. Giles runs degraded meanwhile:
-the other toolsets and everything else work. Remote servers never stop for idleness.
+`tool unavailable` from the dispatcher, which checks the live index. Doozers runs degraded
+meanwhile: the other toolsets and everything else work. Remote servers never stop for idleness.
 
 **Idle stop** (`idle_stop`, stdio only): once no call has been in flight for `idle_stop` (counted
 from the end of the last call, or the start), the supervisor drops the connection, killing the
@@ -198,16 +198,16 @@ spawned isn't the server, and a remote server has none.
 
 `PluginControl::restart(Kind::Toolset, instance)` (`Control::request_restart`) wakes the supervisor
 whatever state it is in, and the supervisor drops the connection and starts again at once. It starts
-the backoff over and counts a restart. `Failed` toolsets get a fresh try, as a Giles restart would
+the backoff over and counts a restart. `Failed` toolsets get a fresh try, as a Doozers restart would
 give them. A restart while a start is under way abandons that attempt and begins another, so a hung
 start can be retried. The old connection closes when its last call ends, so a call still running
 keeps the old server alive until it finishes. `restart` answers `false` for an instance the host
 doesn't supervise, such as a toolset that couldn't be registered.
 
-## Changing toolsets while Giles runs
+## Changing toolsets while Doozers runs
 
-A toolset can be added, replaced, and removed without restarting Giles. Each call takes the toolset
-as it is, or is to be, in the registry's
+A toolset can be added, replaced, and removed without restarting Doozers. Each call takes the
+toolset as it is, or is to be, in the registry's
 [live configuration](registry.md#the-running-configuration): the caller changes the `LiveConfig`
 first (`add_toolset`, `replace_toolset`, `remove_toolset`) and then tells the host, because
 `register_toolset` checks the live configuration. The host serializes its changes, so two of them
@@ -241,13 +241,13 @@ and a replaced one starts over as `Starting`.
 
 `toolsets/manager.rs`: the remote MCP servers that the web UI manages are stored in the database
 ([Storage](storage.md#toolsets)), and `ToolsetManager` is the one place that changes them. There is
-one per core, built in `doozers serve` after the host has started the toolsets of `giles.toml`. The
-web pages, the admin RPCs, and the CLI call it; none touches the table, the live configuration, or
-the host. Both sources work side by side, and toolset names stay unique across them.
+one per core, built in `doozers serve` after the host has started the toolsets of `doozers.toml`.
+The web pages, the admin RPCs, and the CLI call it; none touches the table, the live configuration,
+or the host. Both sources work side by side, and toolset names stay unique across them.
 
-A stored toolset is a remote server. A web login must not be able to choose a program for Giles to
+A stored toolset is a remote server. A web login must not be able to choose a program for Doozers to
 run on the host, its arguments, its environment, or its sandbox grants: installing and running code
-on the host is the operator's, so a stdio server is a `[toolset.<name>]` table of `giles.toml`.
+on the host is the operator's, so a stdio server is a `[toolset.<name>]` table of `doozers.toml`.
 Connecting to a remote server is not, so a `[toolset.<name>]` table with `url` is ignored
 ([Configuration](config.md#ignored-toolset-tables)): it isn't an instance, and a stored toolset may
 use its name. Nothing is migrated from such a table.
@@ -258,14 +258,14 @@ the operations are:
 
 - `list()` is every toolset ordered by name ignoring case: the stored ones, each a `ToolsetView`
   with its `spec` (a `ToolsetSpec`, credentials as references), its `created_at` and `updated_at`,
-  and a `failure` if it isn't running; and the ones of `giles.toml`, as `ToolsetSource::File` views
-  without a spec. `get(name)` is one of them. Names match ignoring ASCII case.
+  and a `failure` if it isn't running; and the ones of `doozers.toml`, as `ToolsetSource::File`
+  views without a spec. `get(name)` is one of them. Names match ignoring ASCII case.
 - `add(name, &spec)`, `update(name, &spec, expected_updated_at)`, `rename(old, new)`, and
   `remove(name)`. The error is a `ToolsetManagerError`: `Invalid { key, reason }` (the key is the
   spec key that has the problem, `auth.bearer`, or the root for the name or a conflict), `Exists`
   (the name is stored, ignoring case), `NotFound`, `Stale`, `Refused { reason }` (a rename that an
   agent's globs stand in the way of), `Failed { step, error, undo_errors }` (a step of a rename
-  failed and was undone), `Unsupported` (the name is a toolset of `giles.toml`, which is read-only
+  failed and was undone), `Unsupported` (the name is a toolset of `doozers.toml`, which is read-only
   here), `Store`, and `Secrets` (the secret store failed). `is_invalid_input()` is true for
   everything the owner can fix in the form: `Invalid`, `Exists`, `Stale`, `Unsupported`, and
   `Refused`.
@@ -325,14 +325,14 @@ plugin's `oauth` stays client credentials (`Auth::OAuth`). `toolsets::oauth` doe
   Redirects are followed (up to 5) only where `rmcp` asks, which it does for dynamic client
   registration and never for a token request.
 - **Addresses.** The URLs these requests go to come from the MCP server, so `oauth::address` keeps
-  them off the network Giles runs in, with the rule `rmcp`'s own client has. Public addresses are
+  them off the network Doozers runs in, with the rule `rmcp`'s own client has. Public addresses are
   allowed. A loopback or private address is allowed only when the MCP server's URL names one (an IP
   literal of that class, or `localhost`); what its host name resolves to never widens this.
   Link-local (cloud instance metadata), unspecified, broadcast, multicast, and reserved addresses
   are never allowed. The rule applies to IP-literal URLs, to every address a host name resolves to
   (a filtering DNS resolver), and to each redirect. Proxy hosts from the environment aren't
   filtered. An MCP server on a private network that is reached by a host name therefore can't send
-  Giles to a private authorization server; give its URL as the IP address.
+  Doozers to a private authorization server; give its URL as the IP address.
 - **Tokens.** `UserTokens` is `rmcp`'s `CredentialStore` over the secret store. The secret at
   `users/<user>/toolsets/<name>/oauth-token` is JSON: `rmcp`'s `StoredCredentials`, plus the issuer
   and token endpoint of the authorization server at sign-in. It's written with the user as
@@ -342,8 +342,8 @@ plugin's `oauth` stays client credentials (`Auth::OAuth`). `toolsets::oauth` doe
   the user is shown as signed out.
 - **Pinned endpoints.** Every connection discovers the authorization server again, and refuses to
   use the tokens unless the issuer and token endpoint are the ones stored with them. An MCP server
-  that changes hands, or answers discovery differently, can't make Giles send the refresh tokens and
-  the client secret to another token endpoint; the user is told to sign in again. A new sign-in
+  that changes hands, or answers discovery differently, can't make Doozers send the refresh tokens
+  and the client secret to another token endpoint; the user is told to sign in again. A new sign-in
   still trusts what the server names at that moment.
 - **Sign-in.** `ToolsetManager::begin_sign_in(name, user, redirect_uri)` finds the running toolset
   (`redirect_uri` makes the callback URL from the toolset's name as stored), discovers the
@@ -383,19 +383,19 @@ plugin's `oauth` stays client credentials (`Auth::OAuth`). `toolsets::oauth` doe
 One async lock spans each change, as `Routes` does for routes. A change:
 
 1. Looks the name up in the rows. `add` refuses a stored name (`Exists`). `update` and `remove`
-   refuse a name that only `giles.toml` has (`Unsupported`) or that nothing has (`NotFound`);
+   refuse a name that only `doozers.toml` has (`Unsupported`) or that nothing has (`NotFound`);
    `update` also compares `expected_updated_at` with the row's (`Stale`).
 2. Moves literal credentials out of the spec ([Credentials](#credentials)) and validates it with
    `validate_toolset` ([Configuration](config.md#validating-one-toolset)) against the running
    configuration, with its credentials read from the secret store. Before it, in this order, the
    manager refuses the name `new` (ignoring case), which is the address of the web form for a new
-   toolset (an `Invalid` at the root), a name that a `giles.toml` toolset uses (the reason is
-   ``the name is taken by `[toolset.<name>]` in giles.toml``, whatever else is wrong with the spec),
-   a credential that is neither a value nor a reference to the toolset's own secret (an `Invalid` at
-   its key), and a spec without `url` (an `Invalid` at `url`: a stdio server goes in `giles.toml`).
-   `validate_toolset` then refuses the keys of a stdio server (`command`, `args`, `env`,
-   `idle_stop`, `sandbox`, `unsandboxed`) next to `url`, each at its key. Nothing is stored when any
-   of these fails.
+   toolset (an `Invalid` at the root), a name that a `doozers.toml` toolset uses (the reason is
+   ``the name is taken by `[toolset.<name>]` in doozers.toml``, whatever else is wrong with the
+   spec), a credential that is neither a value nor a reference to the toolset's own secret (an
+   `Invalid` at its key), and a spec without `url` (an `Invalid` at `url`: a stdio server goes in
+   `doozers.toml`). `validate_toolset` then refuses the keys of a stdio server (`command`, `args`,
+   `env`, `idle_stop`, `sandbox`, `unsandboxed`) next to `url`, each at its key. Nothing is stored
+   when any of these fails.
 3. Stores the literal credentials, then writes the row. The store checks the stale token too, so a
    write can't overwrite a change that isn't the one the caller read.
 4. Changes the `LiveConfig` (`add_toolset` or `replace_toolset`), then the host (`add` or
@@ -403,7 +403,7 @@ One async lock spans each change, as `Routes` does for routes. A change:
    this step fails after the row is written (it can't unless the live configuration and the manager
    disagree), the host has unregistered the toolset, so the entry is taken out of the live
    configuration again (`withdraw`) and the toolset is failed with the reason: it shows as one
-   failed stored toolset, not as a toolset of `giles.toml`, and can be saved or removed. The error
+   failed stored toolset, not as a toolset of `doozers.toml`, and can be saved or removed. The error
    is an `Invalid` at the root.
 
 `remove` deletes the row, takes the toolset out of the live configuration, and stops it in the host,
@@ -416,18 +416,18 @@ of that name returns.
 
 A toolset's name is its tool prefix and the start of the globs agents use in `tools` and `ask`, so
 `rename(old, new)` is more than a change to the row
-([Instance rename](instance-rename.md#renaming-while-giles-runs) has the full account, and the
-offline `doozers toolset rename` does the same for either kind of toolset while Giles is stopped).
+([Instance rename](instance-rename.md#renaming-while-doozers-runs) has the full account, and the
+offline `doozers toolset rename` does the same for either kind of toolset while Doozers is stopped).
 `rename_preview(old, new)` makes the checks and returns a `RenamePreview { agents }`, the
 `AgentGlobChange { agent, globs }` of every agent whose `tools` or `ask` globs would change, each
 `GlobChange { key, from, to }` with the list it is in (`tools` or `ask`) and the glob before and
 after. `rename` returns a `ToolsetRenamed { from, view, agents }`: the name the toolset had as
 stored, the toolset under its new name, and the same list. Under the manager's lock, and the agent
 manager's lock once the checks start (see
-[Instance rename](instance-rename.md#renaming-while-giles-runs)), a rename:
+[Instance rename](instance-rename.md#renaming-while-doozers-runs)), a rename:
 
 1. Checks the new name and the agents. The name must be valid, not `new`, free among the stored
-   toolsets (`Exists`) and the toolsets of `giles.toml` (`Invalid` at the root), as for a new
+   toolsets (`Exists`) and the toolsets of `doozers.toml` (`Invalid` at the root), as for a new
    toolset. The old name is exempt, so a rename that changes only the case of a stored toolset's
    name is allowed. A running toolset's spec is validated again under the new name, with its
    references and credentials moved to the new name's paths. Then each agent's `agent.toml` is read.
@@ -448,18 +448,18 @@ A stored toolset is remote: it has no data directory, and its tool-list cache en
 offered, so nothing on disk moves but the agents' files. A step that fails undoes the earlier ones:
 the agents' files are put back, the row is restored exactly (`Store::toolset_restore`), and the
 toolset is started again under its old name. The error is `Failed { step, error, undo_errors }`;
-`undo_errors` lists what couldn't be put back. A stored toolset whose name a toolset of `giles.toml`
-took at startup (it shows as failed) is renamed in the database only: the agents' globs under that
-name are that toolset's.
+`undo_errors` lists what couldn't be put back. A stored toolset whose name a toolset of
+`doozers.toml` took at startup (it shows as failed) is renamed in the database only: the agents'
+globs under that name are that toolset's.
 
 ### Startup
 
 `start` takes every row in name order and runs the same checks as a change, then adds it to the live
-configuration and the host. The host has started the toolsets of `giles.toml` first, so a name that
-a `giles.toml` toolset also uses stays with that toolset and the stored one fails. A stored toolset
-that fails isn't started: it is logged (`a stored toolset is not started`) and kept with its reason,
-a missing secret, a spec that a stored toolset can't have, a spec that can't be read, or the name.
-**Startup never fails on a stored toolset**; only the database can't be read.
+configuration and the host. The host has started the toolsets of `doozers.toml` first, so a name
+that a `doozers.toml` toolset also uses stays with that toolset and the stored one fails. A stored
+toolset that fails isn't started: it is logged (`a stored toolset is not started`) and kept with its
+reason, a missing secret, a spec that a stored toolset can't have, a spec that can't be read, or the
+name. **Startup never fails on a stored toolset**; only the database can't be read.
 
 The manager is also a `PluginControl`, which `serve` merges with the plugin host and the toolset
 host. Its `plugins()` is one `Failed` `PluginRuntime` per stored toolset that isn't running, with
@@ -469,12 +469,12 @@ the toolset's credentials from the secret store again, validates the stored spec
 configuration as startup did, and starts the toolset, or leaves it failed with the new reason.
 `retry` is public, and returns the `ToolsetView`. `ListPlugins` and `Status` list a runtime that the
 configuration doesn't have as a toolset, after the configured instances, so `doozers status` shows
-the failed toolset and why. The fix is in the web UI, which needs Giles running: saving the toolset
-again validates it and starts it (`update` on a failed toolset adds it), and removing it deletes the
-row.
+the failed toolset and why. The fix is in the web UI, which needs Doozers running: saving the
+toolset again validates it and starts it (`update` on a failed toolset adds it), and removing it
+deletes the row.
 
-Giles doesn't wait for a stored toolset's first start before it reports that it started, as it does
-for the toolsets of `giles.toml`; it starts in the background.
+Doozers doesn't wait for a stored toolset's first start before it reports that it started, as it
+does for the toolsets of `doozers.toml`; it starts in the background.
 
 ## Tool-list cache
 
@@ -517,11 +517,11 @@ failed write is logged.
   directory is served by bare name and indexed for the agent with the prefix, its skill's files
   listed for `load_skill`.
 - `crates/doozers/tests/serve.rs`: a stdio toolset that exits and an unreachable remote one are
-  logged and retried, with their tools registered (nothing pending) and `giles` running and stopping
-  cleanly. With stored toolsets, all remote, one valid and two that can't start (a bearer token from
-  the environment, a name that `giles.toml` uses): `giles` runs, the valid one is started and
-  supervised, `doozers status` lists the others as failed with their reasons, and the log names
-  them.
+  logged and retried, with their tools registered (nothing pending) and `doozers` running and
+  stopping cleanly. With stored toolsets, all remote, one valid and two that can't start (a bearer
+  token from the environment, a name that `doozers.toml` uses): `doozers` runs, the valid one is
+  started and supervised, `doozers status` lists the others as failed with their reasons, and the
+  log names them.
 - `crates/doozers-core/tests/toolsets.rs` (`harness = false`): the test binary is both the
   trampoline and the server, found by name on a `PATH` through a link. It reports its environment,
   working directory, and a TCP connect to a local listener on stderr. Sandboxed (Seatbelt on macOS,
@@ -551,21 +551,21 @@ failed write is logged.
   token nor a reference to the toolset's own secret is refused at that key; a token is stored in the
   secret store with only the reference in the row, kept by an edit that references it, replaced by
   one that gives a new value, moved by a rename, and deleted with the auth or the toolset; startup
-  moves a token out of `secrets.toml`; startup adds the valid stored toolset beside a `giles.toml`
-  toolset and reports each failure (missing secret, a name taken by a toolset of `giles.toml` with
+  moves a token out of `secrets.toml`; startup adds the valid stored toolset beside a `doozers.toml`
+  toolset and reports each failure (missing secret, a name taken by a toolset of `doozers.toml` with
   the exact reason, a stdio spec, a damaged spec) as failed, and saving or removing a failed toolset
-  works and leaves the toolset that kept the name running; toolsets of `giles.toml` can't be
+  works and leaves the toolset that kept the name running; toolsets of `doozers.toml` can't be
   changed, and a stored name is unique ignoring case, though a provider or a channel may share it.
   The admin tests cover a `Failed` runtime that the configuration doesn't have in `ListPlugins` and
-  `Status` (also when a `giles.toml` toolset has the name, which keeps the host's report), and
+  `Status` (also when a `doozers.toml` toolset has the name, which keeps the host's report), and
   restarting it. Renaming: a running toolset offers its tools under the new prefix, and the agents'
   files and the live configuration say the new name (and the preview lists the same globs and
-  changes nothing); a name that is taken (by a stored toolset or by a toolset of `giles.toml`),
+  changes nothing); a name that is taken (by a stored toolset or by a toolset of `doozers.toml`),
   reserved, invalid, or the same is refused, and so are globs that match by the old name and an
   agent file that can't be edited, with the globs listed and nothing changed, while data left under
   the new name is not; a failed agent write is undone (the agents, the row, and the running toolset
   are as before); a failed toolset is renamed and started once it validates, and one that lost its
-  name to `giles.toml` leaves that toolset's globs alone; the case of a name changes. The rename
+  name to `doozers.toml` leaves that toolset's globs alone; the case of a name changes. The rename
   tests (`rename/tests.rs`) cover the offline rename of a stored toolset: the row and the agents'
   globs; the refusals; the case of a name; a failure undone with the row put back exactly; and a run
   that stopped after the row finished by running it again.

@@ -1,6 +1,6 @@
 [package]
 name = "doozers-channel-email"
-description = "The Giles email channel plugin: IMAP IDLE in, SMTP out."
+description = "The Doozers email channel plugin: IMAP IDLE in, SMTP out."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

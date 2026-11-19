@@ -44,8 +44,8 @@ impl Env {
             .arg(self.spec_file())
             .arg("--")
             .args(command)
-            .env("GILES_LOG", "info")
-            .env("GILES_HOME", self.dir.path())
+            .env("DOOZERS_LOG", "info")
+            .env("DOOZERS_HOME", self.dir.path())
             .env("SECRET_TOKEN", "leaked")
             .env("LANG", "C")
             .env_remove("RUST_LOG")
@@ -100,8 +100,9 @@ fn unsandboxed_command_gets_only_the_scrubbed_environment() {
     let env = Env::new();
     let mut spec = env.unsandboxed();
     spec.env
-        .insert("GILES_PLUGIN_MAGIC".into(), "cookie".into());
-    spec.env.insert("GILES_PLUGIN_PROTOCOLS".into(), "1".into());
+        .insert("DOOZERS_PLUGIN_MAGIC".into(), "cookie".into());
+    spec.env
+        .insert("DOOZERS_PLUGIN_PROTOCOLS".into(), "1".into());
     let (output, stderr) = run(env.command(&spec, &["/usr/bin/env"]));
     assert!(output.status.success(), "{}\n{stderr}", output.status);
 
@@ -115,9 +116,9 @@ fn unsandboxed_command_gets_only_the_scrubbed_environment() {
     let data = env.data_dir().display().to_string();
     let tmp = env.data_dir().join("tmp").display().to_string();
     let expected: BTreeMap<String, String> = [
-        ("GILES_PLUGIN_DATA", data.as_str()),
-        ("GILES_PLUGIN_MAGIC", "cookie"),
-        ("GILES_PLUGIN_PROTOCOLS", "1"),
+        ("DOOZERS_PLUGIN_DATA", data.as_str()),
+        ("DOOZERS_PLUGIN_MAGIC", "cookie"),
+        ("DOOZERS_PLUGIN_PROTOCOLS", "1"),
         ("HOME", data.as_str()),
         ("LANG", "C"),
         ("PATH", "/usr/bin:/bin"),
@@ -152,7 +153,7 @@ fn named_variables_are_inherited_from_the_trampoline() {
     assert_eq!(
         names,
         [
-            "GILES_PLUGIN_DATA",
+            "DOOZERS_PLUGIN_DATA",
             "HOME",
             "LANG",
             "MCP_TOKEN",
@@ -236,8 +237,8 @@ fn trampoline_failures_exit_125_and_name_the_cause() {
     fails_with(missing_spec, "cannot read sandbox spec");
 
     let mut bad_log_filter = env.command(&env.unsandboxed(), &["/bin/sh", "-c", "true"]);
-    bad_log_filter.env("GILES_LOG", "[");
-    fails_with(bad_log_filter, "GILES_LOG");
+    bad_log_filter.env("DOOZERS_LOG", "[");
+    fails_with(bad_log_filter, "DOOZERS_LOG");
 }
 
 #[test]

@@ -297,7 +297,7 @@ impl Daemon {
             std::fs::write(path, contents).unwrap();
         };
         write(
-            "giles.toml",
+            "doozers.toml",
             "[owner]\nidentities = [\"fake:owner\"]\ntimezone = \"Europe/London\"\n\
              [provider.anthropic]\nconfig = { api_key = \"sk-test\" }\n\
              [channel.fake]\n\
@@ -314,7 +314,7 @@ impl Daemon {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )

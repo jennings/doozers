@@ -2,12 +2,12 @@
 
 Code: `crates/doozers-core/src/secrets/` (`doozers_core::secrets`), with its rows in `doozers-store`
 ([Storage](storage.md#secrets)). Design: PLAN section 7.7 and the decisions on
-[#29 Secrets storage](https://github.com/jennings/giles/issues/29).
+[#29 Secrets storage](https://github.com/jennings/doozers/issues/29).
 
 The secret store holds named credentials that the core injects into the components using them.
 Stored remote toolsets keep their credentials in it ([Toolsets](toolsets.md#credentials)), and
 users' OAuth tokens for them in each user's space
-([Each user's sign-in](toolsets.md#each-users-sign-in)). In `giles.toml`, `{ secret = "name" }`
+([Each user's sign-in](toolsets.md#each-users-sign-in)). In `doozers.toml`, `{ secret = "name" }`
 references still resolve against `secrets.toml` ([Configuration](config.md#secrets)) until the
 reference and migration work lands.
 
@@ -43,13 +43,13 @@ Paths aren't sensitive. They appear in errors, logs, and config.
 error carries a value.
 
 Providers don't check permissions. The ACL from
-[#67 Secret ACL model](https://github.com/jennings/giles/issues/67) is enforced by the core above
-the trait, so a Vault provider sees only Giles.
+[#67 Secret ACL model](https://github.com/jennings/doozers/issues/67) is enforced by the core above
+the trait, so a Vault provider sees only Doozers.
 
 Later providers implement the same trait:
 
 - HashiCorp Vault, as a built-in provider.
-- `giles-secret-*` plugins, through an adapter that implements the trait over gRPC, as
+- `doozers-secret-*` plugins, through an adapter that implements the trait over gRPC, as
   `RemoteChannel` does for channels.
 
 A Windows DPAPI, passphrase, or Keychain key would be another key source of the local store, not a
@@ -57,8 +57,8 @@ provider.
 
 ## Local store
 
-`LocalSecrets` keeps one row per secret in `giles.db` (`secrets`). The path and metadata are plain,
-so listing and ACL checks never need a key. Only the value is sealed.
+`LocalSecrets` keeps one row per secret in `doozers.db` (`secrets`). The path and metadata are
+plain, so listing and ACL checks never need a key. Only the value is sealed.
 
 ```mermaid
 flowchart LR
@@ -67,11 +67,12 @@ flowchart LR
 ```
 
 - **Cipher.** AES-256-GCM from `aws-lc-rs`, which rustls already builds. `RandomizedNonceKey` draws
-  a random 96-bit nonce for every seal, and Giles makes one seal per secret write, far below the
+  a random 96-bit nonce for every seal, and Doozers makes one seal per secret write, far below the
   2^32 limit per key. Each row and the wrapped key record `aes-256-gcm`, so a later cipher is a
   re-encrypt migration.
 - **Associated data.** A value's AAD is its path, so a ciphertext copied onto another row fails to
-  open (`Damaged`). The data key's AAD is `giles:secret-store:data-key`. Paths can't contain `:`, so
+  open (`Damaged`). The data key's AAD is `giles:secret-store:data-key`, from the project's former
+  name, because changing it would make existing stores unreadable. Paths can't contain `:`, so
   neither opens as the other.
 - **Two levels of key.** One random data key seals every row. The `secret_key` row holds it sealed
   by the key-encryption key from the key source, with the source's kind (`key-file`). Changing key
@@ -90,13 +91,13 @@ that isn't regular or doesn't hold exactly 64 hex digits. No message quotes the 
 - **Mode.** Inside the data root, the file must have no group or other bits, as `secrets.toml` must
   not. Outside it, whatever mounts the file owns its mode. systemd credentials are 0400, and Docker
   Compose bind-mounts secrets with the host file's mode.
-- **Creation.** Giles creates the file only at the default location, with `create_new` and mode
+- **Creation.** Doozers creates the file only at the default location, with `create_new` and mode
   0600, so it never overwrites one. A configured file that doesn't exist is `KeyError::NotCreated`,
   whatever the database holds. A typo in the setting therefore can't produce a fresh key.
 
 The setting serves keys that live off the data disk. `$CREDENTIALS_DIRECTORY/<name>`, from
 `LoadCredentialEncrypted=`, is a `systemd-creds` credential, TPM2-bound if the host has a TPM. A
-`/run/secrets/<name>` file comes from an orchestrator. Giles reads one file either way.
+`/run/secrets/<name>` file comes from an orchestrator. Doozers reads one file either way.
 
 ### Opening at startup
 
@@ -116,12 +117,12 @@ The setting serves keys that live off the data disk. `$CREDENTIALS_DIRECTORY/<na
 
 The data key may change only while no secret is stored. `secret_data_key_set` checks that in the
 same transaction as the write. An empty store has nothing to lose, so a database restored without
-its key file starts with a fresh key instead of refusing. Once a secret exists, Giles never makes a
-new key over it.
+its key file starts with a fresh key instead of refusing. Once a secret exists, Doozers never makes
+a new key over it.
 
 ### Reach
 
-- `secret.key` and `giles.db` sit in the data root, which no plugin sandbox grant may overlap
+- `secret.key` and `doozers.db` sit in the data root, which no plugin sandbox grant may overlap
   ([Plugin sandbox](sandbox.md)). A configured key file anywhere else is protected the same way: no
   grant may be it or contain it, and the instance's own data directory is no exception
   ([Configuration](config.md#sandbox-grants)).

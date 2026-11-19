@@ -2,7 +2,7 @@
 //! channel plugin it launches (and, for a test that asks, the echo environment plugin), and
 //! helpers to drive and inspect them.
 //!
-//! Everything is private to one test: a temporary data root (so `GILES_HOME`, `HOME`, and
+//! Everything is private to one test: a temporary data root (so `DOOZERS_HOME`, `HOME`, and
 //! `TMPDIR` never point at the user's), loopback listeners on port 0, and Unix sockets under
 //! the root. Waiting is polling with a deadline; nothing sleeps for a fixed time.
 
@@ -136,7 +136,7 @@ impl Home {
         self.base().join("tmp")
     }
 
-    /// Rewrites `giles.toml` and `agent.toml` with `echo_config` (TOML keys of the echo
+    /// Rewrites `doozers.toml` and `agent.toml` with `echo_config` (TOML keys of the echo
     /// channel's `config` table, e.g. `unavailable = ["owner"]`). Takes effect at the next start.
     pub fn configure_echo(&self, echo_config: &str) {
         // Plugins run in the sandbox wherever this host has one.
@@ -151,7 +151,7 @@ impl Home {
             String::new()
         };
         fs::write(
-            self.root().join("giles.toml"),
+            self.root().join("doozers.toml"),
             format!(
                 "[core]\nhttp_listen = \"127.0.0.1:0\"\n\n\
                  [owner]\nidentities = [\"{CHANNEL}:owner\"]\n\n\
@@ -284,7 +284,7 @@ impl Home {
     /// A connection to the daemon's database (read it only: the daemon owns it).
     pub fn db(&self) -> rusqlite::Connection {
         wait_until("the database file", || {
-            let path = self.root().join("data/giles.db");
+            let path = self.root().join("data/doozers.db");
             path.is_file()
                 .then(|| rusqlite::Connection::open(path).unwrap())
         })
@@ -336,7 +336,7 @@ impl Home {
     }
 }
 
-/// The echo channel plugin binary built next to `giles`, brought up to date once per test run.
+/// The echo channel plugin binary built next to `doozers`, brought up to date once per test run.
 static ECHO_BINARY: LazyLock<PathBuf> = LazyLock::new(|| build_plugin("doozers-channel-echo"));
 
 /// The echo environment plugin binary, built the same way as [`ECHO_BINARY`] when a test first
@@ -344,14 +344,14 @@ static ECHO_BINARY: LazyLock<PathBuf> = LazyLock::new(|| build_plugin("doozers-c
 static ECHO_ENVIRONMENT_BINARY: LazyLock<PathBuf> =
     LazyLock::new(|| build_plugin("doozers-environment-echo"));
 
-/// Builds the plugin package `package` next to `giles` and returns its binary: `cargo build -p
+/// Builds the plugin package `package` next to `doozers` and returns its binary: `cargo build -p
 /// <package>` does nothing when `cargo test --workspace` has just built it (it resolves to the
 /// same artifact), and builds or rebuilds it when only `-p doozers` is being tested, so a stale
 /// plugin never runs silently. The tests run the build one at a time (the initializers), and
 /// Cargo isn't holding its build lock while tests run.
 fn build_plugin(package: &str) -> PathBuf {
-    let giles = Path::new(env!("CARGO_BIN_EXE_doozers"));
-    let profile_dir = giles.parent().unwrap();
+    let doozers = Path::new(env!("CARGO_BIN_EXE_doozers"));
+    let profile_dir = doozers.parent().unwrap();
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut build = Command::new(cargo);
     build
@@ -432,7 +432,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    /// Starts `doozers serve` on `home` and returns once it logs `giles started`.
+    /// Starts `doozers serve` on `home` and returns once it logs `doozers started`.
     pub fn start(home: &Home) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_doozers"));
         command
@@ -440,8 +440,8 @@ impl Daemon {
             .arg(home.root())
             .env("HOME", home.user())
             .env("TMPDIR", home.tmp())
-            .env("GILES_LOG", "info")
-            .env_remove("GILES_HOME")
+            .env("DOOZERS_LOG", "info")
+            .env_remove("DOOZERS_HOME")
             .env_remove("RUST_LOG")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -461,7 +461,7 @@ impl Daemon {
             sink.changed.notify_all();
         });
         let daemon = Self { child, log };
-        daemon.wait_for_log("giles started");
+        daemon.wait_for_log("doozers started");
         daemon
     }
 
@@ -498,7 +498,7 @@ impl Daemon {
             if let Some(status) = self.child.try_wait().unwrap() {
                 break status;
             }
-            assert!(Instant::now() < deadline, "giles did not stop");
+            assert!(Instant::now() < deadline, "doozers did not stop");
             thread::sleep(Duration::from_millis(20));
         };
         assert!(status.success(), "{status}\n{}", self.log());
@@ -507,7 +507,7 @@ impl Daemon {
             panic!("{message}");
         }
         let log = self.log();
-        assert!(log.contains("giles stopped"), "{log}");
+        assert!(log.contains("doozers stopped"), "{log}");
         log
     }
 }
@@ -519,7 +519,7 @@ impl Drop for Daemon {
             let _ = self.child.wait();
         }
         if thread::panicking() {
-            eprintln!("--- giles log ---\n{}", self.log());
+            eprintln!("--- doozers log ---\n{}", self.log());
         }
     }
 }

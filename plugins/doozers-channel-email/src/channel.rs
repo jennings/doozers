@@ -563,7 +563,7 @@ impl Shared {
             authserv_id: &self.config.authserv_id,
             own_address: &self.config.address,
         };
-        let synthetic_id = format!("{uid_validity}.{uid}@giles.invalid");
+        let synthetic_id = format!("{uid_validity}.{uid}@doozers.invalid");
         let mail = match inbound::parse(&raw, &synthetic_id, context) {
             Ok(mail) => mail,
             Err(drop) => {

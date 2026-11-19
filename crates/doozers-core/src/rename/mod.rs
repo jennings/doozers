@@ -37,16 +37,16 @@ pub struct RenameReport {
     pub kind: Kind,
     /// The database rows that moved to the new name.
     pub rows: RenamedRows,
-    /// Whether the `[<kind>.<old>]` table of `giles.toml` was renamed. `false` when the operator
+    /// Whether the `[<kind>.<old>]` table of `doozers.toml` was renamed. `false` when the operator
     /// had already renamed it by hand.
     pub config_table: bool,
     /// Whether the instance is a toolset stored in the database: its row was renamed (or
-    /// already was, by a run that stopped early), and `giles.toml` has no table to rename.
+    /// already was, by a run that stopped early), and `doozers.toml` has no table to rename.
     pub stored_toolset: bool,
-    /// How many `[[routes]]` of `giles.toml` named the old channel instance. Giles imports those
-    /// once and then ignores them; they are rewritten so a file not yet imported (the first start
-    /// after an upgrade) imports the new name, and a leftover block stays consistent. The routes
-    /// Giles stores moved with the database rows ([`RenamedRows::routes`]).
+    /// How many `[[routes]]` of `doozers.toml` named the old channel instance. Doozers imports
+    /// those once and then ignores them; they are rewritten so a file not yet imported (the first
+    /// start after an upgrade) imports the new name, and a leftover block stays consistent. The
+    /// routes Doozers stores moved with the database rows ([`RenamedRows::routes`]).
     pub legacy_routes: usize,
     /// The `agent.toml` files rewritten, with the number of references changed in each.
     pub agent_files: Vec<(PathBuf, usize)>,
@@ -86,12 +86,12 @@ pub enum RenameError {
         kind: Kind,
         /// The old name.
         old: String,
-        /// The other kinds of which `giles.toml` configures an instance with the old name.
+        /// The other kinds of which `doozers.toml` configures an instance with the old name.
         elsewhere: Vec<Kind>,
     },
     /// Both names are configured as the kind.
     #[error(
-        "both [{kind}.{old}] and [{kind}.{new}] are in giles.toml: remove or rename one of them \
+        "both [{kind}.{old}] and [{kind}.{new}] are in doozers.toml: remove or rename one of them \
          first; renaming never merges two instances"
     )]
     BothConfigured {
@@ -105,7 +105,7 @@ pub enum RenameError {
     /// The old name has data, but neither name is configured.
     #[error(
         "the {kind} {old:?} has data but is not configured, and neither is {new:?}: add it to \
-         giles.toml under the new name (`[{kind}.{new}]`, with the settings it had) and run this \
+         doozers.toml under the new name (`[{kind}.{new}]`, with the settings it had) and run this \
          command again to move the data"
     )]
     NotConfigured {
@@ -129,7 +129,7 @@ pub enum RenameError {
         /// The configured instance.
         existing: String,
     },
-    /// A toolset stored in the database has the new name, which giles.toml would gain.
+    /// A toolset stored in the database has the new name, which doozers.toml would gain.
     #[error(
         "{new:?} is the name of the toolset {existing:?} stored in the database; toolset names \
          are unique, ignoring case. Remove that toolset or choose another name"
@@ -153,7 +153,7 @@ pub enum RenameError {
     },
     /// The new name is configured as the kind, so it can't take the data of the old one.
     #[error(
-        "cannot rename the {kind} {old:?} to {new:?}: giles.toml configures [{kind}.{new}], so \
+        "cannot rename the {kind} {old:?} to {new:?}: doozers.toml configures [{kind}.{new}], so \
          remove or rename that table first; renaming never merges two instances"
     )]
     NewIsConfigured {
@@ -227,7 +227,7 @@ fn unknown_instance_message(kind: Kind, old: &str, elsewhere: &[Kind]) -> String
         format!("no database rows, no directory under data/{kind}/")
     };
     let mut message = format!(
-        "no {kind} named {old:?}: giles.toml has no `[{kind}.{old}]` table and there is no {kind} \
+        "no {kind} named {old:?}: doozers.toml has no `[{kind}.{old}]` table and there is no {kind} \
          data under that name ({data})"
     );
     if !elsewhere.is_empty() {
@@ -240,7 +240,7 @@ fn unknown_instance_message(kind: Kind, old: &str, elsewhere: &[Kind]) -> String
             .map(|other| format!("`doozers {other} rename`"))
             .collect();
         message = format!(
-            "{message} (giles.toml has {}; use {})",
+            "{message} (doozers.toml has {}; use {})",
             tables.join(" and "),
             commands.join(" or ")
         );
@@ -252,10 +252,10 @@ fn unknown_instance_message(kind: Kind, old: &str, elsewhere: &[Kind]) -> String
 /// instance's table and references in the configuration. The caller proves the core is stopped by
 /// holding `lock`, the data root's single-instance lock.
 ///
-/// `old` is the name in `giles.toml` (`[<kind>.<old>]`), or, if the operator already renamed the
+/// `old` is the name in `doozers.toml` (`[<kind>.<old>]`), or, if the operator already renamed the
 /// table by hand, the name the data of that kind still has; `new` must not have any data of that
 /// kind. A toolset stored in the database (made in the web UI) is renamed too, when `kind` is
-/// [`Kind::Toolset`] and `giles.toml` doesn't configure `old`: its row is renamed instead of a
+/// [`Kind::Toolset`] and `doozers.toml` doesn't configure `old`: its row is renamed instead of a
 /// table, `old` may differ from the stored name in case, and `new` may differ from it in case
 /// only. The database rows move in one transaction, and the file changes happen inside it before
 /// it commits, ending, for a channel, with the group owners in each agent's memory database
@@ -301,11 +301,11 @@ pub async fn rename_instance(
         reason: e.to_string(),
     })?;
     let configured = edit::configured(&doc);
-    // Whether `giles.toml` configures `name` as an instance of `kind`. Another kind's instance of
+    // Whether `doozers.toml` configures `name` as an instance of `kind`. Another kind's instance of
     // the same name is another instance, so it is never looked at.
     let configured_as = |name: &str| configured.contains(&(kind, name.to_owned()));
-    // The other kinds `giles.toml` configures an instance named `name` of, for the error that says
-    // `name` isn't an instance of `kind`.
+    // The other kinds `doozers.toml` configures an instance named `name` of, for the error that
+    // says `name` isn't an instance of `kind`.
     let elsewhere = |name: &str| -> Vec<Kind> {
         Kind::ALL
             .into_iter()
@@ -356,7 +356,7 @@ pub async fn rename_instance(
         && !stored
             .iter()
             .any(|t| t.name != new && t.name.eq_ignore_ascii_case(old));
-    // Unless `giles.toml` configures `old`, a stored toolset of that name (ignoring case) is the
+    // Unless `doozers.toml` configures `old`, a stored toolset of that name (ignoring case) is the
     // one to rename.
     let stored_old = if kind == Kind::Toolset && !configured_as(old) && !stored_resumed {
         stored.iter().find(|t| t.name.eq_ignore_ascii_case(old))
@@ -391,7 +391,7 @@ pub async fn rename_instance(
             ),
         });
     }
-    // A name a stored toolset has can't be given to a table of `giles.toml` (which would take the
+    // A name a stored toolset has can't be given to a table of `doozers.toml` (which would take the
     // name from it at the next start), or to another stored toolset.
     if kind == Kind::Toolset
         && !configured_as(new)
@@ -445,7 +445,7 @@ pub async fn rename_instance(
             what: describe_rows(rows.get(new).copied().unwrap_or_default()),
         });
     }
-    // An interrupted run rewrote `giles.toml` before it moved any directory, so only then are
+    // An interrupted run rewrote `doozers.toml` before it moved any directory, so only then are
     // directories already at their new path ours. While `old` is still configured as `kind`, a
     // directory named `new` belongs to something else. Rows and directories are per kind, so
     // `old` being configured as another kind doesn't matter.
@@ -479,7 +479,7 @@ pub async fn rename_instance(
         Some(row) => StoredSecrets::plan(root, &config_text, store, row, new).await?,
         None => None,
     };
-    // The row goes first, as `giles.toml` is rewritten before the agents' files and directories.
+    // The row goes first, as `doozers.toml` is rewritten before the agents' files and directories.
     if let Some(row) = stored_old {
         rename_stored_toolset(store, row, new, secrets.as_ref()).await?;
     }
@@ -598,7 +598,7 @@ struct StoredSecrets {
 impl StoredSecrets {
     /// The moves for renaming `row` to `new`, or `None` if the toolset owns no secret and its
     /// spec refers to none. Opens the secret store only if there are secrets to move, with the
-    /// key file `giles.toml` (`config_text`) names.
+    /// key file `doozers.toml` (`config_text`) names.
     async fn plan(
         root: &DataRoot,
         config_text: &str,
@@ -819,7 +819,7 @@ struct Move {
 /// Everything a rename will do to the files, decided before anything changes.
 #[derive(Debug, Clone)]
 struct Plan {
-    /// `agent.toml` files first, `giles.toml` last.
+    /// `agent.toml` files first, `doozers.toml` last.
     files: Vec<StagedFile>,
     moves: Vec<Move>,
     /// The agent files in `files`, with the references changed in each.
@@ -871,9 +871,9 @@ impl Plan {
         // its row is renamed in the database.
         let (mut config_table, mut routes) = (false, 0);
         if let Some(config_text) = config_text {
-            let giles = edit::rename_in_giles_toml(config_text, kind, old, new)
+            let doozers = edit::rename_in_doozers_toml(config_text, kind, old, new)
                 .map_err(|e| edit_error(&config_path, e))?;
-            let reparsed = edit::parse(&giles.text).map_err(|e| edit_error(&config_path, e))?;
+            let reparsed = edit::parse(&doozers.text).map_err(|e| edit_error(&config_path, e))?;
             let after = edit::configured(&reparsed);
             if !after.contains(&(kind, new.to_owned())) || after.contains(&(kind, old.to_owned())) {
                 return Err(RenameError::Edit {
@@ -885,15 +885,15 @@ impl Plan {
                     ),
                 });
             }
-            if giles.text != config_text {
+            if doozers.text != config_text {
                 files.push(StagedFile {
                     path: config_path,
                     original: config_text.to_owned(),
-                    text: giles.text,
-                    changes: giles.routes,
+                    text: doozers.text,
+                    changes: doozers.routes,
                 });
             }
-            (config_table, routes) = (giles.table_renamed, giles.routes);
+            (config_table, routes) = (doozers.table_renamed, doozers.routes);
         }
 
         let mut moves = Vec::new();

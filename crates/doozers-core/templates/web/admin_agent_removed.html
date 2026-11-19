@@ -1,14 +1,14 @@
 {% extends "web/app.html" %}
 
-{% block title %}Removed {{ id }} - Agents - Giles{% endblock %}
+{% block title %}Removed {{ id }} - Agents - Doozers{% endblock %}
 
 {% block content %}
 <a class="back" href="/admin/agents">Agents</a>
 <h1>Removed {{ label }}</h1>
 <section class="card form">
 <ul>
-<li>The agent's directory is now <code>{{ trash }}</code>. To bring the agent back, move it back to <code>agents/{{ id }}/</code> and restart Giles. Its memory database, <code>memory.db</code>, is in that directory, so its memories come back with it.</li>
-<li>The agent is out of the running Giles: nothing can chat with it, and its id can be used for a new agent.</li>
+<li>The agent's directory is now <code>{{ trash }}</code>. To bring the agent back, move it back to <code>agents/{{ id }}/</code> and restart Doozers. Its memory database, <code>memory.db</code>, is in that directory, so its memories come back with it.</li>
+<li>The agent is out of the running Doozers: nothing can chat with it, and its id can be used for a new agent.</li>
 <li>{% if config_jobs == 0 %}It had no jobs in <code>agent.toml</code>.{% else %}The {{ config_jobs }} job{% if config_jobs != 1 %}s{% endif %} in its <code>agent.toml</code> stopped.{% endif %}</li>
 <li>{% if runtime_jobs == 0 %}It had no jobs it scheduled itself.{% else %}The {{ runtime_jobs }} job{% if runtime_jobs != 1 %}s{% endif %} it scheduled itself {% if runtime_jobs != 1 %}were{% else %}was{% endif %} deleted.{% endif %}</li>
 </ul>

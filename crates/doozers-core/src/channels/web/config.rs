@@ -10,12 +10,12 @@ use url::Url;
 use crate::config::{KeyPath, Secret};
 
 /// The shared-secret header a TCP proxy listener requires unless `secret_header` names another.
-pub const DEFAULT_SECRET_HEADER: &str = "x-giles-proxy-secret";
+pub const DEFAULT_SECRET_HEADER: &str = "x-doozers-proxy-secret";
 
 /// The shortest shared secret a TCP proxy listener accepts, in bytes.
 pub const MIN_SECRET_LEN: usize = 16;
 
-/// Headers the identity or secret header may not be: they mean something else to Giles or to
+/// Headers the identity or secret header may not be: they mean something else to Doozers or to
 /// browsers.
 const RESERVED_HEADERS: [&str; 6] = [
     "authorization",
@@ -29,8 +29,8 @@ const RESERVED_HEADERS: [&str; 6] = [
 /// The web channel's settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WebConfig {
-    /// The URL people reach Giles at, as an origin without a trailing slash (e.g.
-    /// `https://giles.example.com`): login links start with it, and an `https` URL makes the
+    /// The URL people reach Doozers at, as an origin without a trailing slash (e.g.
+    /// `https://doozers.example.com`): login links start with it, and an `https` URL makes the
     /// session cookie `Secure`. `None`: `http://<core.http_listen>`.
     pub public_url: Option<String>,
     /// The trusted-proxy listener, if configured.
@@ -127,7 +127,7 @@ fn public_url(text: &str) -> Result<String, String> {
         return fail("must name a host and no user");
     }
     if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
-        return fail("must be just the scheme, host, and port: Giles is served at the root");
+        return fail("must be just the scheme, host, and port: Doozers is served at the root");
     }
     Ok(url.origin().ascii_serialization())
 }
@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(WebConfig::from_json(&json!({})), Ok(WebConfig::default()));
         let config = WebConfig::from_json(&json!({
             "bogus": 1,
-            "public_url": "https://giles.example.com",
+            "public_url": "https://doozers.example.com",
             "nested": {"a": 1},
         }))
         .unwrap();
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(keys, ["bogus", "nested"]);
         assert_eq!(
             config.public_url.as_deref(),
-            Some("https://giles.example.com")
+            Some("https://doozers.example.com")
         );
         // A known key with a bad value is an error, even next to an unknown key.
         let err = WebConfig::from_json(&json!({"bogus": 1, "public_url": 5})).unwrap_err();
@@ -229,21 +229,21 @@ mod tests {
     #[test]
     fn public_url_is_an_origin() {
         let config =
-            WebConfig::from_json(&json!({"public_url": "https://Giles.Example.com/"})).unwrap();
+            WebConfig::from_json(&json!({"public_url": "https://Doozers.Example.com/"})).unwrap();
         assert_eq!(
             config.public_url.as_deref(),
-            Some("https://giles.example.com")
+            Some("https://doozers.example.com")
         );
         assert!(config.https());
         let config = WebConfig::from_json(&json!({"public_url": "http://127.0.0.1:8080"})).unwrap();
         assert_eq!(config.public_url.as_deref(), Some("http://127.0.0.1:8080"));
         assert!(!config.https());
         for bad in [
-            "giles.example.com",
-            "ftp://giles.example.com",
-            "https://user@giles.example.com",
-            "https://giles.example.com/giles",
-            "https://giles.example.com/?x",
+            "doozers.example.com",
+            "ftp://doozers.example.com",
+            "https://user@doozers.example.com",
+            "https://doozers.example.com/doozers",
+            "https://doozers.example.com/?x",
         ] {
             let err = WebConfig::from_json(&json!({ "public_url": bad })).unwrap_err();
             assert!(err.starts_with("public_url: "), "{bad}: {err}");

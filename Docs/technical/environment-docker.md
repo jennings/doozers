@@ -2,8 +2,8 @@
 
 The design of `doozers-environment-docker`, the first environment plugin (issue #25, built in
 issue #90). It runs each workspace as a container plus a named volume, through the Docker Engine
-API, and serves `giles.environment.v1` on the plugin SDK ([Plugin SDK](plugin-sdk.md)). User-facing
-setup and settings are in [Docker environment](../user/docker-environment.md).
+API, and serves `doozers.environment.v1` on the plugin SDK ([Plugin SDK](plugin-sdk.md)).
+User-facing setup and settings are in [Docker environment](../user/docker-environment.md).
 
 The crate is a library with a thin binary. `DockerEnvironment` implements
 `doozers_types::Environment` directly, so the SDK serves it with no adapter. `main` calls
@@ -25,22 +25,22 @@ process on the same engine, finds every workspace again from labels:
 
 | Label | On | Meaning |
 | --- | --- | --- |
-| `giles.instance` | volume, container | The `[environment.<name>]` instance, so two instances on one engine never see each other's workspaces |
-| `giles.workspace` | volume, container | The workspace id the core chose |
-| `giles.image` | volume, container | The image as requested, normalized (`docker.io/library/ubuntu:24.04`) |
-| `giles.image-digest` | volume, container | What the container is created from: the repository digest, or the image ID for an image with none (a local build) |
-| `giles.image-id` | volume, container | The image ID at creation, which image removal uses |
-| `giles.pulled` | volume, container | `true` if this plugin pulled the image |
-| `giles.created` | volume, container | Creation time, RFC 3339 |
+| `doozers.instance` | volume, container | The `[environment.<name>]` instance, so two instances on one engine never see each other's workspaces |
+| `doozers.workspace` | volume, container | The workspace id the core chose |
+| `doozers.image` | volume, container | The image as requested, normalized (`docker.io/library/ubuntu:24.04`) |
+| `doozers.image-digest` | volume, container | What the container is created from: the repository digest, or the image ID for an image with none (a local build) |
+| `doozers.image-id` | volume, container | The image ID at creation, which image removal uses |
+| `doozers.pulled` | volume, container | `true` if this plugin pulled the image |
+| `doozers.created` | volume, container | Creation time, RFC 3339 |
 
 The volume is the source of truth, because it outlives the container: `list_workspaces` lists the
 instance's volumes and pairs each with its container, if there is one. A volume without a container
 is a stopped workspace that `start_workspace` can recreate. A container without a volume is never
 listed as a workspace.
 
-The volume and container are both named `giles-<instance>.<id>`. Ids contain no `.`, so the last `.`
-separates the id and two instances can't produce the same name. Everything else is found by label,
-never by name, and a result is checked against the labels again after the engine's filter.
+The volume and container are both named `doozers-<instance>.<id>`. Ids contain no `.`, so the last
+`.` separates the id and two instances can't produce the same name. Everything else is found by
+label, never by name, and a result is checked against the labels again after the engine's filter.
 
 Per-workspace calls hold an in-memory lock on the id (`start_workspace` takes it only when the
 container isn't already running). It keeps two concurrent calls from both recreating a container,
@@ -137,7 +137,7 @@ under the agent in the middle of a conversation.
 
 An image is removed after a delete only if all of these hold:
 
-- The workspace's `giles.pulled` is `true`. A workspace created from an image that an earlier
+- The workspace's `doozers.pulled` is `true`. A workspace created from an image that an earlier
   workspace of the same instance pulled inherits `true`, so the last one out removes it.
 - No remaining volume of the instance records the same image ID.
 - The engine allows it. Removal is by image ID without `force`, so the engine refuses an image that
@@ -149,7 +149,7 @@ instance. A failed create removes the image that attempt pulled by the same rule
 ## The helper
 
 `doozers-workspace-helper` (crate `crates/doozers-workspace-helper`) is a small static Linux binary
-that the plugin copies to `/.giles/bin/doozers-workspace-helper` in every container. Its name
+that the plugin copies to `/.doozers/bin/doozers-workspace-helper` in every container. Its name
 doesn't start with `doozers-environment-`, which would make plugin discovery treat it as a plugin.
 It has no async runtime. It exists because the container can't be assumed to have anything but
 `/bin/sh`, and because the Engine API can't kill an exec.
@@ -183,17 +183,17 @@ the path and the `cargo build --target <arch>-unknown-linux-musl` command that m
 The linker for the musl targets is `rust-lld` (`.cargo/config.toml`), and both targets are in
 `rust-toolchain.toml`, so the cross build needs no C toolchain. The
 [container image](container-image.md) builds the helper for its own architecture and installs it
-next to the plugin. The archive upload that copies it into a container also creates `/.giles/run`
+next to the plugin. The archive upload that copies it into a container also creates `/.doozers/run`
 with mode 1777, so a command that runs as another user can still record its group.
 
 ## Running commands
 
 Every command runs as one exec of
-`/.giles/bin/doozers-workspace-helper run --id <uuid> -- /bin/sh -c <command>`, in `/workspace`,
+`/.doozers/bin/doozers-workspace-helper run --id <uuid> -- /bin/sh -c <command>`, in `/workspace`,
 with no TTY and standard input closed. The id is a fresh UUID, not the engine's exec id, because the
 plugin needs it before the exec exists.
 
-`run` starts the command in a new process group and writes the group id to `/.giles/run/<id>`. It
+`run` starts the command in a new process group and writes the group id to `/.doozers/run/<id>`. It
 gives the command's output pipes to itself and copies them to its own standard output and standard
 error, which the engine multiplexes back to the plugin. It exits with the command's status, or 128 +
 N when signal N ended it, and removes its record. It doesn't wait for background processes that
@@ -248,5 +248,5 @@ the helper's output parsing. `crates/doozers-workspace-helper/tests/cli.rs` runs
 on the host. The integration tests in `plugins/doozers-environment-docker/tests/` run against a real
 Docker API socket: `docker.rs` calls `DockerEnvironment` directly, and `serve.rs` runs the binary
 with `serve --config` and drives it over gRPC. They skip, printing why, when no socket answers
-(`GILES_REQUIRE_DOCKER=1` makes that a failure, as in [CI](ci.md)). The helper comes from
-`GILES_HELPER_DIR` or is cross-built for the engine's architecture.
+(`DOOZERS_REQUIRE_DOCKER=1` makes that a failure, as in [CI](ci.md)). The helper comes from
+`DOOZERS_HELPER_DIR` or is cross-built for the engine's architecture.

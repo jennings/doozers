@@ -83,7 +83,7 @@ impl OpenOptions {
 
     /// Opens the database in whatever mode it is in, without changing it: WAL if the file is
     /// recorded as WAL, otherwise `delete`. For tools that run beside the configuration, like
-    /// the `giles <kind> rename` commands, and must not undo the daemon's choice.
+    /// the `doozers <kind> rename` commands, and must not undo the daemon's choice.
     pub fn keep_journal_mode(mut self) -> Self {
         self.journal_mode = None;
         self
@@ -393,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn connections_use_wal_foreign_keys_and_normal_sync() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         assert_eq!(pragma(&store, "journal_mode").await, r#"Text("wal")"#);
         assert_eq!(pragma(&store, "foreign_keys").await, "Integer(1)");
         // NORMAL is 1.
@@ -409,7 +409,7 @@ mod tests {
     #[tokio::test]
     async fn the_bundled_sqlite_has_fts5_and_json() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let (fts5, json) = store
             .read(|conn| {
                 let fts5 =
@@ -428,7 +428,7 @@ mod tests {
     #[tokio::test]
     async fn readers_cannot_write() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let err = store
             .read(|conn| {
                 conn.execute("DELETE FROM sessions", [])?;
@@ -442,8 +442,8 @@ mod tests {
     #[tokio::test]
     async fn a_clean_close_checkpoints_and_removes_the_wal() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
-        let wal = dir.path().join("giles.db-wal");
+        let path = dir.path().join("doozers.db");
+        let wal = dir.path().join("doozers.db-wal");
         let store = Store::open(&path).await.unwrap();
         for i in 0..50 {
             store
@@ -475,7 +475,7 @@ mod tests {
     #[tokio::test]
     async fn vacuum_into_snapshots_a_live_wal_database() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         let store = Store::open(&path).await.unwrap();
         for i in 0..20 {
             store
@@ -490,7 +490,7 @@ mod tests {
                 .unwrap();
         }
         // The writes are still in the WAL, which a plain copy of the main file would miss.
-        assert!(dir.path().join("giles.db-wal").exists());
+        assert!(dir.path().join("doozers.db-wal").exists());
 
         let dest = dir.path().join("snapshot.db");
         store.vacuum_into(dest.clone()).await.unwrap();
@@ -520,7 +520,7 @@ mod tests {
     #[tokio::test]
     async fn reopening_is_idempotent_and_keeps_data() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         let store = Store::open(&path).await.unwrap();
         store
             .write(|conn| {
@@ -563,7 +563,7 @@ mod tests {
             },
         ];
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         drop(
             Store::open_migrating(path.clone(), OpenOptions::new(), V1)
                 .await
@@ -587,7 +587,7 @@ mod tests {
     #[tokio::test]
     async fn a_version_1_database_upgrades_to_the_current_schema() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         let v1 = Store::open_migrating(path.clone(), OpenOptions::new(), &migrate::MIGRATIONS[..1])
             .await
             .unwrap();
@@ -624,7 +624,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_reads_and_writes_never_surface_busy() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let mut tasks = tokio::task::JoinSet::new();
         for task in 0..16 {
             let store = store.clone();

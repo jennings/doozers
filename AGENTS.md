@@ -17,7 +17,7 @@
 - Update documentation in the same commit when the system changed:
   - Update user documentation for any user-facing change.
   - Update technical documentation for implementation changes.
-- Every setting of a Giles agent must be editable in the web UI. Nobody should have to edit an
+- Every setting of a Doozers agent must be editable in the web UI. Nobody should have to edit an
   agent's `agent.toml` by hand.
   - A change that adds an `agent.toml` key, or changes what one accepts, also adds or updates its
     field on the web agent forms in the same commit or stack.
@@ -26,17 +26,17 @@
 
 ## Writing user documentation
 
-The reader is someone installing and running Giles. Implementation detail belongs in
+The reader is someone installing and running Doozers. Implementation detail belongs in
 `Docs/technical/`; link there instead of explaining it.
 
 - Cut anything the reader wouldn't act on:
-  - Mechanism. "Giles listens on loopback, so bind to all interfaces", not why the port can't be
+  - Mechanism. "Doozers listens on loopback, so bind to all interfaces", not why the port can't be
     reached.
   - Internals: env vars the system sets, account names, internal paths, signal handling, startup
     order, retry schedules, log lines nobody looks for.
   - Build, release, CI, and licensing details.
   - "Does nothing" statements ("inert until configured", "unknown keys warn").
-  - Results nobody acts on ("Giles creates the rest on first start").
+  - Results nobody acts on ("Doozers creates the rest on first start").
   - Rare environments. Keep only the one setting that works around them.
 - Before cutting a fact a reader could act on, check that `Docs/technical/` or another page covers
   it. Otherwise keep it.
@@ -67,12 +67,12 @@ The reader is someone installing and running Giles. Implementation detail belong
 
 ## Tracking work
 
-- Outstanding work is in GitHub issues at jennings/giles (use `gh`). Do not leave TODO or FIXME
+- Outstanding work is in GitHub issues at jennings/doozers (use `gh`). Do not leave TODO or FIXME
   notes or checklists in the repository for work that remains: file an issue.
 - One issue per unit of work: something that lands as one reviewable commit or one small stack of
   commits. Larger work gets a parent issue with sub-issues (GitHub sub-issues). Add one with:
-  `gh api -X POST repos/jennings/giles/issues/<parent>/sub_issues -F sub_issue_id=<id>`, where
-  `<id>` is the child's database id, from `gh api repos/jennings/giles/issues/<n> --jq .id`.
+  `gh api -X POST repos/jennings/doozers/issues/<parent>/sub_issues -F sub_issue_id=<id>`, where
+  `<id>` is the child's database id, from `gh api repos/jennings/doozers/issues/<n> --jq .id`.
 - Use the existing labels: `bug`, `enhancement`, `documentation`, `question`, `help wanted`.
 - An issue says what and why, what done looks like, and any decisions the owner needs to make (label
   those `question`).

@@ -1,4 +1,4 @@
--- Giles schema version 1. Docs/technical/storage.md describes every table.
+-- Doozers schema version 1. Docs/technical/storage.md describes every table.
 -- Conventions: times are Unix milliseconds (INTEGER), booleans are 0 or 1, JSON columns are TEXT.
 
 -- One conversation's history with one agent (PLAN 6.2). Keyed sessions (direct, group) have a

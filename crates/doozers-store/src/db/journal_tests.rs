@@ -73,7 +73,7 @@ fn recorded_mode(path: &Path) -> String {
 async fn every_mode_is_applied_with_the_matching_synchronous_setting() {
     for mode in JournalMode::ALL {
         let dir = tempfile::tempdir().unwrap();
-        let store = open(&dir.path().join("giles.db"), mode).await;
+        let store = open(&dir.path().join("doozers.db"), mode).await;
         assert_eq!(writer_pragma(&store, "journal_mode").await, mode.as_str());
         // NORMAL (1) is only safe in WAL; the rollback modes keep FULL (2).
         let expected = if mode == JournalMode::Wal {
@@ -99,7 +99,7 @@ async fn every_mode_is_applied_with_the_matching_synchronous_setting() {
 #[tokio::test]
 async fn the_default_is_wal() {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+    let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
     assert_eq!(writer_pragma(&store, "journal_mode").await, "wal");
 }
 
@@ -108,7 +108,7 @@ async fn switching_an_existing_database_between_any_two_modes_keeps_its_data() {
     for from in JournalMode::ALL {
         for to in JournalMode::ALL {
             let dir = tempfile::tempdir().unwrap();
-            let path = dir.path().join("giles.db");
+            let path = dir.path().join("doozers.db");
             let store = open(&path, from).await;
             for i in 0..3 {
                 insert(&store, format!("config:{i}")).await;
@@ -139,7 +139,7 @@ async fn switching_an_existing_database_between_any_two_modes_keeps_its_data() {
 async fn keeping_the_journal_mode_leaves_the_file_as_it_is() {
     for from in JournalMode::ALL {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         let store = open(&path, from).await;
         insert(&store, "config:x".into()).await;
         drop(store);
@@ -167,7 +167,7 @@ async fn keeping_the_journal_mode_leaves_the_file_as_it_is() {
 async fn a_clean_close_leaves_no_journal_or_wal_file_in_any_mode() {
     for mode in JournalMode::ALL {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         let (wal, journal) = (sibling(&path, "-wal"), sibling(&path, "-journal"));
         let store = open(&path, mode).await;
         for i in 0..5 {
@@ -196,7 +196,7 @@ async fn a_clean_close_leaves_no_journal_or_wal_file_in_any_mode() {
 async fn only_in_a_rollback_mode_does_a_commit_wait_for_a_running_read() {
     for mode in JournalMode::ALL {
         let dir = tempfile::tempdir().unwrap();
-        let store = open(&dir.path().join("giles.db"), mode).await;
+        let store = open(&dir.path().join("doozers.db"), mode).await;
         insert(&store, "config:first".into()).await;
 
         let read_finished = Arc::new(AtomicBool::new(false));
@@ -230,7 +230,7 @@ async fn only_in_a_rollback_mode_does_a_commit_wait_for_a_running_read() {
 async fn reads_during_an_open_write_transaction_see_the_committed_state_in_every_mode() {
     for mode in JournalMode::ALL {
         let dir = tempfile::tempdir().unwrap();
-        let store = open(&dir.path().join("giles.db"), mode).await;
+        let store = open(&dir.path().join("doozers.db"), mode).await;
         insert(&store, "config:first".into()).await;
 
         let (started, started_rx) = oneshot::channel();
@@ -263,7 +263,7 @@ async fn reads_during_an_open_write_transaction_see_the_committed_state_in_every
 async fn many_concurrent_operations_never_surface_busy_in_a_rollback_mode() {
     for mode in ROLLBACK_MODES {
         let dir = tempfile::tempdir().unwrap();
-        let store = open(&dir.path().join("giles.db"), mode).await;
+        let store = open(&dir.path().join("doozers.db"), mode).await;
         let mut tasks = tokio::task::JoinSet::new();
         for task in 0..8 {
             let store = store.clone();
@@ -321,7 +321,7 @@ async fn many_concurrent_operations_never_surface_busy_in_a_rollback_mode() {
 async fn a_snapshot_of_a_rollback_journal_database_is_standalone_and_opens_in_any_mode() {
     for mode in ROLLBACK_MODES {
         let dir = tempfile::tempdir().unwrap();
-        let store = open(&dir.path().join("giles.db"), mode).await;
+        let store = open(&dir.path().join("doozers.db"), mode).await;
         for i in 0..20 {
             insert(&store, format!("config:{i}")).await;
         }
@@ -359,7 +359,7 @@ async fn a_mode_sqlite_refuses_fails_the_open_naming_the_mode() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("giles.db");
+    let path = dir.path().join("doozers.db");
     drop(open(&path, JournalMode::Delete).await);
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
     // Root ignores the permission bits, so there's nothing to refuse.
@@ -388,7 +388,7 @@ async fn a_mode_sqlite_refuses_fails_the_open_naming_the_mode() {
 async fn a_file_that_is_not_a_database_fails_as_a_database_error_in_every_mode() {
     for mode in JournalMode::ALL {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         std::fs::write(&path, "this is not a database, just text".repeat(100)).unwrap();
         let err = Store::open_with(&path, OpenOptions::new().journal_mode(mode))
             .await

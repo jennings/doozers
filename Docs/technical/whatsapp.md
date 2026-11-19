@@ -8,7 +8,7 @@ behavior and settings: [WhatsApp](../user/whatsapp.md). Why this library:
 [WhatsApp spike](whatsapp-spike.md).
 
 **Verified against a fake client only.** The owner chose to build on `whatsapp-rust` without waiting
-for the live device run ([issue #1](https://github.com/jennings/giles/issues/1), still open), so
+for the live device run ([issue #1](https://github.com/jennings/doozers/issues/1), still open), so
 nothing here has touched the WhatsApp service. Everything above the `real` module is tested against
 a fake client; `real` is a thin layer over the library, covered by compilation and tests of its pure
 conversion functions, and is verified for real only by the
@@ -81,7 +81,7 @@ to SSH, fetching the git source needs `CARGO_NET_GIT_FETCH_WITH_CLI=true` and an
 - **The image.** It ships the plugin binary, so the OCI license label is
   `(MIT OR Apache-2.0) AND AGPL-3.0-only`, and the license texts and `THIRD-PARTY` (the AGPL source
   offer: the repository at the image's commit, and the pinned library revision) are in
-  `/usr/share/doc/giles/` ([Container image](container-image.md)).
+  `/usr/share/doc/doozers/` ([Container image](container-image.md)).
 - **Not legal advice.** This records how the code is licensed and what the project does about it. A
   decision to relicense the plugin or drop the library would change this section, the crate's
   `license`, the image label, and `ci.yml` together.
@@ -115,7 +115,7 @@ one exception is the media payload (the library's protobuf message), which only 
 download. Tests implement the seam with `testing::FakeBackend` and `FakeConnector`.
 
 `real::RealConnector` opens the SQLite store (`SqliteStore::open`), builds the `Bot` with
-`skip_history_sync` (Giles never imports history), the device name as the OS in
+`skip_history_sync` (Doozers never imports history), the device name as the OS in
 `DevicePropsOverride` (WhatsApp applies it at pairing), a pair code when configured, a raw
 `EventHandler`, and the durability hook, and runs it on a task. When that task ends it sends
 `WaEvent::Stopped`.
@@ -151,7 +151,7 @@ client ──WaEvent──▶ session ──Outgoing──▶ Channel::events �
    batch of echoes), `false` on a failure, a shutdown, or a dropped sender. The hook returns, and
    the library acknowledges the messages.
 
-What this gives: when WhatsApp is told a message arrived, the event file is in `giles-sdk/events/`
+What this gives: when WhatsApp is told a message arrived, the event file is in `doozers-sdk/events/`
 (`sdk_tests` checks that against real files); nothing is acknowledged if the SDK can't persist (it
 retries without polling), if the blob store fails (`inbound::event` returns the error, so the whole
 batch is redelivered), or if the plugin stops first. Delivery is at least once: a redelivered
@@ -236,12 +236,12 @@ session stops on its next event or wait, also while still connecting, calls `Bac
 
 ## Session store and lock
 
-The library's SQLite store is `<GILES_PLUGIN_DATA>/whatsapp.db`. `DataDir::open` takes an exclusive
-`flock` on `<data>/lock` (`File::try_lock`) at `configure`, held for the life of the channel, and
-fails with a clear error if another process holds it: two clients on one session are the same device
-twice, and WhatsApp would disconnect one with a "replaced" error forever. The operating system
-releases the lock when the process exits, however it exits. A remote plugin's data directory works
-the same way.
+The library's SQLite store is `<DOOZERS_PLUGIN_DATA>/whatsapp.db`. `DataDir::open` takes an
+exclusive `flock` on `<data>/lock` (`File::try_lock`) at `configure`, held for the life of the
+channel, and fails with a clear error if another process holds it: two clients on one session are
+the same device twice, and WhatsApp would disconnect one with a "replaced" error forever. The
+operating system releases the lock when the process exits, however it exits. A remote plugin's data
+directory works the same way.
 
 ## Identity, echoes, and authentication
 
@@ -259,9 +259,9 @@ the same way.
   to tell the plugin's own sends from the owner typing on the phone without remembering sent ids,
   and a rule that accepted "from another device of my own account" would let the agent answer itself
   in the self-chat. So every message of the account is an echo, including the "Message yourself"
-  chat, and the user guide says to link Giles to a number of its own. (The spike's `echo=own-send` /
-  `other-device` distinction is for the live run to learn whether the server hands a device its own
-  sends back; this plugin doesn't need to know.)
+  chat, and the user guide says to link Doozers to a number of its own. (The spike's `echo=own-send`
+  / `other-device` distinction is for the live run to learn whether the server hands a device its
+  own sends back; this plugin doesn't need to know.)
 - **`sender_authenticated = true`** for every message that gets this far. WhatsApp messages (direct
   and group) are end-to-end encrypted with the Signal protocol, and the client decrypts a message
   only with the session or sender key of the device that sent it, so the sender on a decrypted
@@ -326,7 +326,7 @@ redelivered. The core applies its own `max_blob` to what the plugin hands over; 
 `Settings::new` validates what serde can't, naming the key (`invalid config: <key>: <reason>`):
 `link` (`qr` or `pair_code`), `phone_number` (required by `pair_code`, refused by `qr`, 7 to 15
 digits without a leading `0`, parsed by `identity::parse_phone`), `device_name` (1 to 64 characters,
-no control characters, default `Giles`), `max_blob` (default 50 MiB, not 0). Unknown keys are
+no control characters, default `Doozers`), `max_blob` (default 50 MiB, not 0). Unknown keys are
 refused. The phone number is the only sensitive value and is never logged or put in a status:
 `Config` has no `Debug`, `Link`'s `Debug` prints `<redacted>` for it (tested), and the startup log
 line names only the mode (`link = "pair_code"`).
@@ -334,7 +334,7 @@ line names only the mode (`link = "pair_code"`).
 ## Logging
 
 The binary's default filter is `warn,doozers_channel_whatsapp=info,doozers_plugin_sdk=info`
-(`GILES_LOG` overrides it): the library logs each connection step at `info`, including the pair
+(`DOOZERS_LOG` overrides it): the library logs each connection step at `info`, including the pair
 code, and its JIDs. The plugin's own logs name no number or text; a dropped message is logged with
 its id and chat, not its content.
 
@@ -362,6 +362,7 @@ Not tested, because it needs WhatsApp: the library's own behavior (pairing, reco
 decryption, sending, media), the real `Backend` methods (`send_text`, `send_media`, `download`,
 `resolve_phone`, `phone_for_lid`, `own_addresses`), and the `real::RealConnector` assembly. They are
 short and mostly one library call each. Assumptions in them that the live run must confirm: the hook
-delivers the messages Giles should see (including from a linked device that is a Business account),
-`sender_alt` and the LID map identify senders in groups and DMs as the spike saw, `is_on_whatsapp`
-finds registered numbers, and the media builders produce messages WhatsApp displays.
+delivers the messages Doozers should see (including from a linked device that is a Business
+account), `sender_alt` and the LID map identify senders in groups and DMs as the spike saw,
+`is_on_whatsapp` finds registered numbers, and the media builders produce messages WhatsApp
+displays.

@@ -419,12 +419,12 @@ impl CoreTool for EnvironmentDeleteTool {
     }
 }
 
-/// What to add when the environment couldn't confirm a delete: Giles keeps trying.
+/// What to add when the environment couldn't confirm a delete: Doozers keeps trying.
 fn pending_note(record: &WorkspaceRecord) -> &'static str {
     if record.state == WorkspaceState::Deleted {
         ""
     } else {
-        " The environment couldn't be reached to remove it; Giles will keep trying."
+        " The environment couldn't be reached to remove it; Doozers will keep trying."
     }
 }
 

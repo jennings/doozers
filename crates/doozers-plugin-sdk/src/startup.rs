@@ -28,14 +28,14 @@ const MAX_TOKEN_LEN: usize = 1024;
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum StartupError {
     /// [`MAGIC_COOKIE_ENV`] is missing or wrong: someone ran the binary by hand.
-    #[error("not launched by Giles ({MAGIC_COOKIE_ENV} is not set)")]
-    NotLaunchedByGiles,
+    #[error("not launched by Doozers ({MAGIC_COOKIE_ENV} is not set)")]
+    NotLaunchedByDoozers,
     /// [`PROTOCOLS_ENV`] is missing or isn't a list of protocol majors.
     #[error("{PROTOCOLS_ENV} must list protocol majors, e.g. \"1\", got {0:?}")]
     MalformedProtocols(String),
     /// The core and the plugin share no protocol major.
     #[error(
-        "no shared plugin protocol: Giles speaks {offered}, this plugin speaks {}",
+        "no shared plugin protocol: Doozers speaks {offered}, this plugin speaks {}",
         join(SUPPORTED_PROTOCOLS)
     )]
     NoSharedProtocol {
@@ -86,7 +86,7 @@ fn join(majors: &[u32]) -> String {
 pub(crate) fn check_magic(env: &dyn Fn(&str) -> Option<OsString>) -> Result<(), StartupError> {
     match env(MAGIC_COOKIE_ENV) {
         Some(value) if value == MAGIC_COOKIE => Ok(()),
-        _ => Err(StartupError::NotLaunchedByGiles),
+        _ => Err(StartupError::NotLaunchedByDoozers),
     }
 }
 
@@ -207,7 +207,7 @@ pub(crate) fn watch_stdin(
     let closed = CancellationToken::new();
     let on_close = closed.clone();
     std::thread::Builder::new()
-        .name("giles-plugin-stdin".into())
+        .name("doozers-plugin-stdin".into())
         .spawn(move || {
             let mut reader = reader;
             let token = read_token(&mut reader);
@@ -267,7 +267,7 @@ mod tests {
         for env in [env_of(&[]), env_of(&[(MAGIC_COOKIE_ENV, "1")])] {
             assert!(matches!(
                 check_magic(&env),
-                Err(StartupError::NotLaunchedByGiles)
+                Err(StartupError::NotLaunchedByDoozers)
             ));
         }
     }
@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(err.exit_code(), 76);
         assert_eq!(
             err.to_string(),
-            "no shared plugin protocol: Giles speaks 2,3, this plugin speaks 1"
+            "no shared plugin protocol: Doozers speaks 2,3, this plugin speaks 1"
         );
     }
 
@@ -311,7 +311,12 @@ mod tests {
         assert_eq!(data_dir(&env_of(&[(DATA_ENV, path)])).unwrap(), dir.path());
         let file = dir.path().join("file");
         std::fs::write(&file, "").unwrap();
-        for value in ["", "relative", file.to_str().unwrap(), "/nonexistent/giles"] {
+        for value in [
+            "",
+            "relative",
+            file.to_str().unwrap(),
+            "/nonexistent/doozers",
+        ] {
             assert!(
                 matches!(
                     data_dir(&env_of(&[(DATA_ENV, value)])),

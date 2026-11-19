@@ -206,7 +206,7 @@ pub(crate) struct ManagedToolset {
     requests: mpsc::Sender<Reply>,
     /// The instance's `skills` directories.
     skills: Vec<std::path::PathBuf>,
-    /// Cancelled when the supervisor is stopped (the toolset was replaced or removed, or Giles
+    /// Cancelled when the supervisor is stopped (the toolset was replaced or removed, or Doozers
     /// is shutting down): calls running on its connection end then.
     stop: CancellationToken,
 }

@@ -429,7 +429,7 @@ mod tests {
         let config = OpenAiConfig::from_json(&json!({
             "api_key": "sk-or-1",
             "base_url": "https://openrouter.ai/api/v1/",
-            "headers": {"HTTP-Referer": "https://giles.example", "X-Title": "Giles"},
+            "headers": {"HTTP-Referer": "https://doozers.example", "X-Title": "Doozers"},
             "max_tokens": 8192,
             "media_types": ["image/png", "Application/PDF"],
             "context_window": 128_000,
@@ -443,8 +443,8 @@ mod tests {
         assert_eq!(config.api_key, Some(ApiKey::new("sk-or-1")));
         assert_eq!(config.base_url, "https://openrouter.ai/api/v1");
         assert_eq!(config.dialect, Dialect::OpenRouter);
-        assert_eq!(config.headers["http-referer"], "https://giles.example");
-        assert_eq!(config.headers["x-title"], "Giles");
+        assert_eq!(config.headers["http-referer"], "https://doozers.example");
+        assert_eq!(config.headers["x-title"], "Doozers");
         assert!(config.headers["x-title"].is_sensitive());
         assert_eq!(
             config.defaults,
@@ -560,7 +560,7 @@ mod tests {
             [openrouter]
             base_url = "https://openrouter.ai/api/v1"
             api_key = "sk-or-1"
-            headers = { "HTTP-Referer" = "https://giles.example", "X-Title" = "Giles" }
+            headers = { "HTTP-Referer" = "https://doozers.example", "X-Title" = "Doozers" }
 
             [ollama]
             base_url = "http://localhost:11434/v1"

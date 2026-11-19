@@ -223,7 +223,7 @@ async fn nothing_is_acknowledged_while_the_sdk_cannot_persist() {
 
     // The SDK's spool can't take a file: renaming into `events/` fails, and the SDK retries
     // instead of dropping the event.
-    let spool = served.data_dir().join("giles-sdk/events");
+    let spool = served.data_dir().join("doozers-sdk/events");
     let writable = std::fs::metadata(&spool).unwrap().permissions();
     std::fs::set_permissions(&spool, std::fs::Permissions::from_mode(0o555)).unwrap();
     let can_still_write = std::fs::File::create(spool.join("probe")).is_ok();
@@ -340,7 +340,7 @@ async fn a_send_over_the_wire_posts_a_message_and_failures_have_their_codes() {
 /// The files in the SDK's blob directory (inbound blobs and their sidecars, and the core's
 /// uploads under `outbound/`): zero when nothing is kept.
 fn blob_files(served: &Served) -> usize {
-    std::fs::read_dir(served.data_dir().join("giles-sdk/blobs")).map_or(0, Iterator::count)
+    std::fs::read_dir(served.data_dir().join("doozers-sdk/blobs")).map_or(0, Iterator::count)
 }
 
 /// A blob the core puts for a send, as the `BlobRef` the send names.
@@ -503,7 +503,7 @@ async fn a_send_reads_the_blobs_the_core_put_and_uploads_them() {
     );
     // The core's uploads are the Send's: gone once it has ended.
     wait_until(|| {
-        std::fs::read_dir(served.data_dir().join("giles-sdk/outbound")).map_or(0, Iterator::count)
+        std::fs::read_dir(served.data_dir().join("doozers-sdk/outbound")).map_or(0, Iterator::count)
             == 0
     })
     .await;

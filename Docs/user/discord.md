@@ -1,9 +1,9 @@
 # Discord
 
-Giles can talk to you in direct messages through a Discord bot that you create. The channel is the
+Doozers can talk to you in direct messages through a Discord bot that you create. The channel is the
 plugin `doozers-channel-discord`.
 
-**Giles logs in as a bot, never as your own account.** Automating a normal user account (a
+**Doozers logs in as a bot, never as your own account.** Automating a normal user account (a
 "self-bot") is against Discord's terms. Your bot is bound by Discord's
 [Developer Terms of Service](https://support-dev.discord.com/hc/articles/8562894815383-Discord-Developer-Terms-of-Service).
 
@@ -37,12 +37,12 @@ Discord refuses the bot's messages to you.
 
 ## Find your user ID
 
-Giles recognizes you by your Discord user ID, a number, and not by your name.
+Doozers recognizes you by your Discord user ID, a number, and not by your name.
 
 1. In the Discord app, open **User Settings**, then **Advanced**, and turn on **Developer Mode**.
 2. Right-click (or long-press) your own name or avatar and choose **Copy User ID**.
 
-Add it to `[owner] identities` in `giles.toml`:
+Add it to `[owner] identities` in `doozers.toml`:
 
 ```toml
 [owner]
@@ -55,25 +55,25 @@ sender in exactly the form to add.
 ## Store the token
 
 Anyone who has the bot token can act as your bot. Put it in
-[`secrets.toml`](configuration.md#secrets) in the data root, and keep it out of `giles.toml`:
+[`secrets.toml`](configuration.md#secrets) in the data root, and keep it out of `doozers.toml`:
 
 ```toml
 discord = "paste the token here"
 ```
 
 ```sh
-chmod 600 ~/.giles/secrets.toml
+chmod 600 ~/.doozers/secrets.toml
 ```
 
 [In a container](container.md#secrets), you can take the token from the environment instead, with
 `token = { env = "DISCORD_TOKEN" }`.
 
 If the token leaks, reset it at once with **Reset Token** on the application's **Bot** page. Put the
-new token in `secrets.toml` and restart Giles. Restarting only the plugin keeps the old token.
+new token in `secrets.toml` and restart Doozers. Restarting only the plugin keeps the old token.
 
-## Configure Giles
+## Configure Doozers
 
-Add the channel to `giles.toml`. With your owner entry, it looks like this:
+Add the channel to `doozers.toml`. With your owner entry, it looks like this:
 
 ```toml
 [owner]
@@ -89,8 +89,8 @@ token = { secret = "discord" }
 The instance name (`discord` here) is up to you, but it's permanent. The plugin keeps its data under
 that name.
 
-Start Giles. `doozers status` should show the channel as `connected`, and the bot shows as online in
-Discord.
+Start Doozers. `doozers status` should show the channel as `connected`, and the bot shows as online
+in Discord.
 
 ## Settings
 
@@ -99,8 +99,8 @@ The `config` table of the instance takes these keys. Only `token` is required.
 | Key                | Default    | Meaning                                                                |
 | ------------------ | ---------- | ---------------------------------------------------------------------- |
 | `token`            | required   | The bot token ([Store the token](#store-the-token)); use a secret reference |
-| `max_blob`         | `"50 MiB"` | The largest attachment Giles downloads or sends ([Attachments](#attachments)) |
-| `catch_up_max_age` | `"24h"`    | How far back Giles looks for messages it missed ([After downtime](#after-downtime)) |
+| `max_blob`         | `"50 MiB"` | The largest attachment Doozers downloads or sends ([Attachments](#attachments)) |
+| `catch_up_max_age` | `"24h"`    | How far back Doozers looks for messages it missed ([After downtime](#after-downtime)) |
 
 - `token` must be the token alone, without the `Bot` prefix from Discord's examples.
 - `max_blob` should be no higher than the instance's own [`max_blob`](configuration.md#channels),
@@ -129,8 +129,8 @@ Pick the agent for your direct messages on the [Routes page](web.md#routes), at 
 
 Then send the bot a direct message.
 
-Only direct messages to the bot reach Giles. Messages in servers never do, even if they mention the
-bot.
+Only direct messages to the bot reach Doozers. Messages in servers never do, even if they mention
+the bot.
 
 Polls and forwarded messages are dropped. Editing or deleting a message after it was delivered
 changes nothing.
@@ -143,7 +143,7 @@ columns. [Rendering model output](../technical/rendering.md#discord) has the det
 **Mentions in a reply never ping anybody**, including `@everyone`, `@here`, and user or role
 mentions.
 
-A reply longer than 2,000 characters is sent as several messages. Giles doesn't show "typing". It
+A reply longer than 2,000 characters is sent as several messages. Doozers doesn't show "typing". It
 sends each part of an answer once the agent has finished it.
 
 ## Attachments
@@ -151,7 +151,7 @@ sends each part of an answer once the agent has finished it.
 Files you send reach the agent with your message. Each file can be up to `max_blob` (50 MiB by
 default), and a message can carry up to 10 files.
 
-If Giles can't take a file, the message still arrives, with a line saying why:
+If Doozers can't take a file, the message still arrives, with a line saying why:
 
 ```text
 [attachment not received: photo.png is over the limit of 50 MiB]
@@ -164,12 +164,12 @@ whole reply with an error that names the file, and nothing is sent.
 
 ## After downtime
 
-Discord keeps your direct messages while Giles is stopped. When the plugin connects again, it
+Discord keeps your direct messages while Doozers is stopped. When the plugin connects again, it
 delivers the ones it missed, in order, as far back as `catch_up_max_age` (24 hours by default).
 Older messages are skipped.
 
-Giles learns about a conversation when you first message the bot while it's running. If your very
-first message to the bot is sent while Giles is stopped, it's delivered only when you write again.
+Doozers learns about a conversation when you first message the bot while it's running. If your very
+first message to the bot is sent while Doozers is stopped, it's delivered only when you write again.
 
 ## Status
 
@@ -178,9 +178,9 @@ first message to the bot is sent while Giles is stopped, it's delivered only whe
 | Status | What it means | What to do |
 | ------ | ------------- | ---------- |
 | `connected` | The bot is logged in to Discord | Nothing |
-| `needs login`, with the Developer Portal's address | Discord rejected the bot token: it's wrong, was reset, or was revoked | Choose **Reset Token** on the application's **Bot** page, put the new token in `secrets.toml`, and restart Giles. Until then, no reply goes out |
+| `needs login`, with the Developer Portal's address | Discord rejected the bot token: it's wrong, was reset, or was revoked | Choose **Reset Token** on the application's **Bot** page, put the new token in `secrets.toml`, and restart Doozers. Until then, no reply goes out |
 | `error: disconnected from Discord, reconnecting` | Discord or the network has been unreachable for more than 10 seconds | Check the network. The plugin keeps trying and turns `connected` again by itself |
-| `error: the connection to Discord ended and won't be retried; restart this plugin to connect again` | The plugin can't recover the connection | **Restart** the plugin on the [admin page](web.md#admin-pages), or restart Giles |
+| `error: the connection to Discord ended and won't be retried; restart this plugin to connect again` | The plugin can't recover the connection | **Restart** the plugin on the [admin page](web.md#admin-pages), or restart Doozers |
 | `error: Discord requires sharding ...` | The bot is in too many servers | Remove the bot from servers. It needs only one |
 | `error: Discord refused the intents ...`, or `error: ... (close 4010)` or `(close 4012)` | A bug, or a change at Discord. Nothing in your setup causes it | Report it |
 | `error: Discord is sending direct messages with no text, files, or stickers ...` | Three direct messages in a row arrived empty. Polls and forwards look the same | Send a plain text message. If it arrives empty too, report it. Turning on the Message Content switch in the portal doesn't help |
@@ -195,7 +195,7 @@ A reply can also fail without changing the status. The log and the failed reply 
 - Discord doesn't know the user (error 10013). The ID in `[owner] identities` or `default` is wrong.
 - The bot is opening DMs too fast (error 40003). Wait.
 
-Messages Giles sends on its own, such as job results, are retried until they expire.
+Messages Doozers sends on its own, such as job results, are retried until they expire.
 
 ## Network access
 

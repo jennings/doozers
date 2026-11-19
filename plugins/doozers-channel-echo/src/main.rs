@@ -1,6 +1,6 @@
 //! `doozers-channel-echo`: a channel plugin for testing the plugin host, never for real use.
 //!
-//! It talks to nobody. Tests drive it through files in its data directory (`GILES_PLUGIN_DATA`):
+//! It talks to nobody. Tests drive it through files in its data directory (`DOOZERS_PLUGIN_DATA`):
 //!
 //! - `inject/*.json`: inbound events to emit, in file-name order. Each file is
 //!   `{"event": <ChannelEvent as doozers-types JSON>, "attachments": [{"text": "...", "media_type":
@@ -19,8 +19,8 @@
 //!
 //! Run as a remote plugin (PLAN section 7.6) with the SDK's `serve` subcommand, e.g.
 //! `doozers-channel-echo serve --listen 127.0.0.1:0 --data <dir> --no-auth`. It prints
-//! `listening on <address>` to stdout once it listens (useful with port 0). Giles launches it with
-//! `socket`.
+//! `listening on <address>` to stdout once it listens (useful with port 0). Doozers launches it
+//! with `socket`.
 
 use std::collections::VecDeque;
 use std::io;
@@ -55,7 +55,7 @@ async fn main() -> ExitCode {
         .with_writer(io::stderr)
         .with_ansi(false)
         .with_env_filter(
-            EnvFilter::try_from_env("GILES_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_env("DOOZERS_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
     ChannelPlugin::new("echo", env!("CARGO_PKG_VERSION"))

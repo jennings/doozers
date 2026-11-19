@@ -7,22 +7,23 @@ contract. The contracts are Protobuf files under `proto/`, checked with `buf` an
 
 ## Packages
 
-Each package lives in `proto/giles/<package>/v1/<package>.proto`; the `buf` module root is `proto/`.
+Each package lives in `proto/doozers/<package>/v1/<package>.proto`; the `buf` module root is
+`proto/`.
 
 | Package             | Contents                                                              | Rust module                   |
 | ------------------- | --------------------------------------------------------------------- | ----------------------------- |
-| `giles.types.v1`    | Shared types mirroring `doozers-types`: messages, blocks, `BlobRef`     | `doozers_proto::types::v1`      |
-| `giles.plugin.v1`   | `PluginService` (`Describe`, `Configure`, `Shutdown`, blob transfer)  | `doozers_proto::plugin::v1`     |
-| `giles.provider.v1` | `ProviderCapabilities` only; `ProviderService` comes with provider plugins | `doozers_proto::provider::v1` |
-| `giles.channel.v1`  | `ChannelService` (`Events`, `Send`) and `ChannelCapabilities`          | `doozers_proto::channel::v1`    |
-| `giles.environment.v1` | `EnvironmentService` (workspaces, `Exec`, files, `Find`, `Grep`) and `EnvironmentCapabilities` | `doozers_proto::environment::v1` |
-| `giles.admin.v1`    | `AdminService`, served by the core on `run/admin.sock`                | `doozers_proto::admin::v1`      |
+| `doozers.types.v1`  | Shared types mirroring `doozers-types`: messages, blocks, `BlobRef`   | `doozers_proto::types::v1`    |
+| `doozers.plugin.v1` | `PluginService` (`Describe`, `Configure`, `Shutdown`, blob transfer)  | `doozers_proto::plugin::v1`   |
+| `doozers.provider.v1` | `ProviderCapabilities` only; `ProviderService` comes with provider plugins | `doozers_proto::provider::v1` |
+| `doozers.channel.v1` | `ChannelService` (`Events`, `Send`) and `ChannelCapabilities`          | `doozers_proto::channel::v1`  |
+| `doozers.environment.v1` | `EnvironmentService` (workspaces, `Exec`, files, `Find`, `Grep`) and `EnvironmentCapabilities` | `doozers_proto::environment::v1` |
+| `doozers.admin.v1`  | `AdminService`, served by the core on `run/admin.sock`                | `doozers_proto::admin::v1`    |
 
-Every gRPC plugin serves `giles.plugin.v1.PluginService`, `grpc.health.v1.Health` (from the
+Every gRPC plugin serves `doozers.plugin.v1.PluginService`, `grpc.health.v1.Health` (from the
 `tonic-health` crate, not from these files), and exactly one kind service. The core is always the
 client.
 
-`giles.admin.v1` has the RPCs of v1: `Status`, `ListPlugins`, `RestartPlugin`, `ListSessions`,
+`doozers.admin.v1` has the RPCs of v1: `Status`, `ListPlugins`, `RestartPlugin`, `ListSessions`,
 `ResetSession`, `CreateLoginLink`, `UsageReport`, `Backup`, and the toolset RPCs `ListToolsets`,
 `GetToolset`, `SetToolset`, `RemoveToolset`, and `RenameToolset`. The user and pairing RPCs of PLAN
 section 8.7 belong to multi-user support and are added when it is built. Beyond PLAN section 8.7's
@@ -54,9 +55,9 @@ is described in [Admin service](admin.md).
   `Opaque` data, instance config. `google.protobuf.Struct` would not do: it holds only objects and
   turns every number into a double, and `Opaque` data has to round-trip exactly.
 - Times are `google.protobuf.Timestamp`.
-- Attachments travel as `giles.types.v1.BlobRef`, never as bytes inside messages. On the wire the id
-  is a plugin-local handle; the `Remote*` adapter moves the bytes with `GetBlob` and `PutBlob` and
-  swaps the handle for the core's SHA-256 `MediaId` (PLAN section 8.3). A `BlobChunk` carries at
+- Attachments travel as `doozers.types.v1.BlobRef`, never as bytes inside messages. On the wire the
+  id is a plugin-local handle; the `Remote*` adapter moves the bytes with `GetBlob` and `PutBlob`
+  and swaps the handle for the core's SHA-256 `MediaId` (PLAN section 8.3). A `BlobChunk` carries at
   most 1 MiB of data.
 - Messages are limited to 16 MiB instead of `tonic`'s 4 MiB default. Clients and servers set it from
   `doozers_proto::MAX_MESSAGE_SIZE`.
@@ -68,10 +69,10 @@ sides take them from `doozers_proto::handshake`, so they can't drift apart:
 
 | Constant                       | Value                                                        |
 | ------------------------------ | ------------------------------------------------------------ |
-| `MAGIC_COOKIE_ENV`             | `GILES_PLUGIN_MAGIC`, set to `MAGIC_COOKIE`                  |
-| `MAGIC_COOKIE`                 | `giles-plugin:5b2f0c7e9a1d4836`; never changes               |
-| `PROTOCOLS_ENV`                | `GILES_PLUGIN_PROTOCOLS`: the majors the core speaks, comma-separated, e.g. `1` |
-| `DATA_ENV`                     | `GILES_PLUGIN_DATA`: the instance's data directory           |
+| `MAGIC_COOKIE_ENV`             | `DOOZERS_PLUGIN_MAGIC`, set to `MAGIC_COOKIE`                |
+| `MAGIC_COOKIE`                 | `doozers-plugin:5b2f0c7e9a1d4836`; never changes             |
+| `PROTOCOLS_ENV`                | `DOOZERS_PLUGIN_PROTOCOLS`: the majors the core speaks, comma-separated, e.g. `1` |
+| `DATA_ENV`                     | `DOOZERS_PLUGIN_DATA`: the instance's data directory         |
 | `PLUGIN_FD`                    | 3, the plugin's end of the socket pair                       |
 | `PROTOCOL_MAJOR`               | 1, the major of the `v1` packages                            |
 | `HANDSHAKE_VERSION`            | 1, the first field of the handshake line                     |
@@ -87,7 +88,7 @@ decimal (`parse_major`). [Plugin SDK](plugin-sdk.md) describes the plugin side.
 `doozers-proto` holds only the wire types. The plugin SDK and the core's `Remote*` adapters convert
 between them and `doozers-types`, moving fields.
 
-| `doozers-types`                                | `giles.types.v1`                                          |
+| `doozers-types`                              | `doozers.types.v1`                                        |
 | -------------------------------------------- | --------------------------------------------------------- |
 | `Message { role, content, meta }`            | `Message { role, content, meta }`                          |
 | `Role::{User, Assistant}`                    | `Role` `ROLE_USER`, `ROLE_ASSISTANT`                       |
@@ -110,12 +111,12 @@ between them and `doozers-types`, moving fields.
 | `ConversationRef { id, kind, title }`        | `ConversationRef { id, kind, optional title }`            |
 | `ConversationKind::{Direct, Group}`          | `ConversationKind`                                        |
 
-The channel types map onto `giles.channel.v1`:
+The channel types map onto `doozers.channel.v1`:
 
-| `doozers-types`                                  | `giles.channel.v1`                                          |
+| `doozers-types`                                | `doozers.channel.v1`                                        |
 | ---------------------------------------------- | ----------------------------------------------------------- |
 | `ChannelInfo { output, can_initiate }`         | `ChannelCapabilities`, in `DescribeResponse.channel`        |
-| `ChannelInfo.identity_namespace`               | `giles.plugin.v1.ConfigureResponse.identity_namespace`      |
+| `ChannelInfo.identity_namespace`               | `doozers.plugin.v1.ConfigureResponse.identity_namespace`    |
 | `OutputMode`                                   | `OutputMode`                                                |
 | `Channel::events`                              | `Events`: `EventsResponse.event` from plugin to core        |
 | `Channel::ack`                                 | `Events`: `EventsRequest.ack` from core to plugin           |
@@ -126,15 +127,15 @@ The channel types map onto `giles.channel.v1`:
 | `Channel::send(OutboundMessage)`               | `Send(SendRequest)`; returns `SendResponse.message_id`      |
 | `SendTarget::{Conversation, Recipient}`        | `SendRequest` `oneof target`: `conversation_id`, `recipient` |
 
-`giles.provider.v1.ProviderCapabilities { media_types, reasoning }` describes a provider plugin as a
-whole; the per-model `ModelInfo` comes with `ProviderService`.
+`doozers.provider.v1.ProviderCapabilities { media_types, reasoning }` describes a provider plugin as
+a whole; the per-model `ModelInfo` comes with `ProviderService`.
 
-The environment types map onto `giles.environment.v1`. The `Environment` trait takes and returns
+The environment types map onto `doozers.environment.v1`. The `Environment` trait takes and returns
 `doozers-types` values, and `doozers_plugin_sdk::convert::environment` has the conversions in both
 directions: the SDK serves the trait over the service, and the core's `RemoteEnvironment` adapter
 calls the service and implements the trait.
 
-| `doozers-types`                                    | `giles.environment.v1`                                     |
+| `doozers-types`                                  | `doozers.environment.v1`                                   |
 | ------------------------------------------------ | ---------------------------------------------------------- |
 | `Environment::info`                              | `Info`; `InfoResponse.options_schema_json` is the schema   |
 | `Environment::create_workspace(id, options)`     | `CreateWorkspace`; `options_json` is a JSON object, `""` is `{}` |
@@ -178,7 +179,7 @@ only, and `buf breaking` enforces it:
   unacked would make the plugin resend it forever.
 - New optional behavior is announced, not assumed: plugins report typed capabilities in `Describe`,
   and the core sends its protocol minor version and feature names in `DescribeRequest`.
-- A breaking change is a new package, `giles.<package>.v2`, in its own directory, served next to
+- A breaking change is a new package, `doozers.<package>.v2`, in its own directory, served next to
   `v1` for as long as the core supports both.
 
 ## Code generation
@@ -230,13 +231,13 @@ to match these files. The changes:
   `Events(stream EventsRequest) returns (stream EventsResponse)`, with the `EventAck` in
   `EventsRequest`'s `oneof request` and the `ChannelEvent` in `EventsResponse`. Besides satisfying
   the lint, each stream direction can now gain fields independently.
-- `InboundMessage.conversation` is a `giles.types.v1.ConversationRef`, which the admin service's
+- `InboundMessage.conversation` is a `doozers.types.v1.ConversationRef`, which the admin service's
   sessions use too.
 - Fields that are `Option`s in `doozers-types` are `optional`: `BlobRef.name`,
   `InboundMessage.sender_display_name`, `reply_to`, and `message_id`, and `SendRequest.reply_to`.
 - `DescribeResponse` reserves 12 (toolsets) at message level, since a `oneof` can't hold
-  reservations, and `SandboxGrants` is defined in `giles.plugin.v1`.
+  reservations, and `SandboxGrants` is defined in `doozers.plugin.v1`.
 - `CreateWorkspace` reports an id already in use as `INVALID_ARGUMENT`, like refused options, since
   `Error` has no "already exists" variant and the core chooses unique ids.
 - The deferred provider sketch (PLAN section 8.4) follows the same rules: `Complete` streams
-  `CompleteResponse` messages, and `GenerationParams` is `giles.types.v1.GenerationParams`.
+  `CompleteResponse` messages, and `GenerationParams` is `doozers.types.v1.GenerationParams`.

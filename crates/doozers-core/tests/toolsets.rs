@@ -5,7 +5,7 @@
 //! The trampoline and the server are this test binary. Run as `<test> sandbox-exec <spec> --
 //! <command>` it does what `doozers
 //! sandbox-exec` does (`doozers_core::sandbox::exec`, single-threaded, before any runtime starts; Cargo gives tests here no `doozers` binary). With
-//! `GILES_TOOLSET_TEST_SERVER=<port>` set it is the server: it reports its environment, working
+//! `DOOZERS_TOOLSET_TEST_SERVER=<port>` set it is the server: it reports its environment, working
 //! directory, and whether it can connect to `127.0.0.1:<port>` on stderr, then serves the MCP test
 //! server on stdio. Hence no libtest harness: `main` runs the tests in order.
 #![allow(missing_docs)]
@@ -48,12 +48,12 @@ use self::mcp_server::{TOOLS, TestServer};
 use self::stored_toolsets::add_toolsets;
 
 /// Set (to the port to probe) in the server's configured `env`.
-const SERVER_ENV: &str = "GILES_TOOLSET_TEST_SERVER";
+const SERVER_ENV: &str = "DOOZERS_TOOLSET_TEST_SERVER";
 /// A credential under an arbitrary name, as MCP servers take them.
 const TOKEN_ENV: &str = "TEST_TOOLSET_TOKEN";
 const TOKEN: &str = "tok-0123456789";
 /// The server's name on the `PATH` the launcher gets.
-const SERVER_NAME: &str = "giles-test-mcp-server";
+const SERVER_NAME: &str = "doozers-test-mcp-server";
 const WAIT: Duration = Duration::from_secs(20);
 
 fn main() -> ExitCode {
@@ -142,7 +142,7 @@ fn serve(port: &str) {
     });
 }
 
-/// A data root with `giles.toml` declaring `toolsets`, and a `PATH` directory holding the server
+/// A data root with `doozers.toml` declaring `toolsets`, and a `PATH` directory holding the server
 /// (this test binary) as [`SERVER_NAME`].
 struct Home {
     dir: tempfile::TempDir,
@@ -181,7 +181,7 @@ impl Home {
             &LoadOptions {
                 builtins: Builtins::V1,
                 env: &env,
-                giles_exe: None,
+                doozers_exe: None,
             },
         )
         .unwrap()
@@ -266,7 +266,7 @@ impl Write for Log {
 }
 
 /// The environment every launched server sees (apart from `LANG`).
-const SERVER_ENV_NAMES: &str = "GILES_PLUGIN_DATA,GILES_TOOLSET_TEST_SERVER,HOME,PATH,\
+const SERVER_ENV_NAMES: &str = "DOOZERS_PLUGIN_DATA,DOOZERS_TOOLSET_TEST_SERVER,HOME,PATH,\
                                 TEST_TOOLSET_TOKEN,TMPDIR";
 
 async fn tool_names(toolset: &dyn Toolset) -> Vec<String> {
@@ -333,7 +333,7 @@ async fn media_reaches_the_server(
     assert_eq!(path.parent(), Some(tmp.as_path()));
     let name = path.file_name().unwrap().to_str().unwrap();
     assert!(
-        name.starts_with("giles-media-") && name.ends_with("-my_notes.txt"),
+        name.starts_with("doozers-media-") && name.ends_with("-my_notes.txt"),
         "{name}"
     );
     drop(handle);
@@ -467,7 +467,7 @@ async fn unsandboxed_stdio_server(log: &Log) {
         .plugin_data_dir(Kind::Toolset, "loose")
         .unwrap()
         .join("tmp");
-    fs::write(tmp.join("giles-media-0123-left.txt"), "left").unwrap();
+    fs::write(tmp.join("doozers-media-0123-left.txt"), "left").unwrap();
     fs::write(tmp.join("server.txt"), "mine").unwrap();
     let toolset = launcher.connect(&config.toolsets["loose"]).await.unwrap();
     let mut left: Vec<_> = fs::read_dir(&tmp)

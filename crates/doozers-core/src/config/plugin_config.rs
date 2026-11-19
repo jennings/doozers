@@ -193,7 +193,7 @@ mod tests {
         let table: toml::Table = toml::from_str(src).unwrap();
         let path = KeyPath::root().key("channel").key("irc").key("config");
         PluginConfig::from_toml(
-            Path::new("giles.toml"),
+            Path::new("doozers.toml"),
             &path,
             Some(toml::Value::Table(table)),
             &resolver,

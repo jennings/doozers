@@ -58,7 +58,7 @@ impl fmt::Display for PhoneError {
 
 impl std::error::Error for PhoneError {}
 
-/// The identities of a message sender: the phone number Giles would use as the canonical id
+/// The identities of a message sender: the phone number Doozers would use as the canonical id
 /// (`whatsapp:+15551234567`) and the LID it would report as an alias (PLAN section 3.2).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct SenderIds {
@@ -92,7 +92,7 @@ pub fn sender_ids(sender: &Jid, alt: Option<&Jid>, mapping: Option<(&str, &str)>
     ids
 }
 
-/// What kind of conversation a chat JID names, as Giles would report it.
+/// What kind of conversation a chat JID names, as Doozers would report it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatKind {
     /// A one-to-one chat (`ConversationKind::Direct`).

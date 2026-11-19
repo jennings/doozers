@@ -56,10 +56,10 @@ pub(crate) type Build<'a> =
 pub(crate) async fn run(display_name: &str, build: Build<'_>) -> ExitCode {
     match serve(build).await {
         Ok(()) => ExitCode::SUCCESS,
-        Err(StartupError::NotLaunchedByGiles) => {
+        Err(StartupError::NotLaunchedByDoozers) => {
             eprintln!(
-                "{display_name} is a Giles plugin. Giles launches it for an instance configured in \
-                 giles.toml; it isn't meant to be run by hand."
+                "{display_name} is a Doozers plugin. Doozers launches it for an instance configured in \
+                 doozers.toml; it isn't meant to be run by hand."
             );
             ExitCode::from(1)
         }

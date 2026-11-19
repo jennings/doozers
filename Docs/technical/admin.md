@@ -1,6 +1,6 @@
 # Admin service
 
-`doozers_core::admin` serves `giles.admin.v1.AdminService` (PLAN section 8.7,
+`doozers_core::admin` serves `doozers.admin.v1.AdminService` (PLAN section 8.7,
 [gRPC Protocols](protocols.md)) on the admin socket. The `doozers` CLI is its client over the
 socket; the web admin pages are another, calling the same `Arc<AdminService>` in-process behind the
 web login ([Web Channel](web-channel.md#admin-pages)).
@@ -8,9 +8,9 @@ web login ([Web Channel](web-channel.md#admin-pages)).
 ## One core per data root
 
 `doozers serve` takes `InstanceLock::acquire` right after creating the data root's layout, before it
-loads the configuration: an exclusive, non-blocking `flock` on `run/giles.lock` (mode 0600), into
+loads the configuration: an exclusive, non-blocking `flock` on `run/doozers.lock` (mode 0600), into
 which it then writes its pid. A second `doozers serve` on the same data root fails at once with
-`giles is already running with the data root <root> as pid <pid> ...` and touches nothing beyond
+`doozers is already running with the data root <root> as pid <pid> ...` and touches nothing beyond
 creating the layout: not the database, not the plugins' pid files, not the socket.
 
 The kernel drops the lock when the process exits, however it exits, so a crash never leaves a stale
@@ -49,14 +49,14 @@ token (after the socket answers, so it's the running core's). A missing socket, 
 | RPC               | Behavior                                                                                    |
 | ----------------- | ------------------------------------------------------------------------------------------- |
 | `Status`          | Version, start time, `config_error` (always unset in v1: an invalid configuration stops startup, and there is no reload), the host's sandbox (`SandboxHost`: the startup check's report or error, and the Landlock ABI on Linux), every configured channel with its runtime and last recorded status (from `Sessions::channel_statuses`), and the plugins as in `ListPlugins`. |
-| `ListPlugins`     | Every configured channel plugin (launched or remote) and MCP toolset, channels first, each sorted by name. v1 providers are all built in, so none is listed. A configured instance takes the first supervision report with its kind and name (the plugin host's and the toolset host's come before the toolset manager's). A report left over is a stored toolset that failed to start (`ToolsetManager`, [Toolsets](toolsets.md#stored-toolsets)): it is listed after the configured instances as a toolset in state `FAILED` with the reason in `last_error`, also when a `giles.toml` toolset took its name. |
+| `ListPlugins`     | Every configured channel plugin (launched or remote) and MCP toolset, channels first, each sorted by name. v1 providers are all built in, so none is listed. A configured instance takes the first supervision report with its kind and name (the plugin host's and the toolset host's come before the toolset manager's). A report left over is a stored toolset that failed to start (`ToolsetManager`, [Toolsets](toolsets.md#stored-toolsets)): it is listed after the configured instances as a toolset in state `FAILED` with the reason in `last_error`, also when a `doozers.toml` toolset took its name. |
 | `RestartPlugin`   | The request names the `kind` (`InstanceKind`) and the instance: `INVALID_ARGUMENT` for `UNSPECIFIED` or a number the protocol doesn't name, before anything else is looked up. `NOT_FOUND` for an instance of that kind that `ListPlugins` doesn't list (a configured instance, or an instance the control reports, so a failed stored toolset is found; a same-named instance of another kind doesn't count, and a provider never is one); `UNAVAILABLE` without plugin supervision; `FAILED_PRECONDITION` if supervision doesn't know the instance; else `PluginControl::restart(kind, instance)`. For a failed stored toolset that is the manager's: it re-reads `secrets.toml`, validates the stored spec again, and starts it in the background (still failing, it stays `FAILED` with the new reason). |
 | `ListSessions`    | `Store::list_sessions`: newest activity first, optionally one agent's, open ones unless `include_ended`. `INVALID_ARGUMENT` for an invalid agent id. |
 | `ResetSession`    | Ends the session like `/new` (`Store::end_session` at the current time; a running turn finishes, and the conversation's next message opens a new session). `NOT_FOUND`, `FAILED_PRECONDITION` if it already ended, `INVALID_ARGUMENT` for a malformed id. |
 | `CreateLoginLink` | `LoginLinks::create_login_link(&user, now)`; `UNAVAILABLE` without the web channel. `UnknownUser` maps to `NOT_FOUND`, `Refused` to `FAILED_PRECONDITION`. |
 | `UsageReport`     | `Store::usage_by_model(since, until)`: one row per agent, provider instance, and model. |
 | `Backup`          | `backup::create` into `dir` (absolute, existing): `VACUUM INTO` plus a tar of the files; answers the two paths written. See [Backups](backups.md). |
-| `ListToolsets`    | `ToolsetAdmin::list`: every stored toolset and every toolset of `giles.toml`, ordered by name ignoring case. See [Toolset RPCs](#toolset-rpcs). |
+| `ListToolsets`    | `ToolsetAdmin::list`: every stored toolset and every toolset of `doozers.toml`, ordered by name ignoring case. See [Toolset RPCs](#toolset-rpcs). |
 | `GetToolset`      | `ToolsetAdmin::get`: one toolset, the name matched ignoring case. `NOT_FOUND` if there is none. |
 | `SetToolset`      | Creates a stored toolset or replaces the spec of the one with that name: `ToolsetAdmin::update`, or `add` when there is no such toolset and the call has no `expected_updated_at`. |
 | `RemoveToolset`   | `ToolsetAdmin::remove`: deletes a stored toolset and stops it. Answers the name the toolset has. |
@@ -71,23 +71,24 @@ The five toolset RPCs call `ToolsetManager` ([Toolsets](toolsets.md#stored-tools
 answer `UNAVAILABLE` when `AdminOptions::toolsets` is `None`. `RestartPlugin` is the restart: the
 manager is part of the `MergedControl` that handles it.
 
-A `Toolset` message has the name as it was written, the `source` (`STORED` or `GILES_TOML`), the
+A `Toolset` message has the name as it was written, the `source` (`STORED` or `DOOZERS_TOML`), the
 spec as TOML text, `updated_at`, and `failure`. The spec is `ToolsetSpec::to_toml`: the keys of a
 `[toolset.<name>]` table at the top level, with the bearer token as the reference it was stored as
 (`{ secret = "name" }`), so no call ever resolves a secret or shows its value. Durations are whole
-milliseconds (`"300000ms"`), as in the stored JSON. A toolset of `giles.toml` has no `spec_toml` and
-no `updated_at`. A stored toolset whose JSON can't be read has no `spec_toml` either, and `failure`
-says why. `updated_at` is the stale-update token: the stored time, to the millisecond.
+milliseconds (`"300000ms"`), as in the stored JSON. A toolset of `doozers.toml` has no `spec_toml`
+and no `updated_at`. A stored toolset whose JSON can't be read has no `spec_toml` either, and
+`failure` says why. `updated_at` is the stale-update token: the stored time, to the millisecond.
 
 `SetToolset` reads `spec_toml` with `ToolsetSpec::from_toml`, which refuses a key the spec doesn't
-have (`giles.toml` only warns about one), so a typo isn't dropped silently. It then calls `update`,
-which finds a stored name ignoring case, keeps its spelling, and compares `expected_updated_at` when
-the call has one. Only a name that isn't there, from a call without `expected_updated_at`, goes on
-to `add`. A call with `expected_updated_at` for a toolset that isn't there is `NOT_FOUND`, because
-the caller read a toolset that has since gone. The response carries the toolset as stored.
+have (`doozers.toml` only warns about one), so a typo isn't dropped silently. It then calls
+`update`, which finds a stored name ignoring case, keeps its spelling, and compares
+`expected_updated_at` when the call has one. Only a name that isn't there, from a call without
+`expected_updated_at`, goes on to `add`. A call with `expected_updated_at` for a toolset that isn't
+there is `NOT_FOUND`, because the caller read a toolset that has since gone. The response carries
+the toolset as stored.
 
 The manager stores only remote servers. A spec without `url` (a stdio server, which belongs in
-`giles.toml`) is `Invalid` at `url`, and a bearer token that isn't `{ secret = "name" }` is
+`doozers.toml`) is `Invalid` at `url`, and a bearer token that isn't `{ secret = "name" }` is
 `Invalid` at `auth.bearer`.
 
 | What happened                                              | Status                                                                 |
@@ -97,7 +98,7 @@ The manager stores only remote servers. A spec without `url` (a stdio server, wh
 | Another call created the name between `update` and `add` (`Exists`) | `ALREADY_EXISTS`                                               |
 | No toolset has the name (`NotFound`)                        | `NOT_FOUND`                                                            |
 | The toolset changed since `expected_updated_at` (`Stale`)   | `FAILED_PRECONDITION`                                                  |
-| The name is a toolset of `giles.toml` (`Unsupported`)       | `FAILED_PRECONDITION`                                                  |
+| The name is a toolset of `doozers.toml` (`Unsupported`)    | `FAILED_PRECONDITION`                                                  |
 | The database failed (`Store`)                               | `INTERNAL`, logged                                                     |
 | `RenameToolset` refuses the new name, or an agent's globs (`Invalid`, `Refused`) | `INVALID_ARGUMENT`. The message is the manager's reason, which names each glob that can't be rewritten. |
 | `RenameToolset` finds another stored toolset with the new name (`Exists`) | `ALREADY_EXISTS`, naming the new name                                  |
@@ -105,11 +106,11 @@ The manager stores only remote servers. A spec without `url` (a stdio server, wh
 | No toolset manager                                          | `UNAVAILABLE`                                                          |
 
 `RenameToolset` takes `old` and `new`. `old` matches ignoring case, and `NOT_FOUND` and
-`FAILED_PRECONDITION` (a toolset of `giles.toml`) are about it. For a toolset of `giles.toml` the
-message says to stop Giles first and run `doozers toolset rename <old> <new>`, which renames it
-offline ([Instance rename](instance-rename.md#renaming-while-giles-runs)). The manager's checks and
-steps, and the undo of a failed step, are in [Toolsets](toolsets.md#stored-toolsets). The response's
-agents are the manager's `ToolsetRenamed::agents`, ordered by agent id, and its `old` is
+`FAILED_PRECONDITION` (a toolset of `doozers.toml`) are about it. For a toolset of `doozers.toml`
+the message says to stop Doozers first and run `doozers toolset rename <old> <new>`, which renames
+it offline ([Instance rename](instance-rename.md#renaming-while-doozers-runs)). The manager's checks
+and steps, and the undo of a failed step, are in [Toolsets](toolsets.md#stored-toolsets). The
+response's agents are the manager's `ToolsetRenamed::agents`, ordered by agent id, and its `old` is
 `ToolsetRenamed::from`, the name the toolset had as stored.
 
 ### `doozers toolset`

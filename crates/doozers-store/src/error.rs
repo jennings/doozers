@@ -18,7 +18,7 @@ pub enum Error {
     /// A JSON column didn't hold what it should, or a value couldn't be serialized.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-    /// The database was written by a newer Giles: its schema version is ahead of this binary's.
+    /// The database was written by a newer Doozers: its schema version is ahead of this binary's.
     #[error("database schema version {found} is newer than this binary supports ({supported})")]
     SchemaTooNew {
         /// The database's `user_version`.

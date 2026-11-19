@@ -1,4 +1,4 @@
-//! The `giles.admin.v1.AdminService` RPCs.
+//! The `doozers.admin.v1.AdminService` RPCs.
 
 use std::collections::BTreeMap;
 use std::fmt;

@@ -1,5 +1,5 @@
 //! `doozers-workspace-helper`: the static Linux helper the Docker environment plugin copies into
-//! each workspace container at `/.giles/bin/doozers-workspace-helper`.
+//! each workspace container at `/.doozers/bin/doozers-workspace-helper`.
 //!
 //! The plugin runs it with `docker exec`, so it must work in any image: a single static binary
 //! with no dependency on the image's tools beyond `/bin/sh`.

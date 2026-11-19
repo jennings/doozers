@@ -1,6 +1,6 @@
 # Configuration
 
-`doozers_core::config` reads and validates `giles.toml`, `secrets.toml`, and every
+`doozers_core::config` reads and validates `doozers.toml`, `secrets.toml`, and every
 `agents/<agent>/agent.toml` (PLAN sections 1.1, 7.7, and 11.2). The user-facing reference is
 [Configuration](../user/configuration.md).
 
@@ -9,8 +9,8 @@
 ```rust
 // The v1 built-ins and the process environment.
 let config: Config = Config::load(&data_root)?;
-// Explicit built-ins, environment, and giles binary (tests, or a core built with fewer features).
-let options = LoadOptions { builtins, env: &|name| lookup(name), giles_exe: Some(exe) };
+// Explicit built-ins, environment, and doozers binary (tests, or a core built with fewer features).
+let options = LoadOptions { builtins, env: &|name| lookup(name), doozers_exe: Some(exe) };
 let config: Config = Config::load_with(&data_root, &options)?;
 ```
 
@@ -22,7 +22,7 @@ their owners, not here).
 
 The steps:
 
-1. Read `giles.toml` (UTF-8) and deserialize it into private `Raw*` structs through
+1. Read `doozers.toml` (UTF-8) and deserialize it into private `Raw*` structs through
    `parse_toml_lenient`. The structs have no `#[serde(deny_unknown_fields)]`: the document goes
    through `serde_ignored` (inside `serde_path_to_error`), so the keys the structs don't have are
    exactly the ones serde skips, and the set of recognized keys can't drift from the types. Each
@@ -31,7 +31,7 @@ The steps:
    and `[[routes]]` are raw `toml::Value`s that serde never skips, so they produce none. `auth`
    tables are checked by hand in `instances.rs` (they hold credentials, so serde never sees them)
    and report their own unknown keys through `Ctx::unknown`. `[toolset.<name>]` tables are kept as
-   `toml::Value`s too (`RawGiles.toolset`): one with `url` is set aside
+   `toml::Value`s too (`RawDoozers.toolset`): one with `url` is set aside
    ([Ignored toolset tables](#ignored-toolset-tables)), and each other one is then deserialized into
    a `ToolsetSpec` the same lenient way, its unknown keys and errors at their full key path.
 2. Validate `[core]` and `[owner]`. `core.journal_mode` is parsed with
@@ -87,13 +87,13 @@ brackets (`toolset.files.skills[1]`, `owner."odd key"`).
 
 ## Unknown keys
 
-Configuration files are lenient about keys Giles doesn't know: `Config::unknown_keys` lists each as
-an `UnknownKey { file, position, key }`, displayed as
+Configuration files are lenient about keys Doozers doesn't know: `Config::unknown_keys` lists each
+as an `UnknownKey { file, position, key }`, displayed as
 `<file>:<line>:<column>: unknown key `<key path>` (ignored)`. The position is found with
-`error::locate`, as for errors. The list holds the keys of `giles.toml` in file order, then those of
-each `agent.toml`, by agent id and in file order. Only a load that succeeds returns them; an error
-in a file, wherever it is, wins over any number of unknown keys, so a typo next to a wrong-typed key
-doesn't change the error.
+`error::locate`, as for errors. The list holds the keys of `doozers.toml` in file order, then those
+of each `agent.toml`, by agent id and in file order. Only a load that succeeds returns them; an
+error in a file, wherever it is, wins over any number of unknown keys, so a typo next to a
+wrong-typed key doesn't change the error.
 
 `serde_ignored` reports a key when the derived `Deserialize` skips it, so it covers every typed
 table (`[core]`, `[owner]`, instance tables and their `sandbox` tables, `agent.toml` and its
@@ -108,7 +108,7 @@ one: a misspelled `sandbox.network = false` leaves a channel's network open, and
 lets the agent call those tools without approval. The user guide tells operators to check the log
 for these, and #103 tracks making such defaults secure.
 
-`[[routes]]` stay raw `toml::Value`s here, so `giles.toml` loading says nothing about them. The
+`[[routes]]` stay raw `toml::Value`s here, so `doozers.toml` loading says nothing about them. The
 one-time import (`routes::import_rules`) logs each key a rule doesn't have as a warning with its
 full path (`routes[0].user`) and imports the rule without it.
 
@@ -168,7 +168,7 @@ reading.
 A stdio toolset's `command` is required and kept as written (an absolute path or a bare program
 name); resolving it on the operator's `$PATH` and adding its install prefix to the sandbox grants
 happens at launch (PLAN section 7.10). A table without `command` is an error at `toolset.<name>`.
-Every toolset of `giles.toml` is a stdio one: a remote toolset (`url`) is stored in the database,
+Every toolset of `doozers.toml` is a stdio one: a remote toolset (`url`) is stored in the database,
 and its table in the file is ignored.
 
 A toolset has no component. `component` in a `[toolset.<name>]` table without `url` is an error at
@@ -186,20 +186,20 @@ datetimes become their TOML text; infinite and NaN floats, which JSON can't carr
 ## Ignored toolset tables
 
 Remote toolsets are stored in the database and managed in the web UI, the admin RPCs, and
-`doozers toolset`; `giles.toml` keeps the toolsets Giles runs as a process. A login to the web UI
-must not choose a program for Giles to run, its arguments, environment, or sandbox grants, while
-connecting to a remote server runs nothing on the host.
+`doozers toolset`; `doozers.toml` keeps the toolsets Doozers runs as a process. A login to the web
+UI must not choose a program for Doozers to run, its arguments, environment, or sandbox grants,
+while connecting to a remote server runs nothing on the host.
 
 Loading therefore ignores every `[toolset.<name>]` table that has `url`, whatever else it holds
-(`giles::is_remote_toolset`). It isn't deserialized, so nothing in it is checked: a wrong type or an
-unknown key inside doesn't stop startup and isn't reported as an unknown key. Each such table
+(`doozers::is_remote_toolset`). It isn't deserialized, so nothing in it is checked: a wrong type or
+an unknown key inside doesn't stop startup and isn't reported as an unknown key. Each such table
 becomes an `IgnoredToolsetTable { file, position, name }`, the position found with `error::locate`
 at `toolset.<name>`, and `Config::ignored_toolset_tables` lists them in file order. `doozers serve`
 logs one warning for each right after the load, after the unknown keys, at every start (it names the
 file, not the position):
 
 ```text
-giles.toml: [toolset.github] is ignored: remote toolsets are managed in the web UI (Admin → MCP servers) or with doozers toolset set
+doozers.toml: [toolset.github] is ignored: remote toolsets are managed in the web UI (Admin → MCP servers) or with doozers toolset set
 ```
 
 An ignored table's name isn't part of the unique-name check, and the `Config` doesn't have it, so a
@@ -208,7 +208,7 @@ web UI or with `doozers toolset set`.
 
 ## Validating one toolset
 
-Validation of a toolset is separate from reading `giles.toml`, so the same checks run on a toolset
+Validation of a toolset is separate from reading `doozers.toml`, so the same checks run on a toolset
 that comes from elsewhere, such as a spec stored as JSON, against the configuration that is running
 now. The pieces, all in `doozers_core::config`:
 
@@ -224,12 +224,13 @@ now. The pieces, all in `doozers_core::config`:
   names, `auth`, durations, skill paths, grants against the data root and socket directory,
   credentials resolved), then the checks that involve other instances: the name against every
   toolset of the configuration (`toolset_named` finds the clash and `name_clash` words it, the
-  message `giles.toml` gives; a provider or channel of the same name is another instance and doesn't
-  clash), and the binary directories (`check_binary_dirs`). `ToolsetContext::replacing` names the
-  toolset being edited or renamed: that one instance is left out of the name check and of the other
-  instances' grants and directories. `None` adds a toolset, so every existing toolset of the name is
-  a clash. The toolset's own name edits it. Its old name renames it: the new name must be free, and
-  a change only in case (`github` to `GitHub`) is allowed because the old instance is left out.
+  message `doozers.toml` gives; a provider or channel of the same name is another instance and
+  doesn't clash), and the binary directories (`check_binary_dirs`). `ToolsetContext::replacing`
+  names the toolset being edited or renamed: that one instance is left out of the name check and of
+  the other instances' grants and directories. `None` adds a toolset, so every existing toolset of
+  the name is a clash. The toolset's own name edits it. Its old name renames it: the new name must
+  be free, and a change only in case (`github` to `GitHub`) is allowed because the old instance is
+  left out.
 - `ToolsetContext { root, secrets, options, config, replacing }`: the data root (with its socket
   directory), a `Secrets` loaded from `secrets.toml` by the caller (so a new secret needs no
   restart), the `LoadOptions` (built-ins, the environment for `{ env = ... }` references and `PATH`,
@@ -239,7 +240,7 @@ now. The pieces, all in `doozers_core::config`:
   `sandbox.write[0]`, `skills[1]`), so a form can show the reason next to the field; it is the root
   when the problem is the name or a clash. `Ctx` raises `ConfigError`s at `toolset.<name>.<key>` in
   the file being loaded; `validate_toolset` runs `Ctx` with no file and strips that prefix, so the
-  reasons are byte for byte the ones `giles.toml` loading gives. Like them, they never quote a
+  reasons are byte for byte the ones `doozers.toml` loading gives. Like them, they never quote a
   credential.
 
 With one toolset the binary-directory check only reports what involves it: the toolset's own `write`
@@ -248,15 +249,15 @@ server including its own, every toolset's `skills`), and each other instance's g
 toolset's server and `skills` directories. The error then names the other instance's key
 (`toolset.other.sandbox.write[0]`) in the reason, with an empty `key`. Problems among other
 instances that were already there (a binary that appeared in a granted directory after startup) are
-not blamed on the toolset being validated, while loading `giles.toml` still rejects them. `skills`
+not blamed on the toolset being validated, while loading `doozers.toml` still rejects them. `skills`
 overlapping a plugin data root (`data/<kind>/`) is checked for the toolset being validated only.
 
 `ToolsetManager` ([Toolsets](toolsets.md#stored-toolsets)) is the caller for toolsets stored in the
 database. It reads `secrets.toml` for every validation and adds its own rules. A name that a
-`[toolset.<name>]` table of `giles.toml` uses is refused, and so is `new`, the address of the web
+`[toolset.<name>]` table of `doozers.toml` uses is refused, and so is `new`, the address of the web
 form for a new toolset. A name only an [ignored table](#ignored-toolset-tables) has is free. A
 stored toolset is a remote server: a spec without `url` is refused as an `Invalid` at `url`, and an
-`auth.bearer` that isn't `{ secret = "<name>" }` at `auth.bearer`. Stdio toolsets of `giles.toml`
+`auth.bearer` that isn't `{ secret = "<name>" }` at `auth.bearer`. Stdio toolsets of `doozers.toml`
 keep accepting every credential form in `env`.
 
 ## Secrets
@@ -284,7 +285,7 @@ Keeping values out of output:
 - `PluginConfig` remembers the key paths that held references and the values they resolved to. Its
   `Debug` and `redacted()` put `<redacted>` at those paths; only `to_json()`, for `Configure`, has
   the values.
-- `scrub(text, &[&Secret])` replaces secret values in text Giles didn't write but logs or shows: a
+- `scrub(text, &[&Secret])` replaces secret values in text Doozers didn't write but logs or shows: a
   component's `Configure` error (`PluginConfig::scrub`), or a plugin's or MCP server's stderr, with
   the instance's `auth`, `env`, and `PluginConfig::secrets()` values. It makes one pass, taking the
   longest matching value at each position, so overlapping values can't garble the output and an
@@ -298,7 +299,7 @@ Keeping values out of output:
   source line.
 
 `Config`'s `Debug` output is therefore safe to log. Literal strings in a `config` table are not
-secrets as far as Giles knows; the user guide tells operators to use references for credentials.
+secrets as far as Doozers knows; the user guide tells operators to use references for credentials.
 
 ## Sandbox grants
 
@@ -318,8 +319,8 @@ Every `read`, `write`, and `unix` path is checked against the protected director
 and the socket directory (which differs from `<root>/run` when socket paths fall back to `$TMPDIR`).
 The data root contains the plugin directory `<root>/plugins/`, so plugin binaries there are covered.
 A grant is rejected if, in any of its spellings, it is a protected directory, inside one, or
-contains one (`Path::starts_with`, so whole components: `/srv/giles-backup` is not inside
-`/srv/giles`), unless that spelling is inside the instance's own data directory,
+contains one (`Path::starts_with`, so whole components: `/srv/doozers-backup` is not inside
+`/srv/doozers`), unless that spelling is inside the instance's own data directory,
 `DataRoot::plugin_data_dir(kind, instance)`.
 
 A grant also may not be `core.secret_key_file` or contain it, in any spelling, with no exception for
@@ -336,12 +337,12 @@ for paths the core adds itself, such as a stdio server's install prefix.
 
 ### Binary directories
 
-The "plugin directories" of PLAN section 12.4 are the directories holding binaries Giles runs. A
+The "plugin directories" of PLAN section 12.4 are the directories holding binaries Doozers runs. A
 plugin that could replace one would run its code at the next launch, possibly unsandboxed or with
 another instance's grants, so after every instance is validated the loader collects:
 
 - the directory of the running `doozers` binary, which is also the `sandbox-exec` trampoline
-  (`LoadOptions::giles_exe`, default `std::env::current_exe()`);
+  (`LoadOptions::doozers_exe`, default `std::env::current_exe()`);
 - for each launched channel plugin and each stdio toolset, the directory of its binary as found now:
   `discover_plugin(root, kind, component, env)` for channel plugins (`<root>/plugins/`, then each
   absolute `PATH` entry, executable regular files only; PLAN section 7.3), and
@@ -371,15 +372,15 @@ A toolset can also be hashed from its `ToolsetSpec`, with `ToolsetSpec::config_h
 serialized to a `toml::Table` (unset keys left out, durations as whole milliseconds, so `"5m"` and
 `"300s"` hash alike) and hashed the same way. The hash of a spec that has no keys beyond the spec's,
 no durations, and values written the way the spec serializes them equals the hash of the
-`giles.toml` table that holds the same keys, so the same toolset keeps its cache key whichever way
-it was configured. Loading `giles.toml` still hashes the table as written, so cache keys of file
+`doozers.toml` table that holds the same keys, so the same toolset keeps its cache key whichever way
+it was configured. Loading `doozers.toml` still hashes the table as written, so cache keys of file
 toolsets don't change.
 
 The file is parsed a second time as a plain `toml::Table` and each instance's table is hashed with a
 canonical encoding, so the hash is the same for every way of writing the same TOML value: key order,
 inline versus standard tables, dotted keys, quoting, comments, whitespace, and number spelling.
-Version 1 of the algorithm is SHA-256 (`sha2`) over the domain tag `giles-config-hash-v1\n` followed
-by:
+Version 1 of the algorithm is SHA-256 (`sha2`) over the domain tag `doozers-config-hash-v1\n`
+followed by:
 
 | Value    | Encoding                                                                   |
 | -------- | -------------------------------------------------------------------------- |

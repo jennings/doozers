@@ -1,5 +1,5 @@
 //! Test setup: remote toolsets added to a loaded [`Config`], as stored toolsets reach the running
-//! configuration (PLAN section 7.10). `giles.toml` ignores a `[toolset.<name>]` table with `url`.
+//! configuration (PLAN section 7.10). `doozers.toml` ignores a `[toolset.<name>]` table with `url`.
 
 use super::{Config, LoadOptions, Secrets, ToolsetContext, ToolsetSpec, validate_toolset};
 use crate::paths::DataRoot;
@@ -21,7 +21,7 @@ pub(crate) fn add_toolsets<N: AsRef<str>, S: AsRef<str>>(
         Secrets::load(&root.secrets_file()).unwrap_or_else(|error| panic!("secrets: {error}"));
     let options = LoadOptions {
         env: &|_| None,
-        giles_exe: None,
+        doozers_exe: None,
         ..LoadOptions::default()
     };
     for (name, spec) in toolsets {

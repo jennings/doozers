@@ -15,7 +15,7 @@
 //! (`Docs/technical/discord.md`, "Catch-Up"). `user` is the other participant. Ids are strings in
 //! the file, because snowflakes are more than JSON numbers carry safely.
 //!
-//! The SDK's own state is in `giles-sdk/` of the same directory; this file is the plugin's.
+//! The SDK's own state is in `doozers-sdk/` of the same directory; this file is the plugin's.
 //!
 //! Writes are atomic: a temporary file in the same directory, `fsync`, rename, and `fsync` of the
 //! directory, so a crash leaves the old file or the new one. A file that can't be read or

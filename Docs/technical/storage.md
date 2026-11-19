@@ -1,6 +1,6 @@
 # Storage
 
-The crate `doozers-store` owns the SQLite database, `data/giles.db` (PLAN section 11.4), and the
+The crate `doozers-store` owns the SQLite database, `data/doozers.db` (PLAN section 11.4), and the
 blob store under `data/blobs/` (PLAN 11.5). The core opens the database once with
 `Store::open_with(data_root.database_file(), options)` and calls typed methods on the cloneable
 `Store` handle (`Store::open(path)` is the same with default options, WAL); no other crate writes
@@ -74,12 +74,12 @@ something else has the file open), stop that program or pick another mode. Only 
 the database file (the rollback modes are per connection and an unrecorded file reads as `delete`),
 so changing the setting in either direction rewrites the file header once at the next start, with no
 manual step and no data copied. Leaving WAL needs no other connection open; the daemon's
-single-instance lock makes that so for Giles, and the writer connects before the readers. A `-wal`
+single-instance lock makes that so for Doozers, and the writer connects before the readers. A `-wal`
 file left by a crash is recovered and removed by that first connection.
-`OpenOptions::keep_journal_mode()` opens in whatever mode the file is in. The `giles <kind> rename`
-commands use it: they run without loading `giles.toml` (the file may be half renamed), so they can't
-know the configured mode, and opening with the default would switch a database on a file system
-without WAL to WAL and fail.
+`OpenOptions::keep_journal_mode()` opens in whatever mode the file is in. The
+`doozers <kind> rename` commands use it: they run without loading `doozers.toml` (the file may be
+half renamed), so they can't know the configured mode, and opening with the default would switch a
+database on a file system without WAL to WAL and fail.
 
 **What changes in the rollback modes** (`delete`, `truncate`, `persist`), where readers and the
 writer exclude each other:
@@ -159,7 +159,7 @@ outline.
 | `web_sessions` | `token_hash` (SHA-256 of the cookie token), `user_id`, `created_at`, `expires_at`.     |
 | `blobs`        | `id` (hex SHA-256), `size`, `media_type`, `name`, `created_at`, `stored_at` (latest put). |
 | `routes`       | The ordered routing rules: `position` (dense, 0 first), `channel`, `kind` (`direct`, `group`), `conversation` (each null for any), `agent`. Ids are `AUTOINCREMENT`, never reused. |
-| `routes_imported` | One row, once the `[[routes]]` of `giles.toml` were imported: `at`.                  |
+| `routes_imported` | One row, once the `[[routes]]` of `doozers.toml` were imported: `at`.                |
 | `toolsets`     | The MCP toolsets the web UI manages: `name` (primary key, `NOCASE`), `spec` (JSON text), `created_at`, `updated_at`. |
 | `workspaces`   | The environment workspaces: `id` (core-assigned, primary key), `environment`, the owner (`agent`, `channel`, `conversation`, or `job_session`; exactly one form), `options` (JSON), the plugin's `description`, `working_directory`, `persistence`, `state` (`creating`, `active`, `deleting`, `deleted`), `created_at`, `last_used_at`, `deleted_at`, `delete_reason`. Partial unique indexes allow one `creating` or `active` row per owner. See [Workspaces](#workspaces). |
 | `secrets`      | The local secret store: `path` (primary key), `description`, `algorithm`, `nonce`, `ciphertext` (the sealed value), `created_at`, `created_by`, `updated_at`, `updated_by` (user ids, null when no user did it). See [Secrets](#secrets). |
@@ -262,13 +262,13 @@ and accent folding.
 ## Memory database
 
 Each agent has its own database, `agents/<agent>/memory.db`, owned by `doozers-store`.
-`MemoryStore::open(path, options)` opens it through the same connection machinery as `giles.db` (one
-writer, a pool of readers, the journal mode from `OpenOptions`, the `before_migrate` hook), but it
-is a separate file with its own migration list, `crates/doozers-store/src/memory_migrations/`, and
-its own `user_version` (`MEMORY_SCHEMA_VERSION`, independent of `SCHEMA_VERSION`). `MemoryStore`
-wraps the handle and exposes only the memory methods, never `giles.db`'s. `MemoryStore::path()` and
-`MemoryStore::vacuum_into(dest)` (the same `VACUUM INTO` as `Store::vacuum_into`) are for the backup
-code.
+`MemoryStore::open(path, options)` opens it through the same connection machinery as `doozers.db`
+(one writer, a pool of readers, the journal mode from `OpenOptions`, the `before_migrate` hook), but
+it is a separate file with its own migration list, `crates/doozers-store/src/memory_migrations/`,
+and its own `user_version` (`MEMORY_SCHEMA_VERSION`, independent of `SCHEMA_VERSION`). `MemoryStore`
+wraps the handle and exposes only the memory methods, never `doozers.db`'s. `MemoryStore::path()`
+and `MemoryStore::vacuum_into(dest)` (the same `VACUUM INTO` as `Store::vacuum_into`) are for the
+backup code.
 
 The first open creates the missing parent directories with mode 0700 and the file with mode 0600
 (SQLite gives the `-wal` and `-shm` files the same mode). An existing file or directory keeps its
@@ -281,7 +281,7 @@ Schema (version 1):
 | `memories`      | `id` (integer, what the model names a memory by), `content`, owner (`owner_kind` of `user`, `group`, or `none`, with `owner_user`, or `owner_instance` and `owner_conversation`; checks keep the columns consistent with the kind), `shared`, `core`, `created_at`, `updated_at`, `source_session`. |
 | `memory_search` | FTS5 over `content`, `rowid` = memory id.                                            |
 
-`source_session` is the `giles.db` session the memory was written in. It is only recorded: the
+`source_session` is the `doozers.db` session the memory was written in. It is only recorded: the
 session is in another file, so it isn't a foreign key, and it stays after the session is deleted.
 Partial indexes serve the core totals: core memories of the shared scope, and private memories by
 owner.
@@ -502,11 +502,12 @@ agent exist, and that no rule hides a later one, is checked by the core before i
 Every method keeps `position` dense (0, 1, 2, ...) inside its transaction. Ids are stable, so a form
 that names a route can't act on a different one after the list changed.
 
-`routes_import` is the import of the `[[routes]]` of `giles.toml` (PLAN 11.2). If `routes_imported`
-has no row it inserts one, and stores the routes in order unless routes exist already; it returns
-how many it stored. If the row exists it does nothing and returns `None`, even when `routes` holds
-something new and even when every route has since been deleted: the marker, not the table being
-empty, says the import happened. A config with no `[[routes]]` still records the import.
+`routes_import` is the import of the `[[routes]]` of `doozers.toml` (PLAN 11.2). If
+`routes_imported` has no row it inserts one, and stores the routes in order unless routes exist
+already; it returns how many it stored. If the row exists it does nothing and returns `None`, even
+when `routes` holds something new and even when every route has since been deleted: the marker, not
+the table being empty, says the import happened. A config with no `[[routes]]` still records the
+import.
 
 ## Toolsets
 
@@ -515,7 +516,7 @@ being the JSON of its definition. The store keeps the spec as the text it was gi
 nothing about it; parsing it and validating it (the command, the sandbox, the secrets) is the core's
 business (`doozers_core::config`), done before it writes. `name` is the primary key with
 `COLLATE NOCASE`, so `Files` and `files` can't both exist and every lookup by name ignores ASCII
-case; the row keeps the spelling it was written with. Because the table is in `giles.db`, a
+case; the row keeps the spelling it was written with. Because the table is in `doozers.db`, a
 [backup](backups.md) covers the toolsets with no extra step, and a restore brings them back.
 
 | Method                                         | Contract                                                      |
@@ -599,7 +600,7 @@ model can be told when and why, and are pruned after the instance's `delete_afte
 | `workspaces_prune(environment, before)`      | Removes `deleted` rows of the instance deleted before `before`.       |
 | `workspace_owner_activity(owner)`            | A conversation's newest message across every session of its key, ended ones included (a session's start if it has none); `None` for a job. |
 
-Because the table is in `giles.db`, a [backup](backups.md) holds it, but not the workspaces'
+Because the table is in `doozers.db`, a [backup](backups.md) holds it, but not the workspaces'
 contents, which live in the plugin's backend. After a restore the next reconciliation marks the rows
 whose workspaces are gone `deleted` (`removed_outside_doozers`) and deletes the plugin's workspaces
 that no row names.
@@ -690,4 +691,4 @@ periodically (see [Daemon](daemon.md)) with `SWEEP_GRACE`, 48 hours, and returns
   holding the writer, every six hours; other writes wait while it runs. For the text volumes of a
   personal assistant that is a fraction of a second every few hours.
 
-Blobs that only a plugin holds (its own copies, `GILES_PLUGIN_DATA`) aren't the core's concern.
+Blobs that only a plugin holds (its own copies, `DOOZERS_PLUGIN_DATA`) aren't the core's concern.

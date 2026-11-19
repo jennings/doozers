@@ -43,17 +43,17 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo test -p doozers-core --locked host_probes_run -- --nocapture
         env:
-          GILES_REQUIRE_LANDLOCK: "1"
+          DOOZERS_REQUIRE_LANDLOCK: "1"
       - name: Test
         run: cargo test --workspace --locked
         env:
           # GitHub's Ubuntu runners have Landlock, so the Linux sandbox tests must run there
           # rather than skip (they skip on kernels without it, like Apple's `container` VMs).
-          GILES_REQUIRE_LANDLOCK: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
+          DOOZERS_REQUIRE_LANDLOCK: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
           # GitHub's Ubuntu runners have Docker, so the Docker environment plugin's integration
           # tests must run there rather than skip. They build the Linux helper for the engine's
           # architecture (the musl targets are in rust-toolchain.toml).
-          GILES_REQUIRE_DOCKER: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
+          DOOZERS_REQUIRE_DOCKER: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
 
   protobuf:
     name: Protobuf
@@ -105,18 +105,18 @@ jobs:
       group: ${{ github.workflow }}-image-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
       cancel-in-progress: false
     env:
-      TEST_TAG: giles:test
+      TEST_TAG: doozers:test
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
-      # ghcr.io/<owner>/<repo>, lowercased, tagged `latest` for a push to main and `pr-<number>` for a
+      # ghcr.io/<owner>/doozers, lowercased, tagged `latest` for a push to main and `pr-<number>` for a
       # pull request. GitHub reports the repository's license as Apache-2.0 alone, which would
       # replace the Dockerfile's label.
       - name: Image tags and labels
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository_owner }}/doozers
           tags: |
             type=raw,value=latest,enable=${{ github.event_name == 'push' }}
             type=ref,event=pr,enable=${{ github.event_name == 'pull_request' }}
@@ -146,28 +146,28 @@ jobs:
           # The helper is a static binary that runs without the image's libraries.
           docker run --rm --entrypoint /usr/local/bin/doozers-workspace-helper-x86_64 "$TEST_TAG" df /
           docker run --rm --entrypoint sh "$TEST_TAG" -c \
-            'ls -l /usr/share/doc/giles/LICENSE-MIT /usr/share/doc/giles/LICENSE-APACHE \
-             /usr/share/doc/giles/LICENSE-AGPL-3.0 /usr/share/doc/giles/THIRD-PARTY'
+            'ls -l /usr/share/doc/doozers/LICENSE-MIT /usr/share/doc/doozers/LICENSE-APACHE \
+             /usr/share/doc/doozers/LICENSE-AGPL-3.0 /usr/share/doc/doozers/THIRD-PARTY'
           # A new named volume takes /data's ownership (the doozers user) from the image.
-          docker run --rm --volume giles-smoke:/data --entrypoint sh "$TEST_TAG" -c \
-            'printf "[core]\nhttp_listen = \"0.0.0.0:8080\"\n\n[owner]\nidentities = [\"web:owner\"]\n" > /data/giles.toml'
-          docker run --detach --name giles-smoke --volume giles-smoke:/data \
+          docker run --rm --volume doozers-smoke:/data --entrypoint sh "$TEST_TAG" -c \
+            'printf "[core]\nhttp_listen = \"0.0.0.0:8080\"\n\n[owner]\nidentities = [\"web:owner\"]\n" > /data/doozers.toml'
+          docker run --detach --name doozers-smoke --volume doozers-smoke:/data \
             --publish 127.0.0.1:8080:8080 "$TEST_TAG"
           started=
           for _ in $(seq 30); do
-            if docker exec giles-smoke doozers status > status.txt 2>&1; then
+            if docker exec doozers-smoke doozers status > status.txt 2>&1; then
               started=1
               break
             fi
             sleep 1
           done
-          docker logs giles-smoke
+          docker logs doozers-smoke
           cat status.txt
           [ -n "$started" ]
           grep -q '^Plugin sandbox: Landlock ABI' status.txt
           curl --fail --silent --show-error http://127.0.0.1:8080/ > /dev/null
-          docker stop giles-smoke
-          [ "$(docker inspect --format '{{.State.ExitCode}}' giles-smoke)" = 0 ]
+          docker stop doozers-smoke
+          [ "$(docker inspect --format '{{.State.ExitCode}}' doozers-smoke)" = 0 ]
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -185,7 +185,7 @@ jobs:
           cache-from: type=gha
 
   # Builds the doozers-environment-docker image (plugins/doozers-environment-docker/Dockerfile),
-  # drives it over gRPC against the runner's Docker engine, and publishes it next to the Giles
+  # drives it over gRPC against the runner's Docker engine, and publishes it next to the Doozers
   # image.
   environment-docker-image:
     name: Docker environment image
@@ -204,7 +204,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
-      # ghcr.io/<owner>/doozers-environment-docker, tagged like the Giles image.
+      # ghcr.io/<owner>/doozers-environment-docker, tagged like the Doozers image.
       - name: Image tags and labels
         id: meta
         uses: docker/metadata-action@v6
@@ -227,7 +227,7 @@ jobs:
           cache-from: type=gha,scope=environment-docker
           cache-to: type=gha,mode=max,scope=environment-docker
       # The image as documented: the runner's engine socket mounted, the token in the environment.
-      # A client plays the Giles core: Configure, then a workspace that runs a command and is
+      # A client plays the Doozers core: Configure, then a workspace that runs a command and is
       # deleted, leaving nothing labeled behind.
       - name: Smoke test
         run: |
@@ -240,7 +240,7 @@ jobs:
           docker run --rm --entrypoint /usr/local/bin/doozers-workspace-helper-x86_64 "$TEST_TAG" df /
           docker run --detach --name environment-smoke \
             --volume /var/run/docker.sock:/var/run/docker.sock \
-            --env GILES_ENVIRONMENT_DOCKER_TOKEN=smoke-token \
+            --env DOOZERS_ENVIRONMENT_DOCKER_TOKEN=smoke-token \
             --publish 127.0.0.1:7443:7443 "$TEST_TAG"
           listening=
           for _ in $(seq 30); do
@@ -254,21 +254,21 @@ jobs:
           [ -n "$listening" ]
           call() {
             ./grpcurl -plaintext -H 'authorization: Bearer smoke-token' -import-path proto \
-              -proto giles/plugin/v1/plugin.proto -proto giles/environment/v1/environment.proto \
+              -proto doozers/plugin/v1/plugin.proto -proto doozers/environment/v1/environment.proto \
               -d "$2" 127.0.0.1:7443 "$1"
           }
-          call giles.plugin.v1.PluginService/Configure '{"instance": "smoke", "config_json": "{}"}'
-          call giles.environment.v1.EnvironmentService/CreateWorkspace \
+          call doozers.plugin.v1.PluginService/Configure '{"instance": "smoke", "config_json": "{}"}'
+          call doozers.environment.v1.EnvironmentService/CreateWorkspace \
             '{"workspace_id": "smoke", "options_json": "{\"image\": \"alpine:3.20\"}"}'
-          call giles.environment.v1.EnvironmentService/StartWorkspace '{"workspace_id": "smoke"}'
-          call giles.environment.v1.EnvironmentService/Exec \
+          call doozers.environment.v1.EnvironmentService/StartWorkspace '{"workspace_id": "smoke"}'
+          call doozers.environment.v1.EnvironmentService/Exec \
             '{"workspace_id": "smoke", "command": "echo hello", "timeout": "30s", "output_limit": 4096}' \
             | tee exec.json
           # "hello\n", base64-encoded.
           grep -q '"stdout": "aGVsbG8K"' exec.json
-          call giles.environment.v1.EnvironmentService/DeleteWorkspace '{"workspace_id": "smoke"}'
-          [ -z "$(docker ps --all --quiet --filter label=giles.instance=smoke)" ]
-          [ -z "$(docker volume ls --quiet --filter label=giles.instance=smoke)" ]
+          call doozers.environment.v1.EnvironmentService/DeleteWorkspace '{"workspace_id": "smoke"}'
+          [ -z "$(docker ps --all --quiet --filter label=doozers.instance=smoke)" ]
+          [ -z "$(docker volume ls --quiet --filter label=doozers.instance=smoke)" ]
           docker stop environment-smoke
       - uses: docker/login-action@v4
         with:

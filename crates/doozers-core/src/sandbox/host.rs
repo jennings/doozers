@@ -65,7 +65,7 @@ pub(super) fn landlock_lacking(abi: u32, tcp_ports: bool, unix: bool) -> Vec<&'s
     if abi < 6 {
         lacking.push(
             "signal and abstract Unix socket scoping (ABI 6, Linux 6.12): the plugin can signal \
-             any process of the same user, including Giles",
+             any process of the same user, including Doozers",
         );
     }
     if abi < 9 && unix {
@@ -127,7 +127,7 @@ pub enum HostError {
         /// What went wrong.
         error: io::Error,
     },
-    /// `sandbox-exec` can't apply even an allow-all profile, e.g. because Giles itself runs in a
+    /// `sandbox-exec` can't apply even an allow-all profile, e.g. because Doozers itself runs in a
     /// sandbox that forbids it.
     #[error("{} cannot apply a sandbox profile ({status}): {stderr}", .path.display())]
     SandboxExecFailed {
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(count(6, false), 0);
         assert_eq!(count(6, true), 1);
         assert_eq!(count(9, true), 0);
-        assert!(landlock_lacking(5, false, false)[0].contains("including Giles"));
+        assert!(landlock_lacking(5, false, false)[0].contains("including Doozers"));
     }
 
     #[test]

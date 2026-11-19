@@ -23,7 +23,7 @@ pub const ECHO: &str = env!("CARGO_BIN_EXE_doozers-environment-echo");
 /// Upper bound for anything that must not hang.
 pub const WAIT: Duration = Duration::from_secs(10);
 
-/// A temporary data root whose `giles.toml` has the given tables.
+/// A temporary data root whose `doozers.toml` has the given tables.
 pub struct Home {
     _dir: tempfile::TempDir,
     /// The data root.
@@ -31,7 +31,7 @@ pub struct Home {
 }
 
 impl Home {
-    /// A data root with `tables` (instance tables) in `giles.toml`.
+    /// A data root with `tables` (instance tables) in `doozers.toml`.
     pub fn new(tables: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         // Resolved, so the data directory isn't below a symbolic link the sandbox would see
@@ -57,7 +57,7 @@ impl Home {
         link
     }
 
-    /// Appends `tables` to `giles.toml`, e.g. once a remote plugin's address is known.
+    /// Appends `tables` to `doozers.toml`, e.g. once a remote plugin's address is known.
     pub fn add_tables(&self, tables: &str) {
         use std::io::Write as _;
         let mut file = fs::OpenOptions::new()
@@ -75,7 +75,7 @@ impl Home {
             &LoadOptions {
                 builtins: Builtins::V1,
                 env: &|name| (name == "ECHO_TOKEN").then(|| "s3cret".into()),
-                giles_exe: None,
+                doozers_exe: None,
             },
         )
     }
@@ -88,7 +88,7 @@ impl Home {
     /// A launcher for this root that finds plugins only in `<root>/plugins/`, running them
     /// without a trampoline.
     pub fn launcher(&self) -> Launcher {
-        self.launcher_with(PathBuf::from("/nonexistent/giles"))
+        self.launcher_with(PathBuf::from("/nonexistent/doozers"))
     }
 
     /// [`Home::launcher`] with `trampoline` as the sandbox trampoline.

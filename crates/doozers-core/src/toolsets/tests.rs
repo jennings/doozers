@@ -219,7 +219,7 @@ impl Connector for FakeConnector {
     }
 }
 
-/// A data root whose `giles.toml` declares `toolsets`, with a registry and a cache.
+/// A data root whose `doozers.toml` declares `toolsets`, with a registry and a cache.
 struct Setup {
     _dir: tempfile::TempDir,
     root: DataRoot,
@@ -231,7 +231,7 @@ impl Setup {
         Self::build(toolsets, None)
     }
 
-    /// `toolsets` in `giles.toml`, and the stored toolset `remote` at [`REMOTE_URL`], with the
+    /// `toolsets` in `doozers.toml`, and the stored toolset `remote` at [`REMOTE_URL`], with the
     /// keys `more` besides `url`.
     fn with_remote(toolsets: &str, more: &str) -> Self {
         Self::build(toolsets, Some(more))
@@ -249,7 +249,7 @@ impl Setup {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -512,7 +512,7 @@ async fn a_crashed_server_restarts_with_backoff() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn an_unreachable_remote_server_leaves_giles_degraded_and_retrying() {
+async fn an_unreachable_remote_server_leaves_doozers_degraded_and_retrying() {
     let s = Setup::with_remote(FILES, "");
     let mut remote = Script::new(&["fetch"]);
     remote.failures = (0..3)

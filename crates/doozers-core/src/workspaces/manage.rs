@@ -59,10 +59,10 @@ pub enum Live {
     Unknown,
 }
 
-/// A workspace Giles tracks, `creating` or `active`, with the plugin's view of it.
+/// A workspace Doozers tracks, `creating` or `active`, with the plugin's view of it.
 #[derive(Debug, Clone)]
 pub struct WorkspaceView {
-    /// Giles's row.
+    /// Doozers' row.
     pub record: WorkspaceRecord,
     /// Whether a running turn holds a lease on it right now.
     pub in_use: bool,

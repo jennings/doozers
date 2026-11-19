@@ -108,7 +108,7 @@ out), an agent with no files or tools, and a job session with every tool allowed
 memory over a lowered cap. Other tests in that file cover the order of the sections, the group
 session, a guest's read-only shared memories, a session without a user, a per-scope cap, and the
 `memory_recall` mention. A change to the cached prefix therefore changes a file in review. Rerun
-with `GILES_UPDATE_SNAPSHOTS=1` to accept one.
+with `DOOZERS_UPDATE_SNAPSHOTS=1` to accept one.
 
 ### Caching the prefix
 

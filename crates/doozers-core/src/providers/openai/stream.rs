@@ -20,7 +20,7 @@ const DONE: &str = "[DONE]";
 /// Chat Completions has no block events: a chunk's delta may carry reasoning, text, and tool call
 /// fragments, and a server may interleave them. The mapper opens a block when a different kind of
 /// content arrives, closing the open one first, so blocks never overlap and indexes count from 0.
-/// Only choice 0 is read (Giles never asks for more).
+/// Only choice 0 is read (Doozers never asks for more).
 #[derive(Debug, Default)]
 pub(crate) struct StreamMapper {
     next_index: u32,
@@ -462,7 +462,7 @@ impl EventMapper for StreamMapper {
     }
 }
 
-/// The usage as Giles counts it: `prompt_tokens` includes cache reads and writes, which
+/// The usage as Doozers counts it: `prompt_tokens` includes cache reads and writes, which
 /// `Usage::input_tokens` excludes.
 fn usage_of(usage: WireUsage) -> Usage {
     let details = usage.prompt_tokens_details.unwrap_or_default();

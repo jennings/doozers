@@ -17,7 +17,7 @@ use tempfile::TempDir;
 use super::*;
 use crate::config::{Config, LoadOptions};
 
-const GILES_TOML: &str = r##"# My Giles
+const DOOZERS_TOML: &str = r##"# My Doozers
 [owner]
 identities = ["irc:libera:account:me"]
 
@@ -66,7 +66,7 @@ struct Home {
 }
 
 impl Home {
-    async fn new(giles_toml: &str) -> Self {
+    async fn new(doozers_toml: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
         fs::create_dir_all(root.run_dir()).unwrap();
@@ -79,13 +79,13 @@ impl Home {
             store,
             lock,
         };
-        home.write("giles.toml", giles_toml);
+        home.write("doozers.toml", doozers_toml);
         home
     }
 
     /// A home with everything a rename touches, under the names `libera`, `ollama`, `github`.
     async fn populated() -> Self {
-        let home = Self::new(GILES_TOML).await;
+        let home = Self::new(DOOZERS_TOML).await;
         home.write("agents/jeeves/agent.toml", JEEVES);
         home.write("agents/bunter/agent.toml", BUNTER);
         home.write("data/channel/libera/state.json", "{\"cursor\": 7}");
@@ -184,7 +184,7 @@ impl Home {
             &self.root,
             &LoadOptions {
                 env: &env,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -206,7 +206,7 @@ impl Home {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or_default();
-                if name.starts_with("giles.db") || name == "giles.lock" {
+                if name.starts_with("doozers.db") || name == "doozers.lock" {
                     continue;
                 }
                 if path.is_dir() {
@@ -247,7 +247,7 @@ async fn all_instance_rows(
 #[tokio::test]
 async fn renaming_a_channel_moves_the_rows_the_directories_and_the_config_table() {
     let home = Home::populated().await;
-    fs::set_permissions(home.path("giles.toml"), fs::Permissions::from_mode(0o600)).unwrap();
+    fs::set_permissions(home.path("doozers.toml"), fs::Permissions::from_mode(0o600)).unwrap();
     let report = home
         .rename(Kind::Channel, "libera", "libera-chat")
         .await
@@ -270,14 +270,14 @@ async fn renaming_a_channel_moves_the_rows_the_directories_and_the_config_table(
         "channels aren't named in agents"
     );
 
-    // giles.toml: the table, its comment, and the route; nothing else.
+    // doozers.toml: the table, its comment, and the route; nothing else.
     assert_eq!(
-        home.read("giles.toml"),
-        GILES_TOML
+        home.read("doozers.toml"),
+        DOOZERS_TOML
             .replace("[channel.libera]", "[channel.libera-chat]")
             .replace("channel = \"libera\"", "channel = \"libera-chat\"")
     );
-    let mode = fs::metadata(home.path("giles.toml"))
+    let mode = fs::metadata(home.path("doozers.toml"))
         .unwrap()
         .permissions()
         .mode();
@@ -315,7 +315,7 @@ async fn renaming_a_channel_moves_the_rows_the_directories_and_the_config_table(
     assert_eq!(rows["web"].sessions, 1);
     assert_eq!(rows["ollama"].usage, 1);
 
-    // The result is a configuration that loads, with the `[[routes]]` it still has (which Giles
+    // The result is a configuration that loads, with the `[[routes]]` it still has (which Doozers
     // only imports or ignores) pointing at the new name.
     let config = home.load();
     assert!(config.channels.contains_key("libera-chat"));
@@ -326,7 +326,7 @@ async fn renaming_a_channel_moves_the_rows_the_directories_and_the_config_table(
     );
 }
 
-/// Stored routes (not the `[[routes]]` of giles.toml): two for `channel`, one for `web`, one for
+/// Stored routes (not the `[[routes]]` of doozers.toml): two for `channel`, one for `web`, one for
 /// any channel; in that order.
 async fn seed_routes(home: &Home, channel: &str) {
     for (name, agent) in [
@@ -410,7 +410,7 @@ async fn a_failing_rename_leaves_the_stored_routes_where_they_were() {
     let home = Home::populated().await;
     seed_routes(&home, "libera").await;
     let before = route_channels(&home).await;
-    // `giles.toml` is rewritten last, after the database rows (routes included) were updated in
+    // `doozers.toml` is rewritten last, after the database rows (routes included) were updated in
     // the transaction; a read-only data root makes that write fail.
     fs::set_permissions(home.dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
     let writable_anyway = fs::File::create(home.path("probe")).is_ok();
@@ -451,8 +451,8 @@ async fn renaming_a_provider_rewrites_the_models_that_use_it() {
     );
     assert_eq!(home.read("agents/bunter/agent.toml"), BUNTER);
     assert_eq!(
-        home.read("giles.toml"),
-        GILES_TOML.replace("[provider.ollama]", "[provider.local]")
+        home.read("doozers.toml"),
+        DOOZERS_TOML.replace("[provider.ollama]", "[provider.local]")
     );
     let config = home.load();
     assert_eq!(
@@ -525,10 +525,10 @@ async fn renaming_a_toolset_rewrites_the_tool_globs_and_moves_its_directory() {
 
 #[tokio::test]
 async fn renaming_an_environment_rewrites_the_agents_lists_and_moves_its_directory() {
-    let giles = GILES_TOML.to_owned()
+    let doozers = DOOZERS_TOML.to_owned()
         + "\n# Where the agent works.\n[environment.docker]\nunsandboxed = true\n\
            description = \"scratch\"\n\n[environment.other]\n";
-    let home = Home::new(&giles).await;
+    let home = Home::new(&doozers).await;
     home.write(
         "agents/jeeves/agent.toml",
         &format!("{JEEVES}environments = [\"docker\", \"other\"]\n"),
@@ -561,7 +561,7 @@ async fn renaming_an_environment_rewrites_the_agents_lists_and_moves_its_directo
             .is_file()
     );
     assert!(home.path("run/pids/environment/sandbox.pid").is_file());
-    let text = home.read("giles.toml");
+    let text = home.read("doozers.toml");
     // The component is kept, and the comment stays with the table.
     assert!(text.contains("# Where the agent works.\n[environment.sandbox]\n"));
     assert!(text.contains("component = \"docker\""));
@@ -597,8 +597,8 @@ async fn seed_workspace(home: &Home, environment: &str, channel: &str) {
 
 #[tokio::test]
 async fn renaming_an_environment_keeps_its_workspaces_attached() {
-    let giles = GILES_TOML.to_owned() + "\n[environment.docker]\nunsandboxed = true\n";
-    let home = Home::new(&giles).await;
+    let doozers = DOOZERS_TOML.to_owned() + "\n[environment.docker]\nunsandboxed = true\n";
+    let home = Home::new(&doozers).await;
     home.write("agents/jeeves/agent.toml", JEEVES);
     seed_workspace(&home, "docker", "libera").await;
 
@@ -637,8 +637,8 @@ async fn renaming_a_channel_keeps_the_workspaces_of_its_conversations_attached()
 
 #[tokio::test]
 async fn a_table_renamed_by_hand_gets_its_data_moved() {
-    // giles.toml already says `libera-chat`.
-    let hand_edited = GILES_TOML
+    // doozers.toml already says `libera-chat`.
+    let hand_edited = DOOZERS_TOML
         .replace("libera", "libera-chat")
         .replace("irc.libera-chat.chat", "irc.libera.chat")
         .replace("irc:libera-chat:", "irc:libera:");
@@ -653,7 +653,7 @@ async fn a_table_renamed_by_hand_gets_its_data_moved() {
         .unwrap();
     assert!(!report.config_table);
     assert_eq!(report.legacy_routes, 0);
-    assert_eq!(home.read("giles.toml"), hand_edited);
+    assert_eq!(home.read("doozers.toml"), hand_edited);
     assert!(home.path("data/channel/libera-chat/state.json").is_file());
     assert_eq!(home.rows().await["libera-chat"].sessions, 2);
     home.load();
@@ -661,12 +661,12 @@ async fn a_table_renamed_by_hand_gets_its_data_moved() {
 
 #[tokio::test]
 async fn a_rename_that_stopped_part_way_can_be_run_again() {
-    // The first attempt rewrote giles.toml and moved the plugin directory, then died before the
+    // The first attempt rewrote doozers.toml and moved the plugin directory, then died before the
     // other directory and the database commit.
     let home = Home::populated().await;
     home.write(
-        "giles.toml",
-        &GILES_TOML
+        "doozers.toml",
+        &DOOZERS_TOML
             .replace("[channel.libera]", "[channel.libera-chat]")
             .replace("channel = \"libera\"", "channel = \"libera-chat\""),
     );
@@ -690,8 +690,8 @@ async fn a_rename_that_stopped_part_way_can_be_run_again() {
 async fn an_interrupted_rename_is_finished_when_the_old_name_is_now_another_kind() {
     let home = Home::populated().await;
     home.write(
-        "giles.toml",
-        &GILES_TOML
+        "doozers.toml",
+        &DOOZERS_TOML
             .replace("[channel.libera]", "[channel.libera-chat]")
             .replace("channel = \"libera\"", "channel = \"libera-chat\"")
             .replace(
@@ -718,20 +718,20 @@ async fn an_interrupted_rename_is_finished_when_the_old_name_is_now_another_kind
 
 #[tokio::test]
 async fn an_instance_without_data_is_just_renamed_in_the_config() {
-    let home = Home::new(GILES_TOML).await;
+    let home = Home::new(DOOZERS_TOML).await;
     home.write("agents/jeeves/agent.toml", JEEVES);
     let report = home.rename(Kind::Channel, "web", "chat").await.unwrap();
     assert!(report.moved.is_empty());
     assert_eq!(report.rows.total(), 0);
-    assert!(home.read("giles.toml").contains("[channel.chat]"));
-    assert!(home.read("giles.toml").contains("channel = \"chat\""));
+    assert!(home.read("doozers.toml").contains("[channel.chat]"));
+    assert!(home.read("doozers.toml").contains("channel = \"chat\""));
 }
 
 #[tokio::test]
 async fn renaming_keeps_the_component_an_instance_was_named_after() {
     // `[channel.web]` and `[provider.anthropic]` name no `component`, so they run the components
     // called `web` and `anthropic` only because of their own names.
-    let home = Home::new(GILES_TOML).await;
+    let home = Home::new(DOOZERS_TOML).await;
     home.write("agents/jeeves/agent.toml", JEEVES);
     home.rename(Kind::Channel, "web", "chat").await.unwrap();
     home.rename(Kind::Provider, "anthropic", "claude")
@@ -748,7 +748,7 @@ async fn renaming_keeps_the_component_an_instance_was_named_after() {
     );
     assert_eq!(config.providers["claude"].component, "anthropic");
     assert!(
-        home.read("giles.toml")
+        home.read("doozers.toml")
             .contains("[channel.chat]\ncomponent = \"web\"\n")
     );
 }
@@ -799,7 +799,7 @@ async fn bad_requests_are_refused_without_changing_anything() {
     assert!(matches!(err, RenameError::CaseCollision { .. }), "{err}");
 }
 
-/// Each kind has its own names: a name that only another kind has, in `giles.toml` or stored in
+/// Each kind has its own names: a name that only another kind has, in `doozers.toml` or stored in
 /// the database, is not an instance of the command's kind.
 #[tokio::test]
 async fn a_name_only_another_kind_has_is_an_unknown_instance() {
@@ -825,7 +825,7 @@ async fn a_name_only_another_kind_has_is_an_unknown_instance() {
 }
 
 /// The error says what the name lacks for the command's kind. When another kind has the name in
-/// `giles.toml`, it points at that kind's command.
+/// `doozers.toml`, it points at that kind's command.
 #[tokio::test]
 async fn an_unknown_instance_says_where_the_name_is_configured() {
     let home = Home::populated().await;
@@ -835,14 +835,14 @@ async fn an_unknown_instance_says_where_the_name_is_configured() {
         .to_string();
     assert!(
         message.starts_with(
-            "no toolset named \"libera\": giles.toml has no `[toolset.libera]` table and there is \
+            "no toolset named \"libera\": doozers.toml has no `[toolset.libera]` table and there is \
              no toolset data under that name (no database rows, no directory under \
              data/toolset/)"
         ),
         "{message}"
     );
     assert!(
-        message.ends_with("(giles.toml has `[channel.libera]`; use `doozers channel rename`)"),
+        message.ends_with("(doozers.toml has `[channel.libera]`; use `doozers channel rename`)"),
         "{message}"
     );
 
@@ -851,19 +851,19 @@ async fn an_unknown_instance_says_where_the_name_is_configured() {
         .to_string();
     assert_eq!(
         message,
-        "no channel named \"nothing\": giles.toml has no `[channel.nothing]` table and there is no \
+        "no channel named \"nothing\": doozers.toml has no `[channel.nothing]` table and there is no \
          channel data under that name (no database rows or routes, no directory under \
          data/channel/ or agents/*/groups/)"
     );
 
     // More than one other kind has the name.
-    let home = Home::new(&format!("{GILES_TOML}\n[provider.libera]\n")).await;
+    let home = Home::new(&format!("{DOOZERS_TOML}\n[provider.libera]\n")).await;
     let message = refused(&home, Kind::Toolset, "libera", "fresh")
         .await
         .to_string();
     assert!(
         message.ends_with(
-            "(giles.toml has `[provider.libera]` and `[channel.libera]`; use `doozers provider \
+            "(doozers.toml has `[provider.libera]` and `[channel.libera]`; use `doozers provider \
              rename` or `doozers channel rename`)"
         ),
         "{message}"
@@ -917,11 +917,11 @@ agent = "jeeves"
     home.rename(Kind::Provider, "aperture", "gateway")
         .await
         .unwrap();
-    let giles = home.read("giles.toml");
-    assert!(giles.contains("[provider.gateway]"), "{giles}");
-    assert!(giles.contains("[channel.aperture]"), "{giles}");
-    assert!(giles.contains("[toolset.aperture]"), "{giles}");
-    assert!(giles.contains("channel = \"aperture\""), "{giles}");
+    let doozers = home.read("doozers.toml");
+    assert!(doozers.contains("[provider.gateway]"), "{doozers}");
+    assert!(doozers.contains("[channel.aperture]"), "{doozers}");
+    assert!(doozers.contains("[toolset.aperture]"), "{doozers}");
+    assert!(doozers.contains("channel = \"aperture\""), "{doozers}");
     // Only the model references are the provider's.
     assert_eq!(
         home.read("agents/jeeves/agent.toml"),
@@ -954,10 +954,10 @@ agent = "jeeves"
         .await
         .unwrap();
     assert_eq!(report.legacy_routes, 1);
-    let giles = home.read("giles.toml");
-    assert!(giles.contains("[provider.aperture]"), "{giles}");
-    assert!(giles.contains("[channel.chat]"), "{giles}");
-    assert!(giles.contains("[toolset.aperture]"), "{giles}");
+    let doozers = home.read("doozers.toml");
+    assert!(doozers.contains("[provider.aperture]"), "{doozers}");
+    assert!(doozers.contains("[channel.chat]"), "{doozers}");
+    assert!(doozers.contains("[toolset.aperture]"), "{doozers}");
     // Agents don't name a channel.
     assert_eq!(home.read("agents/jeeves/agent.toml"), AGENT);
     assert_eq!(home.read("data/channel/chat/state"), "channel");
@@ -983,11 +983,11 @@ agent = "jeeves"
     home.rename(Kind::Toolset, "aperture", "tools")
         .await
         .unwrap();
-    let giles = home.read("giles.toml");
-    assert!(giles.contains("[provider.aperture]"), "{giles}");
-    assert!(giles.contains("[channel.aperture]"), "{giles}");
-    assert!(giles.contains("[toolset.tools]"), "{giles}");
-    assert!(giles.contains("channel = \"aperture\""), "{giles}");
+    let doozers = home.read("doozers.toml");
+    assert!(doozers.contains("[provider.aperture]"), "{doozers}");
+    assert!(doozers.contains("[channel.aperture]"), "{doozers}");
+    assert!(doozers.contains("[toolset.tools]"), "{doozers}");
+    assert!(doozers.contains("channel = \"aperture\""), "{doozers}");
     // Only the tool globs are the toolset's.
     assert_eq!(
         home.read("agents/jeeves/agent.toml"),
@@ -1031,7 +1031,7 @@ async fn left_behind_data_follows_the_kind_of_the_command_not_the_name() {
     assert_eq!(report.rows.sessions, 2);
     assert_eq!(home.rows().await["libera-chat"].sessions, 2);
     assert!(home.path("data/channel/libera-chat/state.json").is_file());
-    assert_eq!(home.read("giles.toml"), by_hand);
+    assert_eq!(home.read("doozers.toml"), by_hand);
 }
 
 /// Left-behind data can't move to a name that only another kind's table has: the new name has to
@@ -1058,7 +1058,7 @@ async fn left_behind_data_cannot_move_to_a_name_only_another_kind_has() {
 }
 
 /// A toolset stored in the database is a toolset: its name can't be given to a `[toolset.*]` table
-/// of `giles.toml`, ignoring case, which would take the name from it at the next start. A
+/// of `doozers.toml`, ignoring case, which would take the name from it at the next start. A
 /// channel or a provider has its own names, so it may take the name.
 #[tokio::test]
 async fn a_new_name_that_a_stored_toolset_has_is_refused_for_a_toolset_only() {
@@ -1107,8 +1107,8 @@ async fn stored_names(home: &Home) -> Vec<String> {
     rows.into_iter().map(|row| row.name).collect()
 }
 
-/// A toolset stored in the database is renamed like a table of `giles.toml`: its row replaces
-/// the table, `giles.toml` stays as it is, and the agents' globs follow the new name.
+/// A toolset stored in the database is renamed like a table of `doozers.toml`: its row replaces
+/// the table, `doozers.toml` stays as it is, and the agents' globs follow the new name.
 #[tokio::test]
 async fn a_stored_toolset_is_renamed_with_its_row_and_agent_globs() {
     let home = Home::populated().await;
@@ -1133,15 +1133,15 @@ async fn a_stored_toolset_is_renamed_with_its_row_and_agent_globs() {
     assert_eq!(rows[0].name, "memos");
     assert_eq!(rows[0].spec, before[0].spec);
     assert_eq!(rows[0].created_at, before[0].created_at);
-    assert_eq!(home.read("giles.toml"), GILES_TOML);
+    assert_eq!(home.read("doozers.toml"), DOOZERS_TOML);
     assert_eq!(
         home.read("agents/jeeves/agent.toml"),
         NOTES_AGENT.replace("notes__", "memos__")
     );
 }
 
-/// Giles stopped: a stored toolset's secrets, its users' tokens, and the references to them move
-/// with its name, as they do when Giles runs.
+/// Doozers stopped: a stored toolset's secrets, its users' tokens, and the references to them move
+/// with its name, as they do when Doozers runs.
 #[tokio::test]
 async fn a_stored_toolset_is_renamed_with_its_secrets() {
     use crate::secrets::{KeyFile, LocalSecrets, SecretPath, SecretProvider};
@@ -1223,7 +1223,7 @@ async fn a_stored_toolset_cannot_take_the_name_of_another_toolset() {
     add_stored(&home, "memos", NOTES).await;
     let before = home.store.toolsets().await.unwrap();
 
-    // The `[toolset.*]` tables of `giles.toml` own their names, ignoring case. A channel or a
+    // The `[toolset.*]` tables of `doozers.toml` own their names, ignoring case. A channel or a
     // provider of the name is no toolset, so it doesn't count.
     let err = refused(&home, Kind::Toolset, "notes", "github").await;
     assert!(
@@ -1248,25 +1248,25 @@ async fn a_stored_toolset_cannot_take_the_name_of_another_toolset() {
     assert_eq!(home.store.toolsets().await.unwrap(), before);
 }
 
-/// `giles.toml` ignores a `[toolset.<name>]` with `url`, and so does this command: the stored
+/// `doozers.toml` ignores a `[toolset.<name>]` with `url`, and so does this command: the stored
 /// toolset of that name is the one renamed, and the table's name is free.
 #[tokio::test]
 async fn an_ignored_remote_toolset_table_is_not_an_instance() {
     let with_ignored = format!(
-        "{GILES_TOML}[toolset.notes]\nurl = \"https://notes.example.com/mcp\"\n\
+        "{DOOZERS_TOML}[toolset.notes]\nurl = \"https://notes.example.com/mcp\"\n\
          [toolset.memos]\nurl = \"https://memos.example.com/mcp\"\n"
     );
     let home = Home::new(&with_ignored).await;
     home.write("agents/jeeves/agent.toml", NOTES_AGENT);
     add_stored(&home, "notes", NOTES).await;
 
-    // The stored toolset is renamed, to the name another ignored table has, and `giles.toml`
+    // The stored toolset is renamed, to the name another ignored table has, and `doozers.toml`
     // stays as it is.
     let report = home.rename(Kind::Toolset, "notes", "memos").await.unwrap();
     assert!(report.stored_toolset);
     assert!(!report.config_table);
     assert_eq!(stored_names(&home).await, ["memos"]);
-    assert_eq!(home.read("giles.toml"), with_ignored);
+    assert_eq!(home.read("doozers.toml"), with_ignored);
     assert_eq!(
         home.read("agents/jeeves/agent.toml"),
         NOTES_AGENT.replace("notes__", "memos__")
@@ -1276,7 +1276,7 @@ async fn an_ignored_remote_toolset_table_is_not_an_instance() {
     let err = refused(&home, Kind::Toolset, "notes", "docs").await;
     assert!(matches!(err, RenameError::UnknownInstance { .. }), "{err}");
 
-    // A table of `giles.toml` can't be renamed onto an ignored table: one would overwrite the
+    // A table of `doozers.toml` can't be renamed onto an ignored table: one would overwrite the
     // other.
     let err = refused(&home, Kind::Toolset, "github", "notes").await;
     assert!(
@@ -1284,7 +1284,7 @@ async fn an_ignored_remote_toolset_table_is_not_an_instance() {
             if reason.contains("already has a [toolset.notes] table")),
         "{err}"
     );
-    assert_eq!(home.read("giles.toml"), with_ignored);
+    assert_eq!(home.read("doozers.toml"), with_ignored);
 }
 
 /// The stored name is found in any case, and the case of a name can change.
@@ -1385,7 +1385,7 @@ async fn a_stored_rename_that_stopped_after_the_row_is_finished_by_running_it_ag
     assert!(matches!(err, RenameError::UnknownInstance { .. }), "{err}");
 }
 
-/// A stored toolset may have the name of a channel: `giles.toml`'s `[channel.libera]` is no
+/// A stored toolset may have the name of a channel: `doozers.toml`'s `[channel.libera]` is no
 /// toolset, so the toolset rename moves the stored row and the agents' globs and leaves the
 /// channel alone.
 #[tokio::test]
@@ -1416,7 +1416,7 @@ async fn a_stored_toolset_named_like_a_channel_is_renamed_without_touching_the_c
         NOTES_AGENT.replace("notes__", "memos__")
     );
     // The channel keeps its table, routes, rows, directories, and files.
-    assert_eq!(home.read("giles.toml"), GILES_TOML);
+    assert_eq!(home.read("doozers.toml"), DOOZERS_TOML);
     assert_eq!(home.rows().await, rows);
     assert!(home.path("data/channel/libera/state.json").is_file());
     assert!(
@@ -1446,7 +1446,7 @@ async fn a_stored_rename_is_finished_while_a_channel_has_the_old_name() {
         home.read("agents/jeeves/agent.toml"),
         NOTES_AGENT.replace("notes__", "memos__")
     );
-    assert_eq!(home.read("giles.toml"), GILES_TOML);
+    assert_eq!(home.read("doozers.toml"), DOOZERS_TOML);
     assert_eq!(home.rows().await, rows);
     assert!(home.path("data/channel/libera/state.json").is_file());
 }
@@ -1470,7 +1470,7 @@ async fn a_stored_toolset_may_take_the_name_of_a_channel_or_a_provider() {
             NOTES_AGENT.replace("notes__", &format!("{new}__")),
             "{new}"
         );
-        assert_eq!(home.read("giles.toml"), GILES_TOML, "{new}");
+        assert_eq!(home.read("doozers.toml"), DOOZERS_TOML, "{new}");
         assert_eq!(home.rows().await, rows, "{new}");
         assert!(home.path("data/channel/libera/state.json").is_file());
     }
@@ -1491,7 +1491,7 @@ async fn a_stored_toolset_cannot_be_renamed_to_a_reserved_name() {
         assert!(err.to_string().contains("new toolset"), "{err}");
     }
 
-    // A table of `giles.toml` can still be named `new`: only a stored toolset can't.
+    // A table of `doozers.toml` can still be named `new`: only a stored toolset can't.
     home.rename(Kind::Channel, "libera", "new").await.unwrap();
 }
 
@@ -1590,14 +1590,14 @@ async fn unconfigured_data_needs_the_new_name_configured() {
 }
 
 #[tokio::test]
-async fn a_missing_or_broken_giles_toml_is_refused() {
+async fn a_missing_or_broken_doozers_toml_is_refused() {
     let home = Home::populated().await;
-    home.write("giles.toml", "[channel.libera");
+    home.write("doozers.toml", "[channel.libera");
     let err = refused(&home, Kind::Channel, "libera", "libera-chat").await;
     assert!(matches!(err, RenameError::Edit { .. }), "{err}");
-    assert!(err.to_string().contains("giles.toml"), "{err}");
+    assert!(err.to_string().contains("doozers.toml"), "{err}");
 
-    fs::remove_file(home.path("giles.toml")).unwrap();
+    fs::remove_file(home.path("doozers.toml")).unwrap();
     let err = refused(&home, Kind::Channel, "libera", "libera-chat").await;
     assert!(matches!(err, RenameError::Io { .. }), "{err}");
 
@@ -1616,8 +1616,8 @@ async fn a_quoted_table_key_and_its_sub_tables_are_renamed() {
     // The sub-table `libera.extra` must follow its parent.
     let home = Home::populated().await;
     home.write(
-        "giles.toml",
-        &GILES_TOML.replace(
+        "doozers.toml",
+        &DOOZERS_TOML.replace(
             "[channel.libera]",
             "[channel.\"libera\"]\n[channel.libera.extra]",
         ),
@@ -1629,7 +1629,7 @@ async fn a_quoted_table_key_and_its_sub_tables_are_renamed() {
         .unwrap();
     assert!(report.config_table);
     assert!(
-        home.read("giles.toml")
+        home.read("doozers.toml")
             .contains("[channel.libera-chat.extra]")
     );
 }
@@ -1832,16 +1832,16 @@ mod memory {
         );
 
         let jeeves = db(&home, "jeeves");
-        let (new_giles, old_giles) = (
+        let (new_doozers, old_doozers) = (
             group("oftc", "#giles", false),
             group("libera", "#giles", false),
         );
         for id in [s.jeeves_group.id, s.jeeves_shared_by_group.id] {
-            assert!(sees(jeeves.clone(), &new_giles, id).await);
+            assert!(sees(jeeves.clone(), &new_doozers, id).await);
         }
         // The private one isn't visible to the old name any more; the shared one still is.
-        assert!(!sees(jeeves.clone(), &old_giles, s.jeeves_group.id).await);
-        assert!(sees(jeeves.clone(), &old_giles, s.jeeves_shared_by_group.id).await);
+        assert!(!sees(jeeves.clone(), &old_doozers, s.jeeves_group.id).await);
+        assert!(sees(jeeves.clone(), &old_doozers, s.jeeves_shared_by_group.id).await);
         let author = open_db(jeeves.clone())
             .await
             .get(&user("owner"), s.jeeves_shared_by_group.id)
@@ -1950,11 +1950,11 @@ mod memory {
     async fn a_run_after_a_partial_rename_finishes_the_databases_left() {
         let home = Home::populated().await;
         let s = seed_memories(&home).await;
-        // The first attempt rewrote giles.toml and renamed the owners in bunter's database, then
+        // The first attempt rewrote doozers.toml and renamed the owners in bunter's database, then
         // died before jeeves's and the commit.
         home.write(
-            "giles.toml",
-            &GILES_TOML
+            "doozers.toml",
+            &DOOZERS_TOML
                 .replace("[channel.libera]", "[channel.oftc]")
                 .replace("channel = \"libera\"", "channel = \"oftc\""),
         );
@@ -2027,14 +2027,14 @@ mod memory {
             )
             .await
         );
-        assert_eq!(home.read("giles.toml"), GILES_TOML);
+        assert_eq!(home.read("doozers.toml"), DOOZERS_TOML);
         assert_eq!(home.rows().await["libera"].sessions, 2);
         assert!(home.path("data/channel/libera/state.json").is_file());
         assert!(home.path("agents/jeeves/groups/libera").is_dir());
     }
 }
 
-/// Names that nothing configures keep their rows and directories without keeping Giles from
+/// Names that nothing configures keep their rows and directories without keeping Doozers from
 /// starting, whatever is configured next to them.
 #[tokio::test]
 async fn the_runtime_starts_when_an_unconfigured_name_still_has_data() {

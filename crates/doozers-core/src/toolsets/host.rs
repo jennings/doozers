@@ -1,4 +1,4 @@
-//! Every configured toolset, started at boot, changed while Giles runs, and stopped at shutdown.
+//! Every configured toolset, started at boot, changed while Doozers runs, and stopped at shutdown.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -21,8 +21,8 @@ use crate::registry::{Registry, RegistryError};
 
 /// The configured toolsets of a running core (PLAN section 7.5): each is registered at boot
 /// (offering its cached tools) and supervised, from its first start until it's replaced or
-/// removed ([`replace`](Self::replace), [`remove`](Self::remove)) or Giles shuts down. Toolsets
-/// can be [added](Self::add) while Giles runs.
+/// removed ([`replace`](Self::replace), [`remove`](Self::remove)) or Doozers shuts down. Toolsets
+/// can be [added](Self::add) while Doozers runs.
 #[derive(Debug)]
 pub struct ToolsetHost {
     shutdown: CancellationToken,
@@ -182,7 +182,7 @@ impl ToolsetHost {
         while tasks.join_next().await.is_some() {}
     }
 
-    /// Adds a toolset while Giles runs: looks up its cached tools, registers it, and starts it in
+    /// Adds a toolset while Doozers runs: looks up its cached tools, registers it, and starts it in
     /// the background. New sessions get its tools as soon as they're known. `instance` must be
     /// in the registry's live configuration already
     /// ([`LiveConfig::add_toolset`](crate::config::LiveConfig::add_toolset)). A toolset still
@@ -225,7 +225,7 @@ impl ToolsetHost {
         Ok(())
     }
 
-    /// Removes a toolset while Giles runs: stops its supervisor (as [`replace`](Self::replace)
+    /// Removes a toolset while Doozers runs: stops its supervisor (as [`replace`](Self::replace)
     /// does), then unregisters it, which withdraws its tools from new sessions. A call running
     /// on it fails as unavailable, and so does a call to its tool from a session that still
     /// lists it. The caller takes it out of the live configuration

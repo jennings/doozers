@@ -24,7 +24,7 @@
 <legend>Environments</legend>
 <p class="help">Tick an environment to give the agent a workspace in it. The agent uses the environment tools below only if you tick at least one.</p>
 {%- for environment in environments.choices %}
-<label class="check"><input type="checkbox" name="environment:{{ environment.name }}"{% if environment.checked %} checked{% endif %}> <span><code>{{ environment.name }}</code>{% if !environment.description.is_empty() %}: {{ environment.description }}{% endif %}{% if !environment.configured %} <span class="warn-text">Not configured in giles.toml, so saving fails until you untick it.</span>{% endif %}</span></label>
+<label class="check"><input type="checkbox" name="environment:{{ environment.name }}"{% if environment.checked %} checked{% endif %}> <span><code>{{ environment.name }}</code>{% if !environment.description.is_empty() %}: {{ environment.description }}{% endif %}{% if !environment.configured %} <span class="warn-text">Not configured in doozers.toml, so saving fails until you untick it.</span>{% endif %}</span></label>
 {%- endfor %}
 <p class="banner banner-warn" id="environment-note-no-tools" role="status"{% if !notes.no_tools %} hidden{% endif %}>You ticked an environment, but no environment tool is ticked below, so the agent can't use it. Tick <code>bash</code>, <code>read</code>, and the other tools that need an environment.</p>
 <p class="banner banner-warn" id="environment-note-no-environment" role="status"{% if !notes.no_environment %} hidden{% endif %}>You ticked tools that need an environment, but no environment is ticked above, so the agent isn't offered them.</p>

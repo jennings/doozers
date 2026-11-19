@@ -233,7 +233,7 @@ impl Fixture {
     }
 
     fn event_files(&self) -> usize {
-        std::fs::read_dir(self.data.path().join("giles-sdk/events"))
+        std::fs::read_dir(self.data.path().join("doozers-sdk/events"))
             .unwrap()
             .count()
     }
@@ -854,5 +854,5 @@ async fn overlapping_sends_sharing_a_blob_keep_it_until_both_end() {
 }
 
 fn outbound_file(data: &Path, id: &str) -> PathBuf {
-    data.join("giles-sdk/outbound").join(id)
+    data.join("doozers-sdk/outbound").join(id)
 }

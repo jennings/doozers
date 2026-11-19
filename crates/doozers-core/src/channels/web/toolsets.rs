@@ -10,7 +10,7 @@
 //! new conversations get now.
 //!
 //! The form adds and edits remote MCP servers only, as the manager stores nothing else: a server
-//! Giles runs on the host is configured in `giles.toml`, and the pages list it read-only.
+//! Doozers runs on the host is configured in `doozers.toml`, and the pages list it read-only.
 //!
 //! No page shows a secret value. A bearer token or an OAuth client secret is typed into a
 //! write-only field, which the manager stores in the secret store; the pages only say whether one
@@ -150,7 +150,7 @@ fn failed(err: &ToolsetManagerError, title: &str) -> Response {
             error_page(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Something went wrong",
-                "Giles couldn't use its MCP servers. The error is in its log.",
+                "Doozers couldn't use its MCP servers. The error is in its log.",
             )
         }
     }
@@ -170,7 +170,7 @@ fn describe_spec(spec: &ToolsetSpec) -> (&'static str, String) {
     }
 }
 
-/// [`describe_spec`] for a toolset of `giles.toml`.
+/// [`describe_spec`] for a toolset of `doozers.toml`.
 fn describe_instance(toolset: &ToolsetInstance) -> (&'static str, String) {
     match &toolset.transport {
         ToolsetTransport::Http(remote) => ("remote URL", remote.url.to_string()),
@@ -196,7 +196,7 @@ fn describe(view: &ToolsetView, config: &Config) -> (&'static str, String) {
 /// A toolset in the list.
 struct ToolsetRow {
     name: String,
-    /// Configured in `giles.toml`, so shown read-only.
+    /// Configured in `doozers.toml`, so shown read-only.
     from_file: bool,
     transport: &'static str,
     location: String,
@@ -214,7 +214,7 @@ struct ToolsetsPage {
 }
 
 /// `GET /admin/mcp-servers`: every toolset with how it runs, its state, its tool count, and its last
-/// error. Toolsets of `giles.toml` are listed without Edit and Remove.
+/// error. Toolsets of `doozers.toml` are listed without Edit and Remove.
 async fn list_page(State(pages): State<ToolsetPages>, user: WebUser) -> Response {
     if !may_administer(&user) {
         return forbidden();
@@ -295,7 +295,7 @@ struct ToolsetPage<'a> {
     shell: Shell,
     csrf: &'a str,
     name: String,
-    /// Stored in Giles, so it can be edited and removed.
+    /// Stored in Doozers, so it can be edited and removed.
     stored: bool,
     created: Option<String>,
     updated: Option<String>,
@@ -826,7 +826,7 @@ async fn create(
 }
 
 /// The stored toolset `name` for a form, or the page that says why there is none: gone, or in
-/// `giles.toml`.
+/// `doozers.toml`.
 async fn stored_view(
     pages: &ToolsetPages,
     name: &str,
@@ -1292,7 +1292,7 @@ mod tests {
                  "deadline": "90s", "parallel": true, "skills": ["/srv/skills"] }"#,
             r#"{ "url": "https://example.com/mcp" }"#,
             r#"{ "url": "https://example.com/mcp",
-                 "auth": { "oauth": { "client_id": "giles",
+                 "auth": { "oauth": { "client_id": "doozers",
                      "client_secret": { "secret": "toolsets/search/oauth-client-secret" },
                      "scopes": ["repo", "read:org"] } } }"#,
             r#"{ "url": "https://example.com/mcp", "auth": { "oauth": {} } }"#,

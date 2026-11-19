@@ -57,9 +57,9 @@ const MAX_OAUTH_REDIRECTS: usize = 5;
 mod address;
 
 /// The client name a dynamically registered client gets.
-const CLIENT_NAME: &str = "Giles";
+const CLIENT_NAME: &str = "Doozers";
 
-/// The HTTP client of the OAuth requests for one MCP server: Giles's TLS settings
+/// The HTTP client of the OAuth requests for one MCP server: Doozers' TLS settings
 /// ([`tls_client_builder`](crate::net::tls_client_builder): bundled roots only), a timeout, a
 /// limit on the body, and only the addresses the server's URL allows ([`address::Policy`]), for
 /// the request, each address its host resolves to, and each redirect. Redirects are followed only
@@ -112,7 +112,7 @@ impl OAuthHttpClient for OAuthHttp {
                 .map_err(|error| Box::new(error) as OAuthHttpClientError)?;
             if !self.policy.allows_url(request.url()) {
                 return Err(format!(
-                    "an OAuth request to {} is refused: the MCP server may not send Giles there",
+                    "an OAuth request to {} is refused: the MCP server may not send Doozers there",
                     request.url()
                 )
                 .into());
@@ -290,7 +290,7 @@ impl OAuthContext {
         if Endpoints::of(&resolution.metadata) != stored.endpoints {
             return Err(Error::InvalidRequest(format!(
                 "toolset {name}: the server now names another sign-in server than when {user} \
-                 signed in, so Giles won't send their tokens there. Sign in again on the \
+                 signed in, so Doozers won't send their tokens there. Sign in again on the \
                  Connections page if the change is expected"
             )));
         }

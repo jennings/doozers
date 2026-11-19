@@ -1,4 +1,4 @@
-# Giles - Idea
+# Doozers - Idea
 
 ## Purpose
 
@@ -23,26 +23,26 @@ This doc lists the features and explains roughly how each one works. The detaile
 - One source of truth. A plugin describes itself at runtime. There is no manifest to keep in sync by
   hand.
 - Don't trust plugins by default. The core sandboxes every plugin it launches.
-- Settings belong in the web UI, not in config files. `giles.toml` holds only what Giles needs to
-  start and what makes Giles run a program on the host: the address the web interface listens on,
-  the default time zone for users who don't set one, security-model requirements such as whether a
-  plugin may be configured to run unsandboxed, and the programs Giles launches (stdio toolsets and
-  plugins) with their arguments, environment, and sandbox grants. Installing and running code on the
-  host is the operator's act, so a web login can't choose any of it. The operator writes the file
-  and Giles never edits it. Giles manages everything else so it can be changed in the web UI: users
-  (an admin adds them), agents and their files (`agent.toml`, `SOUL.md`, per-user memories), routes
-  from channel identities to users and agents, remote MCP servers (toolsets Giles connects to, not
-  runs), and, once designed, the provider and channel instances that launch no program. Whether each
-  kind of data lives in SQLite or in Markdown, JSONL, or other text files is decided as it's built.
-  Routes and remote toolsets are already managed in the web UI; v1 still reads the owner and the
-  provider and channel instances from `giles.toml`, and those that launch no program move out as
-  their web UI lands (`PLAN.md` section 11.2).
+- Settings belong in the web UI, not in config files. `doozers.toml` holds only what Doozers needs
+  to start and what makes Doozers run a program on the host: the address the web interface listens
+  on, the default time zone for users who don't set one, security-model requirements such as whether
+  a plugin may be configured to run unsandboxed, and the programs Doozers launches (stdio toolsets
+  and plugins) with their arguments, environment, and sandbox grants. Installing and running code on
+  the host is the operator's act, so a web login can't choose any of it. The operator writes the
+  file and Doozers never edits it. Doozers manages everything else so it can be changed in the web
+  UI: users (an admin adds them), agents and their files (`agent.toml`, `SOUL.md`, per-user
+  memories), routes from channel identities to users and agents, remote MCP servers (toolsets
+  Doozers connects to, not runs), and, once designed, the provider and channel instances that launch
+  no program. Whether each kind of data lives in SQLite or in Markdown, JSONL, or other text files
+  is decided as it's built. Routes and remote toolsets are already managed in the web UI; v1 still
+  reads the owner and the provider and channel instances from `doozers.toml`, and those that launch
+  no program move out as their web UI lands (`PLAN.md` section 11.2).
 
 ## v1 scope
 
 v1 is used by one person, the owner, who talks to agents on several channels.
 
-- One implicit user, the owner, whose identities are declared in `giles.toml`. Messages from any
+- One implicit user, the owner, whose identities are declared in `doozers.toml`. Messages from any
   other identity are dropped and logged. No user records, roles, or pairing.
 - Group conversations are ignored.
 - Each agent uses one model, with no fallback.
@@ -59,8 +59,8 @@ v1 channels:
 | Channel  | Packaging                | Receive                   | Send |
 | -------- | ------------------------ | ------------------------- | ---- |
 | Web      | Built-in                 | HTTP and server-sent events | Same |
-| IRC      | `doozers-channel-irc`      | IRC connection            | IRC  |
-| Email    | `doozers-channel-email`    | IMAP with IDLE            | SMTP |
+| IRC      | `doozers-channel-irc`    | IRC connection            | IRC  |
+| Email    | `doozers-channel-email`  | IMAP with IDLE            | SMTP |
 | WhatsApp | `doozers-channel-whatsapp` | WhatsApp Web multi-device | Same |
 
 - Other services (Telegram and so on) are added later as channel plugins.
@@ -89,13 +89,13 @@ Providers are how the system calls an LLM.
 - Two built-in clients: one for the OpenAI-compatible API, which covers OpenAI, OpenRouter, Ollama,
   and most others, and a native Anthropic client.
 - Local models run out of process, for example through Ollama, never inside the core.
-- Giles has its own message model, patterned on Anthropic's content blocks. Each provider translates
-  to and from its wire format.
+- Doozers has its own message model, patterned on Anthropic's content blocks. Each provider
+  translates to and from its wire format.
 - Provider plugins are deferred. The `Provider` trait stays, so they can be added later.
 
 ## Feature: agents
 
-An agent is the personality the user talks to. Agents are managed by Giles itself, not through
+An agent is the personality the user talks to. Agents are managed by Doozers itself, not through
 plugins, and are meant to be edited in the web UI.
 
 Each agent has:
@@ -111,7 +111,7 @@ Each agent has:
 - Scheduled jobs
 
 Routing rules decide which agent handles which channel and conversation. Like agents, they're
-managed by Giles and meant to be edited in the web UI.
+managed by Doozers and meant to be edited in the web UI.
 
 ## Feature: sessions (v1)
 
@@ -175,8 +175,8 @@ Plugins come in three kinds with little overlap. One plugin never mixes kinds.
 
 | Kind     | What it is                          | Protocol |
 | -------- | ----------------------------------- | -------- |
-| Provider | `doozers-provider-<name>` binary      | gRPC     |
-| Channel  | `doozers-channel-<name>` binary       | gRPC     |
+| Provider | `doozers-provider-<name>` binary    | gRPC     |
+| Channel  | `doozers-channel-<name>` binary     | gRPC     |
 | Toolset  | Any MCP server, by `command` or URL | MCP      |
 
 gRPC plugins:
@@ -198,8 +198,8 @@ gRPC plugins:
 There are two layers:
 
 - Core level: The core sandboxes every plugin and stdio MCP server it launches. The sandbox is
-  mandatory: if it can't be applied, the plugin doesn't start, unless `giles.toml` allows opting out
-  and the instance opts out. Plugins get a scrubbed environment and a single writable data
+  mandatory: if it can't be applied, the plugin doesn't start, unless `doozers.toml` allows opting
+  out and the instance opts out. Plugins get a scrubbed environment and a single writable data
   directory. Provider and channel plugins have network access by default; stdio MCP servers get it
   only when granted.
   - Linux: Landlock and seccomp, with no namespaces.
@@ -234,11 +234,11 @@ The questions this doc used to leave open are settled in `PLAN.md`:
 
 | Question                  | Answer                                                                                  | `PLAN.md` |
 | ------------------------- | --------------------------------------------------------------------------------------- | --------- |
-| Remote plugin connections | TLS optional but recommended; bearer token or OAuth client credentials; no OAuth authorization code grant in v1; an unreachable plugin leaves Giles running degraded, retrying with backoff | 7.6 |
+| Remote plugin connections | TLS optional but recommended; bearer token or OAuth client credentials; no OAuth authorization code grant in v1; an unreachable plugin leaves Doozers running degraded, retrying with backoff | 7.6 |
 | Plugin interface shape    | A shared base service plus one service per kind                                         | 8.2       |
 | Tool discovery            | Query at every start; cache keyed on the binary's hash, the reported version, and the instance config | 7.9 |
-| Identity mapping          | v1 declares the owner's identities in `giles.toml`; the multi-user design is deferred  | 1.1, 3    |
-| Config ownership          | `giles.toml` holds startup settings and what runs a program on the host (stdio toolsets, plugins, sandbox grants); Giles never edits it and manages the rest, remote MCP servers included, in the web UI | 11.2 |
+| Identity mapping          | v1 declares the owner's identities in `doozers.toml`; the multi-user design is deferred | 1.1, 3    |
+| Config ownership          | `doozers.toml` holds startup settings and what runs a program on the host (stdio toolsets, plugins, sandbox grants); Doozers never edits it and manages the rest, remote MCP servers included, in the web UI | 11.2 |
 | Core sandboxing           | Landlock and seccomp on Linux, Seatbelt on macOS, mandatory by default                  | 12        |
 | Windows support           | Not in v1                                                                               | 12        |
 | Email receiving           | IMAP with IDLE                                                                          | 10        |

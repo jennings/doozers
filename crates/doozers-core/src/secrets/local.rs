@@ -1,4 +1,4 @@
-//! [`LocalSecrets`]: the built-in secret provider, sealing values into `giles.db`.
+//! [`LocalSecrets`]: the built-in secret provider, sealing values into `doozers.db`.
 
 use std::sync::Arc;
 
@@ -14,10 +14,11 @@ use crate::config::Secret;
 use crate::sessions::Clock;
 
 /// The associated data the data key is sealed with. Secret paths can't contain `:`, so a wrapped
-/// data key never opens as a secret's value, nor a value as the data key.
+/// data key never opens as a secret's value, nor a value as the data key. It keeps the project's
+/// former name: changing it would make every existing secret store unreadable.
 const DATA_KEY_AAD: &[u8] = b"giles:secret-store:data-key";
 
-/// The local secret store: one row per secret in `giles.db`, its value sealed with AES-256-GCM
+/// The local secret store: one row per secret in `doozers.db`, its value sealed with AES-256-GCM
 /// under the store's data key, with the secret's path as associated data so a value moved to
 /// another row doesn't open. The data key is stored wrapped (sealed) by the key in a [`KeyFile`].
 #[derive(Clone)]
@@ -72,7 +73,7 @@ impl LocalSecrets {
                 if wrapped.is_some() {
                     warn!(
                         key_file = %path.display(),
-                        "the secret store's key file is missing; no secret is stored, so Giles \
+                        "the secret store's key file is missing; no secret is stored, so Doozers \
                          makes a new key"
                     );
                 }
@@ -100,7 +101,7 @@ impl LocalSecrets {
                     key_file = %path.display(),
                     reason,
                     "the secret store's key file doesn't unlock its data key; no secret is \
-                     stored, so Giles makes a new data key"
+                     stored, so Doozers makes a new data key"
                 ),
             }
         }

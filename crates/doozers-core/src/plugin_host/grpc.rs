@@ -91,21 +91,21 @@ impl PluginConnection {
         InterceptedService::new(self.channel.clone(), self.metadata.clone())
     }
 
-    /// A `giles.plugin.v1.PluginService` client.
+    /// A `doozers.plugin.v1.PluginService` client.
     pub fn plugin(&self) -> PluginServiceClient<PluginTransport> {
         PluginServiceClient::new(self.transport())
             .max_decoding_message_size(MAX_MESSAGE_SIZE)
             .max_encoding_message_size(MAX_MESSAGE_SIZE)
     }
 
-    /// A `giles.channel.v1.ChannelService` client.
+    /// A `doozers.channel.v1.ChannelService` client.
     pub fn channel(&self) -> ChannelServiceClient<PluginTransport> {
         ChannelServiceClient::new(self.transport())
             .max_decoding_message_size(MAX_MESSAGE_SIZE)
             .max_encoding_message_size(MAX_MESSAGE_SIZE)
     }
 
-    /// A `giles.environment.v1.EnvironmentService` client.
+    /// A `doozers.environment.v1.EnvironmentService` client.
     pub fn environment(&self) -> EnvironmentServiceClient<PluginTransport> {
         EnvironmentServiceClient::new(self.transport())
             .max_decoding_message_size(MAX_MESSAGE_SIZE)

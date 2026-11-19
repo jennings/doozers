@@ -1,9 +1,9 @@
 // Channel plugins (PLAN section 8.5).
 syntax = "proto3";
 
-package giles.channel.v1;
+package doozers.channel.v1;
 
-import "giles/types/v1/types.proto";
+import "doozers/types/v1/types.proto";
 import "google/protobuf/timestamp.proto";
 
 service ChannelService {
@@ -67,7 +67,7 @@ message ChannelEvent {
 // A message the channel received.
 message InboundMessage {
   // Where it was sent. Always set.
-  giles.types.v1.ConversationRef conversation = 1;
+  doozers.types.v1.ConversationRef conversation = 1;
   // Who sent it: the canonical native identifier (PLAN section 3.3).
   string sender = 2;
   // The sender's display name, if the channel has one.
@@ -75,7 +75,7 @@ message InboundMessage {
   // The text, as the sender wrote it.
   string text = 4;
   // Attachments, as the plugin's blob handles.
-  repeated giles.types.v1.BlobRef attachments = 5;
+  repeated doozers.types.v1.BlobRef attachments = 5;
   // The message this one replies to.
   optional string reply_to = 6;
   // When the sender sent it, if the channel knows.
@@ -133,7 +133,7 @@ message SendRequest {
   // The text, as CommonMark; the channel renders it.
   string markdown = 2;
   // Attachments, as handles from PutBlob.
-  repeated giles.types.v1.BlobRef attachments = 3;
+  repeated doozers.types.v1.BlobRef attachments = 3;
   // The message this one replies to.
   optional string reply_to = 4;
 }

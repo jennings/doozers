@@ -38,13 +38,13 @@ impl Remote {
         command
             .args(["serve", "--listen", listen, "--data"])
             .arg(data)
-            .env_remove("GILES_CHANNEL_ECHO_TOKEN")
+            .env_remove("DOOZERS_CHANNEL_ECHO_TOKEN")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
         match token {
-            Some(token) => command.env("GILES_CHANNEL_ECHO_TOKEN", token),
+            Some(token) => command.env("DOOZERS_CHANNEL_ECHO_TOKEN", token),
             None => command.arg("--no-auth"),
         };
         if let Some(pki) = tls {
@@ -359,7 +359,7 @@ async fn oauth_client_credentials_get_the_bearer_token() {
     .await;
     home.add_channels(&format!(
         "[channel.echo]\naddress = \"http://{}\"\n\n[channel.echo.auth.oauth]\n\
-         token_url = \"{token_url}\"\nclient_id = \"giles\"\n\
+         token_url = \"{token_url}\"\nclient_id = \"doozers\"\n\
          client_secret = {{ env = \"CLIENT_SECRET\" }}\nscopes = [\"echo\"]",
         plugin.addr
     ));
@@ -367,10 +367,10 @@ async fn oauth_client_credentials_get_the_bearer_token() {
     let core = home.start_core().await;
     running(&core).await;
     round_trip(&home, &core, "oauth", 1).await;
-    // Basic base64("giles:client-s3cret")
+    // Basic base64("doozers:client-s3cret")
     assert_eq!(
         *requests.lock().unwrap(),
-        ["Basic Z2lsZXM6Y2xpZW50LXMzY3JldA=="]
+        ["Basic ZG9vemVyczpjbGllbnQtczNjcmV0"]
     );
     core.stop().await;
     plugin.kill().await;
@@ -387,7 +387,7 @@ async fn a_refused_token_request_leaves_the_plugin_backing_off() {
     let plugin = Remote::start("127.0.0.1:0", &home.data_dir("echo"), None, None).await;
     home.add_channels(&format!(
         "[channel.echo]\naddress = \"http://{}\"\n\n[channel.echo.auth.oauth]\n\
-         token_url = \"{token_url}\"\nclient_id = \"giles\"\n\
+         token_url = \"{token_url}\"\nclient_id = \"doozers\"\n\
          client_secret = {{ env = \"CLIENT_SECRET\" }}",
         plugin.addr
     ));
@@ -421,7 +421,7 @@ async fn tls_connects_to_a_trusted_certificate_only() {
     core.stop().await;
 
     let launcher = home
-        .launcher("/nonexistent/giles".into())
+        .launcher("/nonexistent/doozers".into())
         .remote_tls_roots(pki.roots.clone());
     let core = home.start_core_with(launcher).await;
     running(&core).await;

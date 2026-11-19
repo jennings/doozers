@@ -66,7 +66,7 @@ pub(super) fn event(event: &Event) -> Option<WaEvent> {
             "the phone scanned the code but has multi-device disabled".to_owned(),
         ),
         Event::ClientOutdated(_) => WaEvent::Fatal(
-            "WhatsApp rejected this client version as outdated; update Giles".to_owned(),
+            "WhatsApp rejected this client version as outdated; update Doozers".to_owned(),
         ),
         Event::StreamReplaced(_) => WaEvent::Fatal(
             "another client connected as this device and replaced this session".to_owned(),

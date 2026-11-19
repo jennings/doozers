@@ -30,7 +30,7 @@ impl Remote {
             .arg(data)
             .arg("--config")
             .arg(config)
-            .env("GILES_ENVIRONMENT_ECHO_TOKEN", token)
+            .env("DOOZERS_ENVIRONMENT_ECHO_TOKEN", token)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

@@ -7,10 +7,10 @@ model resolution. `doozers_core::runtime` builds it at startup together with the
 ## Startup
 
 `Runtime::start(root, Arc<Config>)` runs after the configuration is loaded and the sandbox host
-check has run ([The `giles` Binary](daemon.md#doozers-serve-lifecycle)):
+check has run ([The `doozers` Binary](daemon.md#doozers-serve-lifecycle)):
 
-1. Open the database, `data/giles.db` (`doozers_store::Store::open_with`, which migrates it) in the
-   configured `[core] journal_mode`, with the pre-migration backup hook
+1. Open the database, `data/doozers.db` (`doozers_store::Store::open_with`, which migrates it) in
+   the configured `[core] journal_mode`, with the pre-migration backup hook
    ([Storage](storage.md#journal-modes)).
 2. Open the blob store, `data/blobs` (`BlobStore::open`).
 3. `MemoryDbs::new(root, journal_mode)`, the registry of the per-agent memory databases
@@ -56,8 +56,8 @@ Toolsets change the same way, each change swapping in a new `Config` and bumping
 
 - `add_toolset(ToolsetInstance)` adds one and refuses a name that another toolset has, ignoring
   ASCII case (`InstanceExists`, naming the toolset that has it). Toolset names key data directories
-  and tool prefixes, and are unique among toolsets, as in `giles.toml`. A provider or a channel may
-  have the same name.
+  and tool prefixes, and are unique among toolsets, as in `doozers.toml`. A provider or a channel
+  may have the same name.
 - `replace_toolset(ToolsetInstance)` swaps in an edited toolset under its name (`NoSuchToolset` if
   there is none).
 - `remove_toolset(&InstanceName)` takes one out and returns it; snapshots taken before still have
@@ -67,7 +67,7 @@ Toolsets change the same way, each change swapping in a new `Config` and bumping
   (`RenameToolsetError::Exists` or `RenameToolsetError::NoSuchToolset` otherwise).
 
 These change the configuration only. Starting, restarting, and stopping the server is the
-[toolset host](toolsets.md#changing-toolsets-while-giles-runs)'s job, which keeps the registry in
+[toolset host](toolsets.md#changing-toolsets-while-doozers-runs)'s job, which keeps the registry in
 step with the configuration.
 
 Everything that reads toolsets per use reads the live configuration, never a copy from startup: the
@@ -98,9 +98,9 @@ built-in, so adding one is one arm:
   `Registry::web_channel() -> Option<Arc<WebChannel>>`, for its pages and approval prompts (see
   [Web channel](web-channel.md)).
 
-Every failure is a `ConfigError` on `giles.toml` at `<kind>.<name>.component` (missing component) or
-`<kind>.<name>.config` (rejected config). On that error path only, `giles.toml` is read again to
-find the key's line and column, so it prints as `file:line:col: key: reason` like any other
+Every failure is a `ConfigError` on `doozers.toml` at `<kind>.<name>.component` (missing component)
+or `<kind>.<name>.config` (rejected config). On that error path only, `doozers.toml` is read again
+to find the key's line and column, so it prints as `file:line:col: key: reason` like any other
 configuration error. Messages from the component pass through `PluginConfig::scrub`, so they never
 show a secret.
 

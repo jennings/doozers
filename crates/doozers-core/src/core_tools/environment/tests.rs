@@ -56,7 +56,7 @@ impl Setup {
             std::fs::write(path, contents).unwrap();
         };
         write(
-            "giles.toml",
+            "doozers.toml",
             "[owner]\nidentities = [\"fake:owner\"]\n\
              [provider.anthropic]\nconfig = { api_key = \"sk-test\" }\n\
              [environment.box]\ncomponent = \"docker\"\naddress = \"http://127.0.0.1:9000\"\n\
@@ -78,7 +78,7 @@ impl Setup {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )

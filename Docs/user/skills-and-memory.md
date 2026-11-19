@@ -6,7 +6,7 @@ An agent's knowledge has three parts:
 - Skills teach it how to do things.
 - Memories hold facts it should keep in mind.
 
-You write `SOUL.md` and skills as Markdown files under `GILES_HOME`. The agent keeps its memories
+You write `SOUL.md` and skills as Markdown files under `DOOZERS_HOME`. The agent keeps its memories
 itself, in a database.
 
 ## What the agent sees
@@ -20,7 +20,7 @@ When a conversation starts, the agent gets, in this order:
    `users/owner/USER.md`, which you write and the agent never changes.
 
 This stays the same for the whole conversation. Edits to `SOUL.md` or `USER.md`, and new memories,
-show up in the next conversation, which starts after `/new`, an idle reset, or a restart of Giles.
+show up in the next conversation, which starts after `/new`, an idle reset, or a restart of Doozers.
 Compaction also refreshes the memories.
 
 Each of your messages reaches the agent with the time you sent it, in your `owner.timezone`.
@@ -61,13 +61,13 @@ description: Prepare the weekly review. Use when asked for a weekly summary or r
 - `description` is required, at most 1,024 characters. Say what the skill does and when to use it.
   It's all the agent sees until it loads the skill.
 
-Giles reads skills when a conversation starts, so edits need no restart. A skill with a mistake is
-skipped, and Giles logs a warning naming the file and the problem.
+Doozers reads skills when a conversation starts, so edits need no restart. A skill with a mistake is
+skipped, and Doozers logs a warning naming the file and the problem.
 
 When the agent loads a skill, it sees a list of the skill's other files and can read any of them. It
 can then hand a file to a tool or send it to you. It can't read files outside the skill's directory.
 
-Giles never runs scripts that a skill contains.
+Doozers never runs scripts that a skill contains.
 
 ## Memory
 
@@ -151,7 +151,7 @@ Each agent's memories are in `agents/<agent>/memory.db`, a SQLite database.
 [`doozers backup`](backups.md) includes it, and it moves with the agent's directory when you
 [remove the agent](web.md#removing-an-agent) in the web UI.
 
-Don't open or copy it while Giles runs, for the same reasons as `giles.db`.
+Don't open or copy it while Doozers runs, for the same reasons as `doozers.db`.
 
 ### Older MEMORY.md files
 
@@ -161,7 +161,7 @@ Earlier versions kept memory in Markdown files:
 - `agents/<agent>/users/<user>/MEMORY.md`
 - a `MEMORY.md` for each group
 
-Giles no longer reads them and doesn't migrate them, so the agent starts with no memories. To keep
+Doozers no longer reads them and doesn't migrate them, so the agent starts with no memories. To keep
 something from them, tell the agent to remember it. You can delete the files.
 
 ## Searching past conversations

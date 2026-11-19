@@ -175,7 +175,7 @@ impl CallRouter {
                 {
                     tracing::info!(
                         %instance,
-                        "declined an MCP elicitation whose schema requires fields: Giles answers \
+                        "declined an MCP elicitation whose schema requires fields: Doozers answers \
                          only yes or no"
                     );
                     return decline();

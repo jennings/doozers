@@ -1,4 +1,4 @@
-//! Finding the binaries Giles launches: channel plugin binaries in `<root>/plugins/`, then on
+//! Finding the binaries Doozers launches: channel plugin binaries in `<root>/plugins/`, then on
 //! `$PATH` (PLAN section 7.3), and stdio toolset commands on `$PATH` (section 7.10).
 //!
 //! The config loader uses this to protect the directories holding those binaries from write

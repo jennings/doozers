@@ -194,7 +194,7 @@ async fn the_page_lists_a_workspace_with_what_its_environment_says_now() {
     wk.fake.report_space(Some(5 << 30), Some(1536));
     wk.fake.set_details(vec![
         WorkspaceDetail::new("Image", "alpine:3.20"),
-        WorkspaceDetail::new("Volume", "giles-box.1"),
+        WorkspaceDetail::new("Volume", "doozers-box.1"),
     ]);
 
     let page = wk.page().await;
@@ -218,7 +218,7 @@ async fn the_page_lists_a_workspace_with_what_its_environment_says_now() {
         "{page}"
     );
     assert!(
-        page.contains("<dt>Volume</dt>\n<dd>giles-box.1</dd>"),
+        page.contains("<dt>Volume</dt>\n<dd>doozers-box.1</dd>"),
         "{page}"
     );
     assert!(page.contains("5 GiB free"), "{page}");
@@ -309,7 +309,7 @@ async fn an_environment_that_is_down_or_failing_shows_unknown_and_is_named() {
         ),
         "{page}"
     );
-    // What Giles stored still shows.
+    // What Doozers stored still shows.
     assert!(page.contains("fake box"), "{page}");
     assert!(page.contains(">unknown</span>"), "{page}");
     wk.fake.fail_lists(false);

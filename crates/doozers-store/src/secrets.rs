@@ -33,7 +33,7 @@ pub struct SecretRecord {
     pub description: String,
     /// When the secret was created.
     pub created_at: Timestamp,
-    /// The user who created it, or `None` if no user did (the operator at the CLI, or Giles).
+    /// The user who created it, or `None` if no user did (the operator at the CLI, or Doozers).
     pub created_by: Option<UserId>,
     /// When its value or description last changed.
     pub updated_at: Timestamp,
@@ -446,7 +446,7 @@ mod tests {
     #[tokio::test]
     async fn an_existing_database_gains_the_tables_and_keeps_its_data() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         let before = MIGRATIONS
             .iter()
             .position(|m| m.name == "0007_secrets")

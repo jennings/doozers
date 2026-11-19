@@ -60,7 +60,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
     }
     let sandbox = check_sandbox();
     // The sandbox trampoline is this binary, run as `doozers sandbox-exec`.
-    let giles_exe = std::env::current_exe().context("cannot find the giles binary")?;
+    let doozers_exe = std::env::current_exe().context("cannot find the doozers binary")?;
     // The database, the blob store, and every component the configuration names.
     let config = Arc::new(config);
     let runtime = Runtime::start(root.clone(), config.clone()).await?;
@@ -72,7 +72,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
                 root.clone(),
                 config.core.secret_key_file.clone(),
                 runtime.secrets.clone(),
-                giles_exe.clone(),
+                doozers_exe.clone(),
                 sandbox.clone().map(drop),
                 runtime.blobs.clone(),
             ),
@@ -80,9 +80,9 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
         )
         .await,
     );
-    // The toolsets stored in the database, validated and added beside the ones of `giles.toml`.
+    // The toolsets stored in the database, validated and added beside the ones of `doozers.toml`.
     // One that fails isn't started and shows as failed; startup never fails on one. The manager is
-    // also what changes them while Giles runs. A rename rewrites agents' files, so it holds the
+    // also what changes them while Doozers runs. A rename rewrites agents' files, so it holds the
     // lock that the agent manager holds for a change to an agent.
     let agent_lock = Arc::new(tokio::sync::Mutex::new(()));
     let toolset_manager = ToolsetManager::start(ToolsetManagerOptions {
@@ -106,7 +106,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
     if let Some(web) = runtime.registry.web_channel() {
         web.set_listen_addr(http_addr);
     }
-    // The web channel's pages and its trusted-proxy listener, if `giles.toml` configures them.
+    // The web channel's pages and its trusted-proxy listener, if `doozers.toml` configures them.
     #[cfg(feature = "channel-web")]
     let web = doozers_core::channels::web::WebApp::from_runtime(&runtime, shutdown.clone());
     #[cfg(feature = "channel-web")]
@@ -150,7 +150,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
         blobs: runtime.blobs.clone(),
     };
     let plugins = Arc::new(PluginHost::new(
-        Launcher::new(root.clone(), giles_exe, sandbox.clone().map(drop)),
+        Launcher::new(root.clone(), doozers_exe, sandbox.clone().map(drop)),
         wiring,
     ));
     // Login links come from the built-in web channel, if one is configured.
@@ -256,8 +256,8 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
     // Every configured plugin channel and environment, supervised: a channel is registered and
     // attached to the sessions as it comes up, an environment is registered once it has answered
     // `Info`, and both are relaunched with backoff when they fail. Startup waits for each first
-    // attempt and for the first start of each toolset of `giles.toml` (a failed toolset retries in
-    // the background; stored toolsets start in the background); a shutdown during startup stops
+    // attempt and for the first start of each toolset of `doozers.toml` (a failed toolset retries
+    // in the background; stored toolsets start in the background); a shutdown during startup stops
     // waiting, and `stop_all` abandons the launches still running (killing their plugins).
     tokio::select! {
         _ = async { tokio::join!(plugins.start(&config), toolsets.started()) } => {}
@@ -274,7 +274,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
         channels = config.channels.len(),
         environments = config.environments.len(),
         toolsets = runtime.registry.config().toolsets.len(),
-        "giles started",
+        "doozers started",
     );
 
     // `biased`: once the token is cancelled the server returns promptly, so both branches can be
@@ -306,7 +306,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
     plugins.stop_all().await;
     toolsets.stop().await;
     stop_admin(admin_server).await;
-    info!("giles stopped");
+    info!("doozers stopped");
     // Held until here, so a new core can't start while this one still runs plugins.
     drop(lock);
     Ok(())

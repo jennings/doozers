@@ -3,7 +3,7 @@
 //! - **Echoes** are dropped: a message with `from_me` set was sent by the linked account itself,
 //!   from the phone or another linked device, or by this plugin. It must never start a turn
 //!   (PLAN section 3.3), and an agent that answered its own replies would loop. This includes the
-//!   owner's "message yourself" chat, so Giles should have a WhatsApp number of its own.
+//!   owner's "message yourself" chat, so Doozers should have a WhatsApp number of its own.
 //! - **Status updates, broadcast lists, and channels** are dropped; only direct chats and groups
 //!   are conversations.
 //! - **Everything else is authenticated.** WhatsApp messages are end-to-end encrypted with the

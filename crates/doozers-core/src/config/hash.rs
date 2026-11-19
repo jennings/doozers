@@ -5,7 +5,7 @@
 //! TOML treats as the same value: key order, inline versus standard tables, dotted keys, string
 //! quoting, whitespace, comments, and number spelling (`0x10` is `16`).
 //!
-//! Algorithm, version 1: SHA-256 of the domain tag `giles-config-hash-v1\n` followed by the
+//! Algorithm, version 1: SHA-256 of the domain tag `doozers-config-hash-v1\n` followed by the
 //! canonical encoding of the table:
 //!
 //! | Value    | Encoding                                                                 |
@@ -23,7 +23,7 @@ use std::fmt;
 use sha2::{Digest, Sha256};
 
 /// The domain tag hashed before the encoding; a new version of the algorithm gets a new tag.
-const DOMAIN: &[u8] = b"giles-config-hash-v1\n";
+const DOMAIN: &[u8] = b"doozers-config-hash-v1\n";
 
 /// The SHA-256 hash of an instance's table as written ([module docs](self)). Displays as 64
 /// lowercase hex digits.
@@ -129,11 +129,11 @@ mod tests {
         // is refreshed.
         assert_eq!(
             hash("").to_string(),
-            "91d596437c61e4c07cb168d7bfe78f695f877833b56558513e64892c588048ec"
+            "343e902d7a5adb98d8aec0d5bb2f51493fa03b05c8473158dc98f727777e04c5"
         );
         assert_eq!(
             hash("command = \"/bin/x\"\nargs = [\"-v\", 1, true, 1.5]").to_string(),
-            "3f36b1522dc6f5ec44308f3297e9fbd65a34cb6217d6d366f382e305f438e2ad"
+            "756d5fa30883150f1d2c568e7a6e750318fc96045f3390b1e01b60f6f940aaa7"
         );
     }
 

@@ -23,7 +23,7 @@ skill is a directory with `SKILL.md` and optional resource files.
 
 | Item                           | Purpose                                                            |
 | ------------------------------ | ------------------------------------------------------------------ |
-| `parse_skill(dir, text)`       | Parses the contents of `dir/SKILL.md` into a `doozers_types::Skill`  |
+| `parse_skill(dir, text)`       | Parses the contents of `dir/SKILL.md` into a `doozers_types::Skill` |
 | `load_skill(dir)`              | Reads and parses `dir/SKILL.md`                                    |
 | `validate_skill_name(name)`    | The specification's name rules                                     |
 | `SkillSource { dir, prefix }`  | A directory whose subdirectories are skills                        |
@@ -79,7 +79,7 @@ to the bare name.
 
 ### Resource files
 
-The files next to `SKILL.md` are a skill's resources; plugins never read `GILES_HOME`, so the core
+The files next to `SKILL.md` are a skill's resources; plugins never read `DOOZERS_HOME`, so the core
 hands them over as media (§6.6). `list_resources(dir)` lists them and `read_resource(dir, path)`
 reads one, both blocking:
 
@@ -102,9 +102,9 @@ reads one, both blocking:
 
 Config loading also keeps plugins out of skill directories: a toolset's `skills` directory may not
 overlap the plugins' data directories, and no `write` or `unix` grant may overlap one (the same rule
-as for the directories of binaries Giles runs). Local skills live under `GILES_HOME`, which grants
-can't overlap anyway. `doozers_core::media::media_type_for(name, bytes)` gives a file's media type
-from its extension, else `text/plain` for UTF-8 text, else `application/octet-stream`.
+as for the directories of binaries Doozers runs). Local skills live under `DOOZERS_HOME`, which
+grants can't overlap anyway. `doozers_core::media::media_type_for(name, bytes)` gives a file's media
+type from its extension, else `text/plain` for UTF-8 text, else `application/octet-stream`.
 
 ### The `load_skill` and `send_attachment` tools
 
@@ -146,10 +146,10 @@ visibility, limits, all enforced inside the write transaction) is
 
 | Piece                                                                         | Where                                                              |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `MemoryStore`, `MemoryViewer`, `MemoryOwner`                                  | `doozers-store` (`memory.rs`, `memory_migrations/`)                  |
-| `MemoryDbs`                                                                   | `doozers_core::memory_dbs`: the open databases, by agent             |
+| `MemoryStore`, `MemoryViewer`, `MemoryOwner`                                  | `doozers-store` (`memory.rs`, `memory_migrations/`)                |
+| `MemoryDbs`                                                                   | `doozers_core::memory_dbs`: the open databases, by agent           |
 | `viewer`, `prompt_viewer`, `line`, `flags`, `usage_header`, `user_profile_file` | `doozers_core::memory`                                             |
-| `memory_add`, `memory_edit`, `memory_forget`, `memory_recall`                 | `doozers_core::core_tools::memory_*`                                 |
+| `memory_add`, `memory_edit`, `memory_forget`, `memory_recall`                 | `doozers_core::core_tools::memory_*`                               |
 | the `# Memory` section                                                        | `doozers_core::agent_loop::prompt` ([Agent Loop](agent-loop.md#system)) |
 
 ### Data layout
@@ -169,7 +169,7 @@ visibility, limits, all enforced inside the write transaction) is
 
 `MemoryDbs::new(root, journal_mode)` is built once in `Runtime::start` and shared (the core tools,
 the agent loop, the agent manager). `get(agent)` opens `agents/<agent>/memory.db` on first use, in
-the journal mode of `[core] journal_mode` as for `giles.db`, and keeps it open; concurrent first
+the journal mode of `[core] journal_mode` as for `doozers.db`, and keeps it open; concurrent first
 calls open the file once (one `OnceCell` per agent), and a failed open isn't remembered. A database
 nothing asks for is never opened, so an agent that never remembered anything has no `memory.db`
 until its first `get`. `close(agent)` drops the registry's handle so the writer checkpoints and the
@@ -298,8 +298,8 @@ and the cap, that a memory is private by default, who may share, and that the pr
 ## The `memory_search` tool
 
 A core tool (§6.7) in `doozers_core::core_tools::memory_search`, registered by
-`core_tools::register` with the others. It searches transcripts in `giles.db`, not memories, and the
-memory database doesn't change it.
+`core_tools::register` with the others. It searches transcripts in `doozers.db`, not memories, and
+the memory database doesn't change it.
 
 `memory_search(query, limit?)` (`MemorySearchTool`, holding the store; parallel-safe):
 

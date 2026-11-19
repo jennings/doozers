@@ -17,8 +17,8 @@
 //!   [`RECONCILE_GRACE`] (a create in flight has a row, but a create that failed halfway, or a
 //!   restored backup, doesn't);
 //! - finishes `deleting` rows: the plugin is told to delete, then the row is `deleted`;
-//! - marks `active` rows the plugin doesn't have `deleted` ([`DeleteReason::RemovedOutsideDoozers`]),
-//!   so the model is told;
+//! - marks `active` rows the plugin doesn't have `deleted`
+//!   ([`DeleteReason::RemovedOutsideDoozers`]), so the model is told;
 //! - gives up on `creating` rows older than the grace period (they become `deleting`).
 //!
 //! Workspaces a turn has leased are never stopped or deleted by either. Docs/technical/environments.md
@@ -353,11 +353,11 @@ impl Workspaces {
             }
             match client.delete_workspace(&workspace.id).await {
                 Ok(()) => {
-                    tracing::info!(workspace = %workspace.id, environment = %entry.name, "deleted a workspace Giles has no record of");
+                    tracing::info!(workspace = %workspace.id, environment = %entry.name, "deleted a workspace Doozers has no record of");
                     report.unknown_deleted += 1;
                 }
                 Err(error) => {
-                    tracing::warn!(workspace = %workspace.id, environment = %entry.name, %error, "cannot delete a workspace Giles has no record of");
+                    tracing::warn!(workspace = %workspace.id, environment = %entry.name, %error, "cannot delete a workspace Doozers has no record of");
                 }
             }
         }

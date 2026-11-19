@@ -11,7 +11,7 @@ const READY: &str = r#"{
     "d": {
         "v": 10,
         "user": {
-            "id": "82198898841029460", "username": "Giles", "discriminator": "0",
+            "id": "82198898841029460", "username": "Doozers", "discriminator": "0",
             "global_name": null, "avatar": null, "bot": true, "mfa_enabled": true,
             "verified": true, "flags": 0
         },

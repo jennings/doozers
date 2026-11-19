@@ -14,15 +14,15 @@ Signal's libsignal. Its source files say:
 under the licenses of its crates (mostly MIT, Apache-2.0, and BSD-style; `Cargo.lock` lists them
 and `cargo metadata` shows each license field).
 
-The other programs in this image (giles, doozers-channel-irc, doozers-channel-email) are licensed
+The other programs in this image (doozers, doozers-channel-irc, doozers-channel-email) are licensed
 under MIT OR Apache-2.0 (LICENSE-MIT and LICENSE-APACHE). They don't link the WhatsApp code: the
-plugin is a separate process that talks to giles over gRPC.
+plugin is a separate process that talks to doozers over gRPC.
 
 Corresponding source of the doozers-channel-whatsapp binary (AGPL section 6)
 --------------------------------------------------------------------------
 
-- Giles, including this plugin, the build files, and Cargo.lock:
-  https://github.com/jennings/giles
+- Doozers, including this plugin, the build files, and Cargo.lock:
+  https://github.com/jennings/doozers
   at the commit named in the image's `org.opencontainers.image.revision` label (the image tag
   `sha-<first 7 characters of the commit>` names the same commit).
 - whatsapp-rust, including wacore-libsignal (in wacore/libsignal), pinned by Cargo.toml and

@@ -27,19 +27,19 @@ use doozers_types::{
     StartOutcome, Workspace, WorkspaceDetail, WorkspaceId, WorkspaceList, WorkspaceState,
 };
 
-const LABEL_INSTANCE: &str = "giles.instance";
-const LABEL_WORKSPACE: &str = "giles.workspace";
+const LABEL_INSTANCE: &str = "doozers.instance";
+const LABEL_WORKSPACE: &str = "doozers.workspace";
 /// The image as the model asked for it, normalized (`docker.io/library/ubuntu:24.04`).
-const LABEL_IMAGE: &str = "giles.image";
+const LABEL_IMAGE: &str = "doozers.image";
 /// What the container is created from: the image's repository digest
 /// (`docker.io/library/ubuntu@sha256:...`), or its ID when it has none (a local build).
-const LABEL_DIGEST: &str = "giles.image-digest";
+const LABEL_DIGEST: &str = "doozers.image-digest";
 /// The image's ID (`sha256:...`) at creation, for removal.
-const LABEL_IMAGE_ID: &str = "giles.image-id";
+const LABEL_IMAGE_ID: &str = "doozers.image-id";
 /// `true` when this plugin pulled the image.
-const LABEL_PULLED: &str = "giles.pulled";
+const LABEL_PULLED: &str = "doozers.pulled";
 /// When the workspace was created, RFC 3339.
-const LABEL_CREATED: &str = "giles.created";
+const LABEL_CREATED: &str = "doozers.created";
 
 /// How long a container gets to stop on SIGTERM before it is killed.
 const STOP_GRACE_SECS: i32 = 5;
@@ -588,7 +588,7 @@ impl DockerEnvironment {
             .collect();
         // Ids have no ".", so the last "." always separates the id: two instances can't produce
         // the same name.
-        format!("giles-{instance}.{id}")
+        format!("doozers-{instance}.{id}")
     }
 
     fn label_filter(&self, id: Option<&str>) -> HashMap<String, Vec<String>> {

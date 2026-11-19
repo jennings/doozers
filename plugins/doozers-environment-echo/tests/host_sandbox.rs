@@ -65,7 +65,7 @@ async fn sandboxed_environment_launch() {
             .connection
             .health()
             .check(HealthCheckRequest {
-                service: "giles.environment.v1.EnvironmentService".into(),
+                service: "doozers.environment.v1.EnvironmentService".into(),
             })
             .await
             .unwrap()

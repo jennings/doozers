@@ -2,12 +2,12 @@
 // service (PLAN sections 8.1 to 8.3).
 syntax = "proto3";
 
-package giles.plugin.v1;
+package doozers.plugin.v1;
 
-import "giles/channel/v1/channel.proto";
-import "giles/environment/v1/environment.proto";
-import "giles/provider/v1/provider.proto";
-import "giles/types/v1/types.proto";
+import "doozers/channel/v1/channel.proto";
+import "doozers/environment/v1/environment.proto";
+import "doozers/provider/v1/provider.proto";
+import "doozers/types/v1/types.proto";
 
 // The core is always the client. Plugin-to-core data travels only on streams the core opened.
 service PluginService {
@@ -31,11 +31,11 @@ enum PluginKind {
   reserved 3; // toolsets are MCP servers (PLAN section 7.10)
 
   PLUGIN_KIND_UNSPECIFIED = 0;
-  // Serves giles.provider.v1.ProviderService.
+  // Serves doozers.provider.v1.ProviderService.
   PLUGIN_KIND_PROVIDER = 1;
-  // Serves giles.channel.v1.ChannelService.
+  // Serves doozers.channel.v1.ChannelService.
   PLUGIN_KIND_CHANNEL = 2;
-  // Serves giles.environment.v1.EnvironmentService.
+  // Serves doozers.environment.v1.EnvironmentService.
   PLUGIN_KIND_ENVIRONMENT = 4;
 }
 
@@ -52,7 +52,7 @@ message DescribeResponse {
   // 12: toolset capabilities (toolsets are MCP servers).
   reserved 4, 12;
 
-  // Must match the kind in the binary name, giles-KIND-NAME.
+  // Must match the kind in the binary name, doozers-KIND-NAME.
   PluginKind kind = 1;
   // The NAME part of the binary name.
   string name = 2;
@@ -62,13 +62,13 @@ message DescribeResponse {
   SandboxGrants requested_grants = 5;
   // What the kind service can do. Set to the variant matching kind.
   oneof capabilities {
-    giles.provider.v1.ProviderCapabilities provider = 10;
-    giles.channel.v1.ChannelCapabilities channel = 11;
-    giles.environment.v1.EnvironmentCapabilities environment = 13;
+    doozers.provider.v1.ProviderCapabilities provider = 10;
+    doozers.channel.v1.ChannelCapabilities channel = 11;
+    doozers.environment.v1.EnvironmentCapabilities environment = 13;
   }
 }
 
-// Sandbox grants, in the shape of an instance's sandbox table in giles.toml (PLAN section 12.4).
+// Sandbox grants, in the shape of an instance's sandbox table in doozers.toml (PLAN section 12.4).
 message SandboxGrants {
   // All IP traffic.
   bool network_all = 1;
@@ -103,7 +103,7 @@ message ShutdownResponse {}
 message BlobChunk {
   oneof part {
     // The first chunk only.
-    giles.types.v1.BlobRef header = 1;
+    doozers.types.v1.BlobRef header = 1;
     // At most 1 MiB per chunk.
     bytes data = 2;
   }
@@ -115,7 +115,7 @@ message PutBlobRequest {
 
 message PutBlobResponse {
   // The plugin's handle. It stays valid until the RPC that uses it ends.
-  giles.types.v1.BlobRef blob = 1;
+  doozers.types.v1.BlobRef blob = 1;
 }
 
 message GetBlobRequest {

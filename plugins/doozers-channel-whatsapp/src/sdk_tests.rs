@@ -126,11 +126,11 @@ impl Served {
     }
 
     fn spooled(&self) -> usize {
-        std::fs::read_dir(self.data.join("giles-sdk/events")).map_or(0, Iterator::count)
+        std::fs::read_dir(self.data.join("doozers-sdk/events")).map_or(0, Iterator::count)
     }
 
     fn blobs(&self) -> usize {
-        std::fs::read_dir(self.data.join("giles-sdk/blobs")).map_or(0, Iterator::count)
+        std::fs::read_dir(self.data.join("doozers-sdk/blobs")).map_or(0, Iterator::count)
     }
 }
 

@@ -11,7 +11,7 @@ User-facing behavior and config keys: [Email](../user/email.md).
 | ---------------------- | ---------------------------------------------------- | ----------------------------------------- |
 | `async-imap` (tokio)   | IMAP: login, `SELECT`, `UID SEARCH`/`FETCH`, `IDLE`  | Maintained (Delta Chat), IDLE support, and the caller brings the stream, so TLS is ours |
 | `async-smtp` (tokio)   | SMTP: EHLO, STARTTLS, AUTH, send                     | Same author and model: bring your own stream; `starttls()` hands the plain stream back for the upgrade |
-| `tokio-rustls`         | TLS on both                                          | With `doozers_plugin_sdk::tls::client_config()` (bundled Mozilla roots, aws-lc-rs), like every Giles client |
+| `tokio-rustls`         | TLS on both                                          | With `doozers_plugin_sdk::tls::client_config()` (bundled Mozilla roots, aws-lc-rs), like every Doozers client |
 | `mail-parser`          | Parsing inbound mail (MIME, encodings, HTML to text) | Complete, fast, keeps raw header offsets (needed to read `Authentication-Results` verbatim); `full_encoding` for legacy charsets |
 | `mail-builder`         | Building outbound mail                               | Same project as `mail-parser`; `multipart/alternative` + attachments, RFC 2047 headers, no dependencies with default features off |
 
@@ -26,7 +26,7 @@ crate: see [Alignment](#alignment).
 | `config`       | Parses and validates the `config` table; errors are `invalid config: <key>: ...`    |
 | `channel`      | `EmailChannel` (the `Channel`), the event stream's state machine, sending           |
 | `imap`         | Connect, log in, select; UIDs after the cursor; fetch; wait with IDLE or polling    |
-| `smtp`         | One connection per message; maps SMTP failures to `doozers_types::Error`              |
+| `smtp`         | One connection per message; maps SMTP failures to `doozers_types::Error`            |
 | `inbound`      | Raw message to `Mail` or a drop reason: automated mail, sender, threading, text     |
 | `auth_results` | `Authentication-Results` parsing (RFC 8601) and sender verification                 |
 | `outbound`     | Building the outgoing message; subjects; message ids                                |
@@ -101,8 +101,8 @@ In order, before anything else is looked at:
 - automated (RFC 3834 and lists): any `Auto-Submitted` whose keyword isn't `no`,
   `Precedence: bulk|list|junk`, or any `List-Id`;
 - no sender: not exactly one `From:` header with exactly one valid address;
-- our own copy: `From:` is our address and the `Message-ID` starts with `giles.` (every id we make;
-  our mail also carries `Auto-Submitted`, so the rule above usually catches it first).
+- our own copy: `From:` is our address and the `Message-ID` starts with `doozers.` (every id we
+  make; our mail also carries `Auto-Submitted`, so the rule above usually catches it first).
 
 ### Sender verification
 
@@ -146,8 +146,8 @@ reports `dmarc=pass`, which it computes with the real list.
   sender is part of the id so each sender in a thread is a separate direct conversation: replies go
   only to the person written to, and someone else writing into the thread (even a verified sender)
   can't redirect replies meant for the owner. Group conversations aren't reported in v1.
-- `message_id`: `Message-ID` without brackets (synthesized as `<V>.<U>@giles.invalid` if missing or
-  unusable); `reply_to`: the first `In-Reply-To` id.
+- `message_id`: `Message-ID` without brackets (synthesized as `<V>.<U>@doozers.invalid` if missing
+  or unusable); `reply_to`: the first `In-Reply-To` id.
 - `text`: all text bodies (HTML converted to text by `mail-parser` when there's no plain part),
   prefixed with `Subject: ...` for a thread root.
 - `attachments`: every attachment part, stored with `Blobs::put` (media type lowercased, file name
@@ -168,7 +168,7 @@ rename, directory `fsync`), like `cursor.json`.
 
 ## Outbound
 
-`send` makes a new id `giles.<128 random bits, hex>@<our domain>` (aws-lc-rs's random generator,
+`send` makes a new id `doozers.<128 random bits, hex>@<our domain>` (aws-lc-rs's random generator,
 through the SDK's rustls).
 
 - `SendTarget::Conversation`: the stored thread (unknown: `Error::NotFound`). To its `peer`, subject

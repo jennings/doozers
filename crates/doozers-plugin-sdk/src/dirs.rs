@@ -1,7 +1,7 @@
 //! The SDK's own state inside the plugin's data directory.
 //!
 //! ```text
-//! <GILES_PLUGIN_DATA>/giles-sdk/
+//! <DOOZERS_PLUGIN_DATA>/doozers-sdk/
 //!   blobs/<sha256>       blobs the plugin put, until the core releases them
 //!   blobs/<sha256>.json  their media type and file name
 //!   outbound/<sha256>    blobs the core put, until the Send that uses them ends
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The name of the SDK's directory inside the data directory. Plugin authors keep out of it.
-pub(crate) const SDK_DIR: &str = "giles-sdk";
+pub(crate) const SDK_DIR: &str = "doozers-sdk";
 
 /// Paths of the SDK's state, created by [`SdkDirs::open`].
 #[derive(Debug)]
