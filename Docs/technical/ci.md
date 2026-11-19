@@ -51,8 +51,11 @@ buf breaking --against ".git#ref=$BASE"
 `$BASE` is the pull request's base commit, or for a push to `main` the previous tip of `main`
 (`github.event.before`), so a push of several commits is checked as a whole. The checkout fetches
 full history so the base is available. If the base has no `buf.yaml` (the push that added the first
-contracts, or a new branch), there is nothing to compare against and the step only logs a notice.
-See [gRPC Protocols](protocols.md) for the rules.
+contracts, or a new branch), there is nothing to compare against and the step only logs a notice. A
+commit in the checked range with the trailer `Protobuf-Breaking: allow` skips `buf breaking` for
+that pull request or push. It is for an intended break with no `v2` to move to, such as the rename
+of every package. Lint and formatting still run. Rebase merges keep the trailer, so the push to
+`main` skips the check as the pull request did. See [gRPC Protocols](protocols.md) for the rules.
 
 **Container image** runs after Protobuf passes, on pushes to `main` and on pull requests from the
 same repository. It doesn't wait for Rust: the `Dockerfile` builds the workspace itself, so the two
