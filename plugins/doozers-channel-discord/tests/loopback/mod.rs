@@ -73,7 +73,7 @@ impl Gateway {
             "d": {
                 "v": 10,
                 "user": {
-                    "id": BOT.to_string(), "username": "Giles", "discriminator": "0",
+                    "id": BOT.to_string(), "username": "Doozers", "discriminator": "0",
                     "global_name": null, "avatar": null, "bot": true, "mfa_enabled": true,
                     "verified": true, "flags": 0
                 },

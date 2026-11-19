@@ -18,7 +18,7 @@ nick = "jeeves"
 sasl = { password = { secret = "libera" } }
 ```
 
-Talk to the agent in a private message (a query) to its nick. Giles only accepts messages from a
+Talk to the agent in a private message (a query) to its nick. Doozers only accepts messages from a
 nick that's logged in to a services account listed in `[owner] identities`. See
 [Identities](#identities) for how to write them.
 
@@ -35,7 +35,7 @@ These keys go in the instance's `config` table.
 | `network`          | required     | The network's name, used in identities as `irc:<network>:...`          |
 | `nick`             | required     | The nick to use                                                        |
 | `username`         | the nick     | The user name (ident)                                                  |
-| `realname`         | `Giles`      | The real name shown in `WHOIS`                                         |
+| `realname`         | `Doozers`    | The real name shown in `WHOIS`                                         |
 | `password`         | none         | Server password (`PASS`), for example for a bouncer. A secret.         |
 | `sasl`             | none         | Log in to a services account with [SASL](#sasl)                        |
 | `client_cert`      | none         | A PEM client certificate (chain), for example for CertFP. A secret.    |
@@ -54,19 +54,19 @@ the key, for example `invalid config: nick: not a valid IRC nick`.
 within a network and keep your identities. It can't contain `:` or spaces.
 
 Put passwords and keys in [secrets](configuration.md#secrets), such as `{ secret = "libera" }`,
-rather than writing them into `giles.toml`.
+rather than writing them into `doozers.toml`.
 
 ### TLS
 
-TLS is on by default. Giles trusts only the Mozilla root certificates built into it, not the
+TLS is on by default. Doozers trusts only the Mozilla root certificates built into it, not the
 system's, so it refuses a server with a self-signed certificate.
 
 You can set `tls = false` for a server on this machine (`localhost`, `127.0.0.0/8`, or `::1`), such
 as a local bouncer. Plain TCP to any other server also needs `insecure = true`.
 **Anyone on the network path could then inject messages and forge account identities.**
 
-Giles never sends passwords (`password` or SASL PLAIN) over plain TCP to another machine, even with
-`insecure`.
+Doozers never sends passwords (`password` or SASL PLAIN) over plain TCP to another machine, even
+with `insecure`.
 
 ### SASL
 
@@ -77,13 +77,13 @@ Giles never sends passwords (`password` or SASL PLAIN) over plain TCP to another
 `client_key`. Register the certificate with the network's services first, for example with NickServ
 `CERT ADD`.
 
-With `sasl` set, Giles registers only after it logs in. If the server doesn't offer SASL or the
-mechanism, or the login fails, Giles drops the connection and retries later. `doozers status` shows
-the reason.
+With `sasl` set, Doozers registers only after it logs in. If the server doesn't offer SASL or the
+mechanism, or the login fails, Doozers drops the connection and retries later. `doozers status`
+shows the reason.
 
 ### Rate limit
 
-Giles sends up to `send_burst` lines at once, then one line every `send_interval_ms`. This keeps a
+Doozers sends up to `send_burst` lines at once, then one line every `send_interval_ms`. This keeps a
 long reply from getting it disconnected for flooding.
 
 The defaults suit large networks like Libera.Chat. On a private server or bouncer, you can set
@@ -92,10 +92,10 @@ The defaults suit large networks like Libera.Chat. On a private server or bounce
 ## Identities
 
 List your services account as `irc:<network>:account:<account>`, such as
-`irc:libera.chat:account:stephen`. Giles drops messages from a sender who isn't logged in.
+`irc:libera.chat:account:stephen`. Doozers drops messages from a sender who isn't logged in.
 
-The server tells Giles the sender's account with the IRCv3 `account-tag` capability. Libera.Chat and
-other networks running modern servers have it.
+The server tells Doozers the sender's account with the IRCv3 `account-tag` capability. Libera.Chat
+and other networks running modern servers have it.
 
 Write account names and nicks the way the server case-folds them, or they never match:
 
@@ -139,11 +139,11 @@ network you trust to report hosts honestly.
   own session, and replies go back to the nick. A different nick is a different conversation, even
   for the same account.
 - A message in a channel is a group conversation, named after the channel in lowercase, such as
-  `#giles`. Giles v1 doesn't answer group conversations, so `channels` only makes the agent present
-  there.
+  `#giles`. Doozers v1 doesn't answer group conversations, so `channels` only makes the agent
+  present there.
 
-Messages Giles sends on its own, such as job results, approval prompts, and login codes, go to an
-identity. For an `account:` identity, Giles asks the server which nick is logged in to the account
+Messages Doozers sends on its own, such as job results, approval prompts, and login codes, go to an
+identity. For an `account:` identity, Doozers asks the server which nick is logged in to the account
 right now, and sends only to that nick. If the account isn't online, the message waits and is
 retried until it expires. It never goes to whoever has taken a nick you used before.
 
@@ -161,7 +161,7 @@ Attachments can't be sent over IRC. Each becomes a line `[attachment not sent: <
 `doozers status` shows `connected`, or the last error, such as `SASL authentication failed: ...` or
 `connecting to irc.example.net:6697: ...`.
 
-Giles reconnects after a lost connection. If the nick is taken while connecting, Giles tries
+Doozers reconnects after a lost connection. If the nick is taken while connecting, Doozers tries
 `nick_`, `nick__`, and `nick___`.
 
 ## Sandboxing

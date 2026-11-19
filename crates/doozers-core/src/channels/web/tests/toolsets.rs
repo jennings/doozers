@@ -1,5 +1,5 @@
 //! Router-level tests of the toolset pages over the test configuration (the channel `web`, the
-//! agents `jeeves` and `bunter`, and the stdio toolset `files` of `giles.toml`), a real
+//! agents `jeeves` and `bunter`, and the stdio toolset `files` of `doozers.toml`), a real
 //! [`ToolsetManager`] whose remote servers never answer, and a fake admin service.
 
 use std::os::unix::fs::PermissionsExt as _;
@@ -83,7 +83,7 @@ fn plugin(
     }
 }
 
-/// The toolset pages over a registry of their own, so a test can change `giles.toml` first.
+/// The toolset pages over a registry of their own, so a test can change `doozers.toml` first.
 struct Toolsets {
     app: WebApp,
     registry: Arc<Registry>,
@@ -94,7 +94,7 @@ struct Toolsets {
 
 impl Env {
     /// The toolset pages of this environment's configuration, plus an agent `wooster` that lists
-    /// tools of a toolset `box` and `core` (TOML) appended to `giles.toml`.
+    /// tools of a toolset `box` and `core` (TOML) appended to `doozers.toml`.
     async fn toolsets(&self, core: &str) -> Toolsets {
         let root = self.root();
         let wooster = root.agents_dir().join("wooster");
@@ -112,7 +112,7 @@ impl Env {
             root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -140,7 +140,7 @@ impl Env {
                     root.clone(),
                     root.secret_key_file(),
                     secrets.clone(),
-                    PathBuf::from("/nonexistent/giles"),
+                    PathBuf::from("/nonexistent/doozers"),
                     Err("there is no sandbox in tests".to_owned()),
                     self.blobs.clone(),
                 ),
@@ -389,7 +389,7 @@ async fn every_change_needs_the_csrf_token() {
 }
 
 #[tokio::test]
-async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only() {
+async fn the_list_shows_state_tools_and_errors_and_doozers_toml_toolsets_read_only() {
     let env = env().await;
     let t = env.toolsets("").await;
     let (_, html) = t.get("/admin/mcp-servers").await;
@@ -419,7 +419,7 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
         r#"<a class="button button-primary" href="/admin/mcp-servers/new">New MCP server</a>"#,
         r#"<a href="/admin/mcp-servers/box">box</a>"#,
         "<code>http://127.0.0.1:9/mcp</code>",
-        // The stdio toolset of giles.toml, as it runs.
+        // The stdio toolset of doozers.toml, as it runs.
         r#"<td data-label="Runs as" class="secondary m-meta">command</td>"#,
         "<code>/x</code>",
         r#"<td data-label="Runs as" class="secondary m-meta">remote URL</td>"#,
@@ -437,7 +437,7 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
         assert!(html.contains(expected), "{expected}\n{html}");
     }
     assert!(!html.contains(XSS), "{html}");
-    // The names come in order, and the toolset of `giles.toml` is listed but can't be changed.
+    // The names come in order, and the toolset of `doozers.toml` is listed but can't be changed.
     let at = |name: &str| {
         html.find(&format!(r#"<a href="/admin/mcp-servers/{name}">"#))
             .unwrap()
@@ -447,10 +447,10 @@ async fn the_list_shows_state_tools_and_errors_and_giles_toml_toolsets_read_only
         "{html}"
     );
     assert!(
-        html.contains(r#"<span class="meta">giles.toml</span>"#),
+        html.contains(r#"<span class="meta">doozers.toml</span>"#),
         "{html}"
     );
-    assert!(html.contains("Edit it in giles.toml"), "{html}");
+    assert!(html.contains("Edit it in doozers.toml"), "{html}");
     assert!(!html.contains("/admin/mcp-servers/files/edit"), "{html}");
     assert!(!html.contains("/admin/mcp-servers/files/remove"), "{html}");
 }
@@ -477,7 +477,7 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
-    // The form has nothing for a server Giles would run.
+    // The form has nothing for a server Doozers would run.
     for absent in [
         r#"name="transport""#,
         r#"name="command""#,
@@ -550,7 +550,7 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
 }
 
 #[tokio::test]
-async fn a_server_giles_would_run_is_refused_at_its_key() {
+async fn a_server_doozers_would_run_is_refused_at_its_key() {
     let env = env().await;
     let t = env.toolsets("").await;
     // A post shaped like a stdio server: the form has no such settings, so it has no URL.
@@ -644,7 +644,7 @@ async fn a_taken_name_is_a_conflict_and_a_bad_name_is_not() {
     let t = env.toolsets("").await;
     let (status, _, _) = t.post("/admin/mcp-servers", &remote_form("box")).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    // A stored toolset has the name (ignoring case), and so does a toolset of `giles.toml`.
+    // A stored toolset has the name (ignoring case), and so does a toolset of `doozers.toml`.
     for (name, error) in [
         ("box", "there is already a toolset with that name"),
         ("BOX", "there is already a toolset with that name"),
@@ -754,13 +754,13 @@ async fn editing_replaces_the_settings_and_a_stale_edit_is_refused() {
 }
 
 #[tokio::test]
-async fn a_toolset_of_giles_toml_can_only_be_looked_at() {
+async fn a_toolset_of_doozers_toml_can_only_be_looked_at() {
     let env = env().await;
     let t = env.toolsets("").await;
     t.set_plugins(vec![plugin("files", pb::PluginState::Running, 2, None)]);
     let (status, html) = t.get("/admin/mcp-servers/files").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(html.contains("configured in giles.toml"), "{html}");
+    assert!(html.contains("configured in doozers.toml"), "{html}");
     assert!(html.contains("<dd>command</dd>"), "{html}");
     assert!(
         html.contains(r#"action="/admin/mcp-servers/files/restart""#),
@@ -1324,7 +1324,7 @@ async fn a_name_that_cannot_be_used_comes_back_on_the_form() {
     t.manager.add("chest", &spec(BOX)).await.unwrap();
     let before = wooster(&env);
 
-    // Taken by another stored toolset, or by one of giles.toml: 409.
+    // Taken by another stored toolset, or by one of doozers.toml: 409.
     for taken in ["chest", "CHEST", "files"] {
         let (status, html, _) = t
             .post("/admin/mcp-servers/box/rename", &[("new", taken)])
@@ -1370,7 +1370,7 @@ async fn a_name_that_cannot_be_used_comes_back_on_the_form() {
 }
 
 #[tokio::test]
-async fn a_toolset_of_giles_toml_cannot_be_renamed() {
+async fn a_toolset_of_doozers_toml_cannot_be_renamed() {
     let env = env().await;
     let t = env.toolsets("").await;
     t.manager.add("box", &spec(BOX)).await.unwrap();
@@ -1401,7 +1401,7 @@ async fn the_connections_page_signs_the_user_in_and_out() {
     t.manager
         .add(
             "notes",
-            &spec(r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "oauth": { "client_id": "giles" } } }"#),
+            &spec(r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "oauth": { "client_id": "doozers" } } }"#),
         )
         .await
         .unwrap();

@@ -26,7 +26,7 @@ pub fn run(home: Option<&Path>, _args: &StatusArgs) -> anyhow::Result<()> {
 fn format_status(status: &pb::StatusResponse, tz: &TimeZone) -> String {
     let mut out = String::new();
     let time = |at: Option<prost_types::Timestamp>| at.map(|at| proto_time(at, tz));
-    let _ = write!(out, "giles {}", status.version);
+    let _ = write!(out, "doozers {}", status.version);
     if let Some(since) = time(status.started_at) {
         let _ = write!(out, ", running since {since}");
     }
@@ -260,7 +260,7 @@ mod tests {
                     instance: "libera".into(),
                     kind: pb::InstanceKind::Channel.into(),
                     component: "irc".into(),
-                    location: "/opt/giles/plugins/doozers-channel-irc".into(),
+                    location: "/opt/doozers/plugins/doozers-channel-irc".into(),
                     state: pb::PluginState::Running.into(),
                     version: Some("1.2.3".into()),
                     pid: Some(4242),
@@ -311,7 +311,7 @@ mod tests {
             ],
         };
         let expected = "\
-giles 0.1.0, running since 2027-01-15 08:00:00 UTC
+doozers 0.1.0, running since 2027-01-15 08:00:00 UTC
 Plugin sandbox: Landlock ABI 5 and seccomp filters
 
 Channels:
@@ -324,7 +324,7 @@ Plugins:
     state:     running, pid 4242, since 2027-01-15 08:00:05 UTC; 2 restarts
     error:     health check timed out
     channel:   error: netsplit
-    location:  /opt/giles/plugins/doozers-channel-irc
+    location:  /opt/doozers/plugins/doozers-channel-irc
     version:   1.2.3
     sandbox:   on, Landlock ABI 5
     lacking:   signal scoping (ABI 6)
@@ -353,14 +353,14 @@ Plugins:
                 description: "Landlock is not available".into(),
                 landlock_abi: None,
             }),
-            config_error: Some("giles.toml:1:1: bad".into()),
+            config_error: Some("doozers.toml:1:1: bad".into()),
             ..pb::StatusResponse::default()
         };
         let text = format_status(&status, &TimeZone::UTC);
         assert_eq!(
             text,
-            "giles 0.1.0\nPlugin sandbox: unavailable: Landlock is not available\n\
-             Configuration error: giles.toml:1:1: bad\n\nChannels: none\n\nPlugins: none\n"
+            "doozers 0.1.0\nPlugin sandbox: unavailable: Landlock is not available\n\
+             Configuration error: doozers.toml:1:1: bad\n\nChannels: none\n\nPlugins: none\n"
         );
     }
 

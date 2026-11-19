@@ -1,5 +1,5 @@
 [book]
-title = "Giles"
+title = "Doozers"
 authors = ["Stephen Jennings"]
 language = "en"
 # The book's source is the whole `Docs/` directory, so `IDEA.md` and `PLAN.md` are pages in place.
@@ -12,6 +12,7 @@ build-dir = "book"
 create-missing = false
 
 [output.html]
-git-repository-url = "https://github.com/jennings/giles"
-# The site is served under `/giles/` (http://jennings.io/giles/); the 404 page needs the base path.
-site-url = "/giles/"
+git-repository-url = "https://github.com/jennings/doozers"
+# The site is served under `/doozers/` (http://jennings.io/doozers/); the 404 page needs the base
+# path.
+site-url = "/doozers/"

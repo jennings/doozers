@@ -5,7 +5,7 @@ in `crates/doozers/src/sandbox_exec.rs`. Design: PLAN section 12.
 
 The core never sandboxes its own multi-threaded process: Landlock and seccomp restrict only the
 calling thread. It launches every plugin (gRPC plugins and stdio MCP toolsets) through a trampoline,
-a fresh single-threaded `giles` process that applies the sandbox and then `exec`s the plugin in
+a fresh single-threaded `doozers` process that applies the sandbox and then `exec`s the plugin in
 place:
 
 ```text
@@ -56,7 +56,7 @@ trampoline's failures from the plugin's own exits without parsing stderr. The co
 
 | Status | Constant                 | Meaning                                                      |
 | ------ | ------------------------ | ------------------------------------------------------------ |
-| 125    | `EXIT_TRAMPOLINE_FAILED` | The trampoline failed before `exec`: unreadable or invalid spec, relative command, unusable data directory (including one that is a symbolic link), sandbox not applied (`SandboxError::Host` when Landlock is missing, `LandlockAbi` below `min_abi`, `Landlock`, `Seccomp`, and writable grants whose links keep changing), or an invalid `GILES_LOG`/`RUST_LOG` filter |
+| 125    | `EXIT_TRAMPOLINE_FAILED` | The trampoline failed before `exec`: unreadable or invalid spec, relative command, unusable data directory (including one that is a symbolic link), sandbox not applied (`SandboxError::Host` when Landlock is missing, `LandlockAbi` below `min_abi`, `Landlock`, `Seccomp`, and writable grants whose links keep changing), or an invalid `DOOZERS_LOG`/`RUST_LOG` filter |
 | 126    | `EXIT_CANNOT_EXECUTE`    | `exec` found the command but couldn't run it (e.g. not executable) |
 | 127    | `EXIT_NOT_FOUND`         | `exec` didn't find the command                               |
 | 2      |                          | Command-line usage error (from `clap`); a core bug           |
@@ -98,7 +98,7 @@ grants, and passes its path ([Plugin Host](plugin-host.md#the-sandbox-spec)).
 
 ```json
 {
-  "data_dir": "/home/me/.giles/data/channel/irc",
+  "data_dir": "/home/me/.doozers/data/channel/irc",
   "read": ["/opt/homebrew"],
   "write": [],
   "execute": ["/opt/homebrew/bin"],
@@ -106,7 +106,7 @@ grants, and passes its path ([Plugin Host](plugin-host.md#the-sandbox-spec)).
   "unix": [],
   "min_abi": 4,
   "unsandboxed": false,
-  "env": {"GILES_PLUGIN_MAGIC": "...", "GILES_PLUGIN_PROTOCOLS": "1"},
+  "env": {"DOOZERS_PLUGIN_MAGIC": "...", "DOOZERS_PLUGIN_PROTOCOLS": "1"},
   "inherit_env": [],
   "path": "/usr/bin:/bin"
 }
@@ -122,7 +122,7 @@ grants, and passes its path ([Plugin Host](plugin-host.md#the-sandbox-spec)).
 | `unix`         | `[]`               | Unix sockets the plugin may connect to. Non-empty also allows `socket(AF_UNIX, ...)` on Linux (below). `socketpair` is always allowed. |
 | `min_abi`      | unset              | Lowest Landlock ABI to accept (Linux; ignored on macOS). Below it the trampoline exits 125. |
 | `unsandboxed`  | `false`            | Skip the backend, with a warning. The environment is still scrubbed. |
-| `env`          | `{}`               | Variables to pass: `GILES_*` names and `LANG`.                      |
+| `env`          | `{}`               | Variables to pass: `DOOZERS_*` names and `LANG`.                    |
 | `inherit_env`  | `[]`               | Names of variables the command takes from the trampoline's own environment (below). |
 | `path`         | `/usr/bin:/bin`    | The command's `PATH`.                                               |
 
@@ -130,19 +130,19 @@ Validation (`Spec::validate`, no filesystem access):
 
 - Every path (`data_dir`, grants, each `path` entry) must be absolute, without `..` components (they
   would defeat grant overlap checks) and without NUL bytes.
-- `env` names are `LANG` or `GILES_` plus at least one of `A-Z`, `0-9`, `_`; `GILES_PLUGIN_DATA` is
-  derived, so it's rejected. Values can't contain NUL.
+- `env` names are `LANG` or `DOOZERS_` plus at least one of `A-Z`, `0-9`, `_`; `DOOZERS_PLUGIN_DATA`
+  is derived, so it's rejected. Values can't contain NUL.
 - `inherit_env` names are any variable name (not empty, no `=` or NUL) except the derived `HOME`,
-  `TMPDIR`, `PATH`, and `GILES_PLUGIN_DATA` (`sandbox::DERIVED_ENV`).
+  `TMPDIR`, `PATH`, and `DOOZERS_PLUGIN_DATA` (`sandbox::DERIVED_ENV`).
 - `network` grants are exactly `tcp:<port>` with a port from 1 to 65535. Duplicates collapse; an
   empty list means `false`. No grant allows binding a port: plugins never listen.
 - `min_abi` is at least 1.
 
 The spec is the trampoline's input, not configuration. 1.1 parses the `sandbox = { ... }` grants in
-`giles.toml` and rejects grants that overlap `GILES_HOME` or the plugin directories (PLAN section
-12.4). The plugin host and the toolset launcher build the spec from those grants plus the per-kind
-defaults: `network` defaults to `true` for providers and channels and to `false` for stdio toolsets,
-and the toolset launcher adds a toolset's install prefixes to `read` and `execute`
+`doozers.toml` and rejects grants that overlap `DOOZERS_HOME` or the plugin directories (PLAN
+section 12.4). The plugin host and the toolset launcher build the spec from those grants plus the
+per-kind defaults: `network` defaults to `true` for providers and channels and to `false` for stdio
+toolsets, and the toolset launcher adds a toolset's install prefixes to `read` and `execute`
 ([Toolsets](toolsets.md#grants)). The spec's own defaults are the most restrictive values, so a
 field the core forgets denies rather than allows. The config's `sandbox.unix` list goes to `unix`
 unchanged.
@@ -161,16 +161,16 @@ looks up the trampoline's own variables:
 
 | Variable            | Value                                                          |
 | ------------------- | -------------------------------------------------------------- |
-| `GILES_*`           | From `env`, e.g. `GILES_PLUGIN_MAGIC`, `GILES_PLUGIN_PROTOCOLS` |
+| `DOOZERS_*`         | From `env`, e.g. `DOOZERS_PLUGIN_MAGIC`, `DOOZERS_PLUGIN_PROTOCOLS` |
 | `inherit_env` names | The trampoline's value, if it has one (replacing one from `env`) |
-| `GILES_PLUGIN_DATA` | `data_dir`                                                     |
+| `DOOZERS_PLUGIN_DATA` | `data_dir`                                                     |
 | `HOME`              | `data_dir`                                                     |
 | `TMPDIR`            | `data_dir/tmp`                                                 |
 | `PATH`              | `path`, else `/usr/bin:/bin`                                   |
 | `LANG`              | From the above, else the trampoline's own `LANG`, else unset   |
 
 Nothing else from the trampoline's environment reaches the plugin. In particular the core's
-`GILES_HOME`, `GILES_LOG`, and any secrets in its environment don't. The token travels on stdin,
+`DOOZERS_HOME`, `DOOZERS_LOG`, and any secrets in its environment don't. The token travels on stdin,
 never in the environment.
 
 `inherit_env` exists for stdio toolsets, whose configured `env` (often credentials such as an API
@@ -247,8 +247,8 @@ Resolving at launch means a link decides what the launch grants. The plugin can 
 anywhere it can write, so a link it planted on one run would choose its grants on the next, and a
 child it left running (children can outlive the plugin) can flip one while the next launch resolves.
 Without the rules below, a plugin could replace its data directory with a link to `~` or
-`GILES_HOME`, exit, and after the restart read `secrets.toml` and rewrite `giles.toml`. Three rules
-close it:
+`DOOZERS_HOME`, exit, and after the restart read `secrets.toml` and rewrite `doozers.toml`. Three
+rules close it:
 
 - The writable roots themselves (the data directory and each `write` grant) can't be removed,
   renamed, or replaced: after the rule that makes them writable, the profile has
@@ -394,7 +394,7 @@ backend and the crate know; a newer kernel is used as ABI 9. What a lower ABI me
 | 3   | 6.2    | Landlock doesn't restrict truncation; seccomp denies path-based `truncate` instead (`ftruncate` needs a descriptor opened for writing, which Landlock checks) |
 | 4   | 6.7    | No TCP port rules: a port list allows all IP traffic, and binding isn't restricted |
 | 5   | 6.10   | No device `ioctl` rule (`IoctlDev`)                                                |
-| 6   | 6.12   | No scoping: the plugin can signal any process of the same user, Giles included, and (with a `unix` grant) connect to abstract Unix sockets |
+| 6   | 6.12   | No scoping: the plugin can signal any process of the same user, Doozers included, and (with a `unix` grant) connect to abstract Unix sockets |
 | 7-8 | 6.15, 7.0 | Audit logging flags and applying to all threads; nothing the trampoline needs   |
 | 9   | 7.1    | No Unix socket rules: a `unix` grant allows connecting to every reachable socket   |
 
@@ -412,7 +412,7 @@ carries only the rights that apply to files.
 
 | Paths | Rights | Why |
 | ----- | ------ | --- |
-| The data directory and `write` grants | Everything but executing and creating device nodes: read, write, create files, directories, links, FIFOs, and sockets, remove, move within (`Refer`), truncate, device `ioctl`, connect to sockets there | The writable roots. No `MakeChar`/`MakeBlock`: a plugin with `CAP_MKNOD` (Giles run as root) could otherwise create a node for a disk and bypass every file rule |
+| The data directory and `write` grants | Everything but executing and creating device nodes: read, write, create files, directories, links, FIFOs, and sockets, remove, move within (`Refer`), truncate, device `ioctl`, connect to sockets there | The writable roots. No `MakeChar`/`MakeBlock`: a plugin with `CAP_MKNOD` (Doozers run as root) could otherwise create a node for a disk and bypass every file rule |
 | The command | Read and execute | Running it |
 | `execute` grants | Read and execute | Programs the plugin may run |
 | What each link directly in an `execute` directory leads to, if it's a file | Read and execute | A program there may be a link out of the grant (Ubuntu 26.04's `/usr/bin/cat` leads to `/usr/lib/cargo/bin/coreutils/cat`), and Landlock checks the right to execute on the file the kernel ends at |
@@ -554,7 +554,7 @@ itself, whose probe checks each answer.
 The sandbox tests in `crates/doozers/tests/sandbox_linux.rs` need Landlock. On a kernel without it
 each test prints `skipping: the Linux sandbox can't run on this kernel (...)` and passes, except
 `without_landlock_nothing_runs`, which runs only there and checks the launch fails with 125. With
-`GILES_REQUIRE_LANDLOCK=1`, set in CI's Ubuntu job, a missing Landlock fails them instead, as it
+`DOOZERS_REQUIRE_LANDLOCK=1`, set in CI's Ubuntu job, a missing Landlock fails them instead, as it
 does `host_probes_run`. The seccomp unit tests don't need Landlock.
 
 The Apple `container` kernel used for local Linux checks has no Landlock. To run the sandbox tests
@@ -589,11 +589,11 @@ per launch, in the backend.
 
 macOS: `/usr/bin/sandbox-exec` must be an executable file, and
 `sandbox-exec -p '(version 1)(allow default)' /usr/bin/true` must succeed (it fails, for example,
-when Giles itself runs inside a sandbox that forbids applying another; the error then carries
+when Doozers itself runs inside a sandbox that forbids applying another; the error then carries
 `sandbox-exec`'s status and stderr). That one process spawn is the only cost. The report is
 `HostReport::Macos { sandbox_exec }`.
 
-`doozers serve` runs the check at startup, before `giles started`, and logs
+`doozers serve` runs the check at startup, before `doozers started`, and logs
 `plugin sandbox available` with the report, or a warning
 `plugin sandbox unavailable on this host; sandboxed plugins will not start` with the error. It's
 only a warning because unsandboxed instances can still start. `serve` hands the result to the

@@ -24,7 +24,7 @@ use crate::config::Config;
 pub struct EnvironmentChoice {
     /// The instance name: the entry in `environments`.
     pub name: String,
-    /// What the environment is for, as `giles.toml` describes it; empty if it doesn't.
+    /// What the environment is for, as `doozers.toml` describes it; empty if it doesn't.
     pub description: String,
     /// Whether `[environment.<name>]` is configured.
     pub configured: bool,
@@ -130,7 +130,7 @@ mod tests {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )

@@ -17,15 +17,16 @@ use rustix::process::{Pid, Signal, kill_process_group};
 
 use crate::{Args, Failure, Outcome};
 
-/// Where process group records live; `GILES_RUN_DIR` overrides it (for tests).
-const DEFAULT_RUN_DIR: &str = "/.giles/run";
+/// Where process group records live; `DOOZERS_RUN_DIR` overrides it (for tests).
+const DEFAULT_RUN_DIR: &str = "/.doozers/run";
 
 /// How often `run` checks whether the command ended while its output pipes stay open, e.g. because
 /// a background process it started still holds them.
 const EXIT_CHECK_MS: i64 = 50;
 
 fn run_dir() -> PathBuf {
-    std::env::var_os("GILES_RUN_DIR").map_or_else(|| PathBuf::from(DEFAULT_RUN_DIR), PathBuf::from)
+    std::env::var_os("DOOZERS_RUN_DIR")
+        .map_or_else(|| PathBuf::from(DEFAULT_RUN_DIR), PathBuf::from)
 }
 
 /// An id becomes a file name, so it can't hold a path separator.

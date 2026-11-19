@@ -5,7 +5,7 @@ new mail and answers by SMTP, in the same thread.
 
 ## Adding an instance
 
-Give Giles a mailbox of its own. It reads every new message in the folder it watches.
+Give Doozers a mailbox of its own. It reads every new message in the folder it watches.
 
 [Install the plugin](configuration.md#instances) and add an instance:
 
@@ -40,7 +40,7 @@ address ignores case, but the part before the `@` doesn't.
 
 | Key                  | Default      | Meaning                                                          |
 | -------------------- | ------------ | ---------------------------------------------------------------- |
-| `address`            | (required)   | Giles' address: the `From:` of everything it sends               |
+| `address`            | (required)   | Doozers' address: the `From:` of everything it sends             |
 | `name`               | none         | The display name in `From:`                                      |
 | `authserv_id`        | (required)   | Your mail server's name in `Authentication-Results` (below)      |
 | `max_message_size`   | `"50 MiB"`   | Larger messages arrive as their headers and a note, without body |
@@ -62,26 +62,26 @@ address ignores case, but the part before the `@` doesn't.
 `tls = "none"` is only allowed for a server on this machine (`localhost`, `127.0.0.0/8`, `::1`),
 such as a local mail bridge.
 
-Giles checks TLS certificates against the Mozilla root certificates built into Giles. It doesn't use
-the system's certificates. To log in, the SMTP server must offer `AUTH PLAIN` or `AUTH LOGIN`.
+Doozers checks TLS certificates against the Mozilla root certificates built into Doozers. It doesn't
+use the system's certificates. To log in, the SMTP server must offer `AUTH PLAIN` or `AUTH LOGIN`.
 
 To limit the plugin's [network access](configuration.md#sandbox) to the mail ports, set
 `sandbox = { network = ["tcp:993", "tcp:587"] }` on the instance.
 
 If a setting is wrong, the instance doesn't start, and the log names the key.
 
-## Who can write to Giles
+## Who can write to Doozers
 
-Anyone can put any address in `From:`. Giles believes a sender only when your mail server vouches
+Anyone can put any address in `From:`. Doozers believes a sender only when your mail server vouches
 for them.
 
 Receiving servers record their checks in an `Authentication-Results` header at the top of each
-message. Giles reads only the topmost one, and only if it names the server in `authserv_id`.
+message. Doozers reads only the topmost one, and only if it names the server in `authserv_id`.
 
 The sender is verified if that header says `dmarc=pass` for the sender's domain, or `dkim=pass` for
 the sender's domain or a parent of it.
 
-Giles drops all other mail, including mail without the header, before an agent sees it. An
+Doozers drops all other mail, including mail without the header, before an agent sees it. An
 unverified sender never even gets a pairing code. The log says why each message was dropped.
 
 ### Choosing `authserv_id`
@@ -102,8 +102,8 @@ server, for example, the topmost header may be Gmail's. But anyone can send mail
 server with a forged `Authentication-Results: mx.google.com; dmarc=pass ...` header, and your server
 won't remove it.
 
-If your own server doesn't check and stamp mail itself, Giles can't verify senders on that mailbox.
-Use a mailbox at a provider that does.
+If your own server doesn't check and stamp mail itself, Doozers can't verify senders on that
+mailbox. Use a mailbox at a provider that does.
 
 To find the name, open a message in the mailbox that came from outside and look at its headers. Most
 mail programs have "Show original" or "View source". The name is the first word of the topmost
@@ -124,8 +124,8 @@ has their own conversation with the agent, and a reply only ever goes to the per
 Replies go to the sender's `From:` address, never `Reply-To:`. They don't go to the thread's other
 recipients. Their subject is `Re: <subject>`.
 
-A message Giles starts on its own, from a scheduled job for example, gets the first line of its text
-as the subject. Your reply to it continues that conversation.
+A message Doozers starts on its own, from a scheduled job for example, gets the first line of its
+text as the subject. Your reply to it continues that conversation.
 
 The agent sees:
 
@@ -134,7 +134,7 @@ The agent sees:
 - its attachments (subject to the instance's `max_blob`)
 - only the headers and a note, if the message is larger than `max_message_size`
 
-Giles ignores mail sent by machines. These are messages with:
+Doozers ignores mail sent by machines. These are messages with:
 
 - `Auto-Submitted` (other than `no`)
 - `Precedence: bulk`, `list`, or `junk`
@@ -148,28 +148,28 @@ On its first start the channel ignores the mail already in the folder. It handle
 afterwards. After a restart, it picks up mail that arrived in the meantime, without handling
 anything twice.
 
-Giles doesn't mark messages as read, move them, or delete them. It doesn't keep copies of what it
+Doozers doesn't mark messages as read, move them, or delete them. It doesn't keep copies of what it
 sends in a Sent folder.
 
 ## Troubleshooting
 
 When the IMAP server can't be reached, refuses the login, or keeps failing a command,
-`doozers status` shows the error. Giles keeps trying to connect.
+`doozers status` shows the error. Doozers keeps trying to connect.
 
 If the error mentions `IDLE`, the server advertises IDLE but doesn't support it properly. Set
 `imap.idle = false` to check for mail every `imap.poll_interval` instead.
 
 ### A message that can't be fetched
 
-Giles never skips a message because the server failed to hand it over. One damaged message holds up
-the mail behind it. `doozers status` and the log then show:
+Doozers never skips a message because the server failed to hand it over. One damaged message holds
+up the mail behind it. `doozers status` and the log then show:
 
 ```text
 IMAP UID FETCH of message 4711 returned nothing, but the message exists
 ```
 
-4711 is the message's IMAP UID. It's the oldest message in the folder that Giles hasn't handled yet.
-Move it to another folder, or delete it, in your mail program. Giles carries on with the next
+4711 is the message's IMAP UID. It's the oldest message in the folder that Doozers hasn't handled
+yet. Move it to another folder, or delete it, in your mail program. Doozers carries on with the next
 message at its next attempt.
 
 Most mail programs don't show UIDs. To look at the message by its UID first, fetch it with `curl`:

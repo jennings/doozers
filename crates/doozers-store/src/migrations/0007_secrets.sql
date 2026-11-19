@@ -5,7 +5,8 @@
 -- so the default BINARY collation needs no case folding. `algorithm`, `nonce`, and `ciphertext`
 -- (with its authentication tag) are the sealed value; the core binds `path` into it, so a
 -- ciphertext copied onto another row fails to open. `created_by` and `updated_by` are user ids,
--- NULL when no user did it (the operator at the CLI, or Giles itself). Times are Unix milliseconds.
+-- NULL when no user did it (the operator at the CLI, or Doozers itself). Times are Unix
+-- milliseconds.
 CREATE TABLE secrets (
     path        TEXT    NOT NULL PRIMARY KEY CHECK (path <> ''),
     description TEXT    NOT NULL DEFAULT '',

@@ -1,4 +1,4 @@
-//! `giles.toml`: `[core]`, `[owner]`, the instance tables, and `[[routes]]` (PLAN sections 1.1,
+//! `doozers.toml`: `[core]`, `[owner]`, the instance tables, and `[[routes]]` (PLAN sections 1.1,
 //! 6.1, 11.2).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,7 +24,7 @@ pub struct CoreConfig {
     /// The address of the HTTP server (web chat, admin pages, login). [`DEFAULT_HTTP_LISTEN`]
     /// unless set.
     pub http_listen: SocketAddr,
-    /// The SQLite journal mode of `data/giles.db`: [`JournalMode::Wal`] unless set. The database
+    /// The SQLite journal mode of `data/doozers.db`: [`JournalMode::Wal`] unless set. The database
     /// is switched to it at startup, from whichever mode it was in.
     pub journal_mode: JournalMode,
     /// The local secret store's key file: `<root>/secret.key` unless set, and relative to the data
@@ -94,7 +94,7 @@ impl std::fmt::Display for Identity {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct RawGiles {
+pub(crate) struct RawDoozers {
     #[serde(default)]
     core: RawCore,
     owner: Option<RawOwner>,
@@ -128,7 +128,7 @@ struct RawOwner {
     timezone: Option<String>,
 }
 
-impl RawGiles {
+impl RawDoozers {
     pub(crate) fn core(&self, file: &Path, root: &DataRoot) -> Result<CoreConfig, ConfigError> {
         let journal_mode = match &self.core.journal_mode {
             Some(text) => text.parse::<JournalMode>().map_err(|err| {
@@ -216,7 +216,7 @@ impl RawGiles {
     }
 }
 
-/// Whether a `[toolset.<name>]` table has `url`: a remote toolset, which `giles.toml` no longer
+/// Whether a `[toolset.<name>]` table has `url`: a remote toolset, which `doozers.toml` no longer
 /// configures. Remote toolsets are stored in the database and managed in the web UI, so loading
 /// ignores the table and reports it.
 pub(crate) fn is_remote_toolset(table: &toml::Value) -> bool {
@@ -226,7 +226,7 @@ pub(crate) fn is_remote_toolset(table: &toml::Value) -> bool {
 }
 
 /// Looks up an IANA time zone name, e.g. `America/Los_Angeles`, in the system time zone database
-/// or, if the system has none, the copy compiled into Giles.
+/// or, if the system has none, the copy compiled into Doozers.
 pub(crate) fn parse_timezone(name: &str) -> Result<TimeZone, String> {
     TimeZone::get(name).map_err(|_| {
         format!("unknown time zone {name:?}: use an IANA name such as \"America/Los_Angeles\"")

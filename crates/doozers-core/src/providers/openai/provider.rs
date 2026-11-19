@@ -166,14 +166,14 @@ mod tests {
     #[test]
     fn authorization_header_is_sensitive() {
         let mut config = OpenAiConfig::new(Some(ApiKey::new("sk-very-secret")));
-        let mut title = HeaderValue::from_static("Giles");
+        let mut title = HeaderValue::from_static("Doozers");
         title.set_sensitive(true);
         config.headers.insert("x-title", title);
         let provider = provider(config).unwrap();
         let key = &provider.headers[AUTHORIZATION];
         assert!(key.is_sensitive());
         assert_eq!(key, "Bearer sk-very-secret");
-        assert_eq!(provider.headers["x-title"], "Giles");
+        assert_eq!(provider.headers["x-title"], "Doozers");
         let debug = format!("{:?} {provider:?}", provider.headers);
         assert!(!debug.contains("very-secret"), "{debug}");
     }

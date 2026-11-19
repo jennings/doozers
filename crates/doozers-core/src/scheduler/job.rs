@@ -155,7 +155,7 @@ pub struct RuntimeSpec {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub disabled: bool,
     /// When the job was last edited or switched back on: the scheduler doesn't make up the times
-    /// before it, as it does for times missed while Giles was stopped.
+    /// before it, as it does for times missed while Doozers was stopped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changed_at: Option<Timestamp>,
 }

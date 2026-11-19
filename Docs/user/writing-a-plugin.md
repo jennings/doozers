@@ -3,20 +3,20 @@
 This page shows how to write a channel plugin in Rust with the `doozers-plugin-sdk` crate.
 
 Channels other than the built-in web chat are plugins. A channel plugin is a binary named
-`doozers-channel-<name>`, found in `<GILES_HOME>/plugins/` or on `PATH`. Giles starts one process
-for each configured instance.
+`doozers-channel-<name>`, found in `<DOOZERS_HOME>/plugins/` or on `PATH`. Doozers starts one
+process for each configured instance.
 
 Model providers are built in for now. Toolsets are ordinary MCP servers and need no SDK.
 
-## What Giles does for you
+## What Doozers does for you
 
-Giles starts the plugin in a sandbox. The only directory it can write to is the instance's data
-directory, `<GILES_HOME>/data/channel/<instance>/`.
+Doozers starts the plugin in a sandbox. The only directory it can write to is the instance's data
+directory, `<DOOZERS_HOME>/data/channel/<instance>/`.
 
-Giles sends the plugin the instance's `config` table with secrets already filled in. A plugin never
-reads `giles.toml` or `secrets.toml`, and never listens on a socket.
+Doozers sends the plugin the instance's `config` table with secrets already filled in. A plugin
+never reads `doozers.toml` or `secrets.toml`, and never listens on a socket.
 
-The SDK handles the connection to Giles. You write a type that implements the `Channel` trait from
+The SDK handles the connection to Doozers. You write a type that implements the `Channel` trait from
 `doozers-types`. It says what the channel can do, produces inbound events, takes acks, and sends
 messages.
 
@@ -96,7 +96,7 @@ async fn main() -> ExitCode {
 }
 ```
 
-Install the binary where Giles finds it and configure an instance:
+Install the binary where Doozers finds it and configure an instance:
 
 ```toml
 [channel.home]
@@ -104,8 +104,8 @@ component = "example"
 config = { server = "chat.example.com" }
 ```
 
-`run` gives the binary two subcommands. Giles launches it with `socket`; run by hand, that only says
-that it's a Giles plugin and exits. An operator can also run it as a
+`run` gives the binary two subcommands. Doozers launches it with `socket`; run by hand, that only
+says that it's a Doozers plugin and exits. An operator can also run it as a
 [remote plugin](remote-plugins.md) with `serve`.
 
 ## The pieces
@@ -120,10 +120,10 @@ that it's a Giles plugin and exits. An operator can also run it as a
 - `requested_grants`: sandbox grants to suggest to the operator. They're shown in `doozers status`
   and never applied by themselves.
 
-Call `run(configure)` first thing in `main` and return its exit code. `configure` runs when Giles
+Call `run(configure)` first thing in `main` and return its exit code. `configure` runs when Doozers
 sends the instance config.
 
-For a bad config, return `Error::InvalidRequest`. Giles shows the message and doesn't start the
+For a bad config, return `Error::InvalidRequest`. Doozers shows the message and doesn't start the
 instance. `ctx.parse_config()` does this for you, naming the offending key.
 
 The identity namespace your channel reports must be the plugin's name, or the name, a colon, and
@@ -131,16 +131,16 @@ more. For example, `irc` or `irc:libera.chat`, but not `ircx`. Each `:`-separate
 non-empty, without spaces. Instances in the same namespace share identities.
 
 Keep your state, such as session files and cursors, in `ctx.data_dir()`. It's the instance's own
-directory, kept across restarts and upgrades. The `giles-sdk/` subdirectory belongs to the SDK.
+directory, kept across restarts and upgrades. The `doozers-sdk/` subdirectory belongs to the SDK.
 
 ## Inbound events
 
 Give each event an id that is unique within the instance. Where the service allows, make it the same
-after a restart by using the service's message id instead of a counter. Giles drops repeats by id,
+after a restart by using the service's message id instead of a counter. Doozers drops repeats by id,
 so a message never reaches a conversation twice.
 
 You don't need to store events yourself. The SDK writes each event to the data directory before
-sending it to Giles, and sends it again until Giles acks it, even after your plugin crashed.
+sending it to Doozers, and sends it again until Doozers acks it, even after your plugin crashed.
 
 The SDK stores an event before it asks your stream for the next one. Once your stream is polled
 again, you may forget the previous event. A source that can replay, such as an IMAP mailbox, can
@@ -174,7 +174,7 @@ They're only valid until `send` returns.
 - `render::discord`, split into messages that fit
 
 If a recipient can't be reached right now, such as an IRC account that isn't online, return
-`Error::Unavailable`. Giles retries later.
+`Error::Unavailable`. Doozers retries later.
 
 ## TLS
 
@@ -184,26 +184,26 @@ same inside the sandbox on every host.
 
 ## Lifecycle
 
-When Giles stops the plugin, the SDK lets open calls finish for a few seconds and returns from
-`run`. It also returns when Giles itself goes away, so a plugin never outlives the daemon.
+When Doozers stops the plugin, the SDK lets open calls finish for a few seconds and returns from
+`run`. It also returns when Doozers itself goes away, so a plugin never outlives the daemon.
 
 A plugin that is killed loses nothing. Events not yet acknowledged are already on disk.
 
 ## Logging
 
-Log to stderr, for example with `tracing-subscriber`. Giles logs each line under the instance's name
-and discards anything written to stdout. A line that starts with a timestamp and a level, as
+Log to stderr, for example with `tracing-subscriber`. Doozers logs each line under the instance's
+name and discards anything written to stdout. A line that starts with a timestamp and a level, as
 `tracing-subscriber` writes them, is logged at that level. Any other line is logged at `info`.
 
 ## Running a plugin remotely
 
-The same channel can run on another machine. You start it yourself, and Giles connects to it over
+The same channel can run on another machine. You start it yourself, and Doozers connects to it over
 the network as a [remote plugin](configuration.md#remote-plugins).
 
 A plugin built with `run` already does this: `doozers-channel-example serve` takes its listen
 address, data directory, TLS files, and token from flags or a file, as
 [Running a plugin on another machine](remote-plugins.md) describes. The plugin's own settings still
-come from the instance's `config` in `giles.toml`.
+come from the instance's `config` in `doozers.toml`.
 
 For your own command line, call `serve_remote` instead of `run`. The rest of `src/main.rs` stays as
 above, and `tokio` needs its `net` feature:
@@ -215,10 +215,10 @@ use doozers_plugin_sdk::{RemoteAuth, RemoteServer, tls};
 async fn main() -> std::io::Result<()> {
     let token = std::env::var("EXAMPLE_TOKEN").map_err(std::io::Error::other)?;
     let listener = tokio::net::TcpListener::bind("0.0.0.0:7443").await?;
-    let server = RemoteServer::new(listener, "/var/lib/giles-example", RemoteAuth::Bearer(token))
+    let server = RemoteServer::new(listener, "/var/lib/doozers-example", RemoteAuth::Bearer(token))
         .tls(tls::server_config(
-            &std::fs::read("/etc/giles-example/fullchain.pem")?,
-            &std::fs::read("/etc/giles-example/key.pem")?,
+            &std::fs::read("/etc/doozers-example/fullchain.pem")?,
+            &std::fs::read("/etc/doozers-example/key.pem")?,
         )?);
     ChannelPlugin::new("example", env!("CARGO_PKG_VERSION"))
         .output(OutputMode::Blocks)
@@ -239,23 +239,23 @@ async fn main() -> std::io::Result<()> {
 The directory you pass is the plugin's data directory (`ctx.data_dir()`). It's created if it doesn't
 exist.
 
-Choose how the plugin checks Giles' calls:
+Choose how the plugin checks Doozers' calls:
 
 - `RemoteAuth::Bearer(token)` accepts only calls carrying the token from the instance's
   `auth = { bearer = ... }`.
-- With `auth = { oauth = ... }`, Giles gets access tokens from your OAuth server. Check them with
+- With `auth = { oauth = ... }`, Doozers gets access tokens from your OAuth server. Check them with
   `RemoteAuth::verify(|token| ...)`, by signature or introspection. It runs on every call, so cache
   slow checks.
 - `RemoteAuth::None` accepts anyone who can reach the port.
 
-`.tls(...)` takes your certificate chain and key in PEM. Giles checks the certificate against the
+`.tls(...)` takes your certificate chain and key in PEM. Doozers checks the certificate against the
 public Mozilla roots and the host name in `address`, so use a certificate from a public CA, such as
-Let's Encrypt. Without TLS, Giles only connects to an address on its own machine, unless the
+Let's Encrypt. Without TLS, Doozers only connects to an address on its own machine, unless the
 instance sets `insecure = true`.
 
-Giles connects at its startup and again after a lost connection. It calls `configure` only the first
-time, and the channel you built stays. Restart the plugin to change its config. Events not yet
+Doozers connects at its startup and again after a lost connection. It calls `configure` only the
+first time, and the channel you built stays. Restart the plugin to change its config. Events not yet
 acknowledged wait in the data directory for the next connection.
 
 The plugin runs until it gets `SIGINT` or `SIGTERM`, or the future given to `shutdown_on` completes.
-Giles never stops it.
+Doozers never stops it.

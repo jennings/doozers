@@ -13,14 +13,14 @@ so far is [the WhatsApp spike](whatsapp-spike.md).
 
 | Crate                | Kind     | Published | Contents                                                     |
 | -------------------- | -------- | --------- | ------------------------------------------------------------ |
-| `giles`              | bin      | no        | The daemon and its command-line interface                    |
-| `doozers-core`         | lib      | no        | Orchestration: agent loop, routing, sessions, scheduling     |
-| `doozers-types`        | lib      | yes       | Domain types and the `Provider`, `Channel`, `Toolset` traits |
-| `doozers-proto`        | lib      | yes       | Generated gRPC code for the plugin and admin protocols       |
-| `doozers-plugin-sdk`   | lib      | yes       | Serves a trait implementation as an out-of-process plugin    |
-| `doozers-store`        | lib      | no        | SQLite and file storage under `GILES_HOME`                   |
+| `doozers`            | bin      | no        | The daemon and its command-line interface                    |
+| `doozers-core`       | lib      | no        | Orchestration: agent loop, routing, sessions, scheduling     |
+| `doozers-types`      | lib      | yes       | Domain types and the `Provider`, `Channel`, `Toolset` traits |
+| `doozers-proto`      | lib      | yes       | Generated gRPC code for the plugin and admin protocols       |
+| `doozers-plugin-sdk` | lib      | yes       | Serves a trait implementation as an out-of-process plugin    |
+| `doozers-store`      | lib      | no        | SQLite and file storage under `DOOZERS_HOME`                 |
 | `doozers-channel-echo` | bin      | no        | Test-only channel plugin for host and end-to-end tests       |
-| `doozers-channel-irc`  | lib, bin | no        | The IRC channel plugin ([IRC channel](irc.md))               |
+| `doozers-channel-irc` | lib, bin | no        | The IRC channel plugin ([IRC channel](irc.md))               |
 | `doozers-channel-whatsapp` | bin  | no        | The WhatsApp channel plugin ([WhatsApp channel](whatsapp.md)) |
 | `doozers-channel-discord` | lib, bin | no     | The Discord channel plugin ([Discord channel](discord.md))   |
 
@@ -28,7 +28,7 @@ Dependencies between them:
 
 ```mermaid
 flowchart TD
-  giles --> core[doozers-core]
+  doozers --> core[doozers-core]
   core --> types[doozers-types]
   core --> store[doozers-store]
   core --> proto[doozers-proto]
@@ -42,7 +42,7 @@ flowchart TD
   discord[doozers-channel-discord] --> sdk
 ```
 
-`doozers-types` is the contract shared by the core and plugins, so it depends on no other Giles
+`doozers-types` is the contract shared by the core and plugins, so it depends on no other Doozers
 crate. Plugins depend on `doozers-plugin-sdk` (and through it `doozers-types` and `doozers-proto`),
 never on `doozers-core` or `doozers-store`. The core depends on `doozers-plugin-sdk` (default
 features off, so without its `tls` module) for `convert`, the proto-to-domain conversions its
@@ -92,7 +92,7 @@ Consequences for code:
   `std`; crates add `serde` or time zone database features), `libc`, `prost`, `prost-types`,
   `reqwest` (rustls, `http2`, `stream`; no default features), `serde` (with `derive`), `serde_json`,
   `sha2`, `thiserror`, `tokio` (no features enabled), `toml`, `tonic`, `tonic-health`, `tracing`,
-  `tracing-subscriber`, `webpki-root-certs` (the Mozilla roots every Giles TLS client trusts).
+  `tracing-subscriber`, `webpki-root-certs` (the Mozilla roots every Doozers TLS client trusts).
   Shared test-only dependencies: `hyper-util` and `tower` (a one-shot connector to a plugin over a
   socket pair) and `tempfile`.
 - A dependency used by a single crate goes in that crate's own manifest.

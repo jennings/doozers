@@ -137,9 +137,9 @@ impl ToolsetManager {
     /// # Errors
     ///
     /// [`ToolsetManagerError::NotFound`] if no stored toolset has the name;
-    /// [`ToolsetManagerError::Unsupported`] if it is a toolset of `giles.toml`;
+    /// [`ToolsetManagerError::Unsupported`] if it is a toolset of `doozers.toml`;
     /// [`ToolsetManagerError::Invalid`] (at the root) if `new` is the same name, isn't valid, is
-    /// reserved, is taken by a toolset of `giles.toml`, or, for a running
+    /// reserved, is taken by a toolset of `doozers.toml`, or, for a running
     /// toolset, if its spec doesn't validate under the new name; [`ToolsetManagerError::Exists`]
     /// if another stored toolset has `new`;
     /// [`ToolsetManagerError::Refused`] if an agent has globs that match the toolset's tools
@@ -280,7 +280,7 @@ impl ToolsetManager {
             _ => None,
         };
 
-        // A stored toolset that lost its name to a toolset of `giles.toml` at startup isn't
+        // A stored toolset that lost its name to a toolset of `doozers.toml` at startup isn't
         // that toolset: the agents' globs under the name are the toolset's, and are left alone.
         let agents = if self.file_toolset(&config, &row.name).is_some() {
             Vec::new()
@@ -301,8 +301,8 @@ impl ToolsetManager {
 
     /// The rewrite of every agent's `agent.toml` that names the toolset `old`. Reads the files
     /// as the agent edit form does, with the rules `doozers toolset rename` has for its globs when
-    /// Giles is stopped, and refuses, naming every glob, if some glob can't be rewritten safely or
-    /// some file can't be edited.
+    /// Doozers is stopped, and refuses, naming every glob, if some glob can't be rewritten safely
+    /// or some file can't be edited.
     async fn plan_agents(
         &self,
         config: &Config,

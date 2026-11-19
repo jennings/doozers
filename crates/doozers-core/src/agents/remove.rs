@@ -50,7 +50,7 @@
 //! references stay; the sweep handles the rest. The agent's memory database,
 //! `agents/<agent>/memory.db`, moves with the directory, and so does everything else in it;
 //! `users/<user>/` isn't the agent's.
-//! `trash/` isn't read by Giles and isn't in backups.
+//! `trash/` isn't read by Doozers and isn't in backups.
 
 use std::fs::{self, DirBuilder, File};
 use std::io;

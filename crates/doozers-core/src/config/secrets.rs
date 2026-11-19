@@ -52,7 +52,7 @@ impl fmt::Display for Secret {
 pub const MIN_SCRUB_LEN: usize = 4;
 
 /// `text` with every occurrence of any of `secrets` replaced by `<redacted>`: for text built from
-/// secret values that Giles logs or shows, such as a plugin's `Configure` error or a plugin's or
+/// secret values that Doozers logs or shows, such as a plugin's `Configure` error or a plugin's or
 /// MCP server's stderr (whose credentials are `auth`, toolset `env`, and `config` values).
 ///
 /// One pass from left to right; at each position the longest matching value wins, so a value
@@ -190,7 +190,7 @@ impl Secrets {
 pub(crate) enum Reference<'a> {
     /// A name in `secrets.toml`.
     Secret(&'a str),
-    /// An environment variable of the `giles` process.
+    /// An environment variable of the `doozers` process.
     Env(&'a str),
 }
 
@@ -464,7 +464,7 @@ mod tests {
             secrets: &secrets,
             env: &env,
         };
-        let file = Path::new("/h/giles.toml");
+        let file = Path::new("/h/doozers.toml");
         let path = KeyPath::root().key("x");
         let resolve = |r| resolver.resolve(file, &path, r);
         assert_eq!(
@@ -512,7 +512,7 @@ mod tests {
             secrets: &secrets,
             env: &|_| None,
         };
-        let file = Path::new("/h/giles.toml");
+        let file = Path::new("/h/doozers.toml");
         let path = KeyPath::root().key("auth").key("bearer");
         let value = |src: &str| {
             let v = toml::from_str::<toml::Table>(src).unwrap()["v"].clone();

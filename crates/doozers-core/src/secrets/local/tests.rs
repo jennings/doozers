@@ -26,7 +26,7 @@ impl Home {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         Self { dir, root, store }
     }
 

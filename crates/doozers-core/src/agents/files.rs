@@ -85,7 +85,7 @@ impl FileKind {
         true
     }
 
-    /// How the page describes the file, if it's one Giles knows.
+    /// How the page describes the file, if it's one Doozers knows.
     pub fn label(&self) -> Option<String> {
         Some(match self {
             Self::Config => "Configuration".to_owned(),

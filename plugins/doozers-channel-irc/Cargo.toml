@@ -1,6 +1,6 @@
 [package]
 name = "doozers-channel-irc"
-description = "The Giles IRC channel plugin: IRCv3 account identities, TLS, SASL."
+description = "The Doozers IRC channel plugin: IRCv3 account identities, TLS, SASL."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

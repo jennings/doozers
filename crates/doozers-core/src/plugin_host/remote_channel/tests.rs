@@ -210,7 +210,7 @@ impl Harness {
             .await
             .unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let blobs = BlobStore::open(dir.path().join("blobs"), store)
             .await
             .unwrap();

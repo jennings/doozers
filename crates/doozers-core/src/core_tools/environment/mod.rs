@@ -97,7 +97,7 @@ impl Env {
     pub(super) fn scope(&self, call: &CoreCall) -> Result<Scope, ToolOutput> {
         let agent = &call.context.agent;
         let Some(registry) = self.registry.upgrade() else {
-            return Err(ToolOutput::error("Giles is shutting down"));
+            return Err(ToolOutput::error("Doozers is shutting down"));
         };
         let config = registry.config();
         let Some(agent_config) = config.agents.get(agent) else {

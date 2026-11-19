@@ -1,13 +1,13 @@
 [package]
 name = "doozers-plugin-sdk"
-description = "Serve a Giles channel or environment implementation as an out-of-process gRPC plugin."
+description = "Serve a Doozers channel or environment implementation as an out-of-process gRPC plugin."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
-keywords = ["giles", "plugin", "grpc", "agent", "llm"]
+keywords = ["doozers", "plugin", "grpc", "agent", "llm"]
 categories = ["api-bindings", "network-programming"]
 
 [features]

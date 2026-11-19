@@ -1,4 +1,4 @@
-//! Who a WhatsApp account is, in Giles terms (PLAN section 3.2).
+//! Who a WhatsApp account is, in Doozers terms (PLAN section 3.2).
 //!
 //! The identity is the phone number, `+15551234567` in the `whatsapp` namespace, with the LID
 //! (`100000012345678@lid`) as an alias. WhatsApp often shows a sender only by LID, so the phone

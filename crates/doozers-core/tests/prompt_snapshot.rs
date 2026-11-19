@@ -2,7 +2,7 @@
 //! and tool list for representative agents, from real files in a temporary data root. Any change
 //! to the prefix changes a file under `tests/snapshots/`, so it shows up in review.
 //!
-//! To accept a change, run with `GILES_UPDATE_SNAPSHOTS=1` and review the diff.
+//! To accept a change, run with `DOOZERS_UPDATE_SNAPSHOTS=1` and review the diff.
 
 #[path = "support/stored_toolsets.rs"]
 mod stored_toolsets;
@@ -24,7 +24,7 @@ use serde_json::json;
 use stored_toolsets::add_toolsets;
 use tempfile::TempDir;
 
-const GILES_TOML: &str = r#"
+const DOOZERS_TOML: &str = r#"
 [owner]
 identities = ["web:owner"]
 
@@ -54,7 +54,7 @@ impl Home {
             root,
             memory_dbs,
         };
-        home.write("giles.toml", GILES_TOML);
+        home.write("doozers.toml", DOOZERS_TOML);
         home
     }
 
@@ -103,7 +103,7 @@ impl Home {
             &self.root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -251,20 +251,20 @@ fn snapshot_path(name: &str) -> PathBuf {
 
 fn assert_snapshot(name: &str, actual: &str) {
     let path = snapshot_path(name);
-    if std::env::var_os("GILES_UPDATE_SNAPSHOTS").is_some() {
+    if std::env::var_os("DOOZERS_UPDATE_SNAPSHOTS").is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, actual).unwrap();
         return;
     }
     let expected = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "cannot read {}: {e}; run with GILES_UPDATE_SNAPSHOTS=1",
+            "cannot read {}: {e}; run with DOOZERS_UPDATE_SNAPSHOTS=1",
             path.display()
         )
     });
     assert!(
         expected == actual,
-        "the prompt prefix changed ({}); if intended, rerun with GILES_UPDATE_SNAPSHOTS=1 and \
+        "the prompt prefix changed ({}); if intended, rerun with DOOZERS_UPDATE_SNAPSHOTS=1 and \
          review the diff.\n--- expected\n{expected}\n--- actual\n{actual}",
         path.display()
     );

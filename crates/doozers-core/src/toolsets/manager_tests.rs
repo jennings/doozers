@@ -42,7 +42,7 @@ fn no_env(_: &str) -> Option<OsString> {
 fn load_options() -> LoadOptions<'static> {
     LoadOptions {
         env: &no_env,
-        giles_exe: None,
+        doozers_exe: None,
         ..LoadOptions::default()
     }
 }
@@ -56,8 +56,8 @@ fn write_secrets(root: &DataRoot, text: &str) {
     std::fs::set_permissions(root.secrets_file(), std::fs::Permissions::from_mode(0o600)).unwrap();
 }
 
-/// A data root with a `giles.toml`, a database, a registry, and a host running the toolsets of
-/// `giles.toml` against the fake connector, and a manager over them.
+/// A data root with a `doozers.toml`, a database, a registry, and a host running the toolsets of
+/// `doozers.toml` against the fake connector, and a manager over them.
 struct Fixture {
     _dir: tempfile::TempDir,
     root: DataRoot,
@@ -71,7 +71,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// `extra` is appended to a minimal `giles.toml`. `stored` are the rows in the database when
+    /// `extra` is appended to a minimal `doozers.toml`. `stored` are the rows in the database when
     /// the manager starts; `scripts` are the toolsets the fake connector can connect to.
     async fn start(
         extra: &str,
@@ -378,7 +378,7 @@ async fn a_stored_toolset_is_a_remote_server_with_its_token_in_the_secret_store(
     let f = Fixture::start("", &[], vec![("files", Script::new(&["read"]))]).await;
     let url = r#""url": "https://files.example.com/mcp""#;
 
-    // A stdio server is configured in giles.toml.
+    // A stdio server is configured in doozers.toml.
     let (key, reason) = invalid(
         f.manager
             .add("files", &spec(r#"{ "command": "/nonexistent/files" }"#))
@@ -386,7 +386,7 @@ async fn a_stored_toolset_is_a_remote_server_with_its_token_in_the_secret_store(
             .unwrap_err(),
     );
     assert_eq!(key, KeyPath::root().key("url"));
-    assert!(reason.contains("giles.toml"), "{reason}");
+    assert!(reason.contains("doozers.toml"), "{reason}");
 
     // So is anything only a stdio server has.
     for (stdio_key, value) in [
@@ -543,7 +543,7 @@ async fn a_stored_credential_never_follows_the_toolset_to_another_server() {
     // The users' sign-ins belong to the old server too.
     let oauth = |url: &str| {
         spec(&format!(
-            r#"{{ "url": "{url}", "auth": {{ "oauth": {{ "client_id": "giles" }} }} }}"#
+            r#"{{ "url": "{url}", "auth": {{ "oauth": {{ "client_id": "doozers" }} }} }}"#
         ))
     };
     f.manager
@@ -581,7 +581,7 @@ async fn an_oauth_client_secret_and_the_users_tokens_live_and_die_with_the_tools
     let url = r#""url": "https://files.example.com/mcp""#;
     let oauth = |secret: &str| {
         spec(&format!(
-            r#"{{ {url}, "auth": {{ "oauth": {{ "client_id": "giles", "client_secret": {secret},
+            r#"{{ {url}, "auth": {{ "oauth": {{ "client_id": "doozers", "client_secret": {secret},
                 "scopes": ["files"] }} }} }}"#
         ))
     };
@@ -674,10 +674,10 @@ const NO_SECRET: &str = "auth.bearer: no secret \"toolsets/bad/bearer-token\" in
 
 #[tokio::test]
 async fn startup_adds_what_validates_and_reports_the_rest_as_failed() {
-    let giles_toml = "[toolset.files]\ncommand = \"/nonexistent/files\"\n";
+    let doozers_toml = "[toolset.files]\ncommand = \"/nonexistent/files\"\n";
     let bad = needs_secret("bad");
     let f = Fixture::start(
-        giles_toml,
+        doozers_toml,
         &[
             ("good", r#"{ "url": "https://good.example.com/mcp" }"#),
             ("bad", &bad),
@@ -711,7 +711,7 @@ async fn startup_adds_what_validates_and_reports_the_rest_as_failed() {
     };
     assert_eq!(
         reason("Files"),
-        "the name is taken by `[toolset.files]` in giles.toml"
+        "the name is taken by `[toolset.files]` in doozers.toml"
     );
     assert!(reason("bad").starts_with(NO_SECRET), "{}", reason("bad"));
     assert!(
@@ -779,7 +779,7 @@ async fn startup_adds_what_validates_and_reports_the_rest_as_failed() {
 }
 
 #[tokio::test]
-async fn toolsets_of_giles_toml_are_read_only_and_keep_their_names() {
+async fn toolsets_of_doozers_toml_are_read_only_and_keep_their_names() {
     let f = Fixture::start(
         "[toolset.docs]\ncommand = \"/nonexistent/docs\"\n",
         &[],
@@ -810,7 +810,7 @@ async fn toolsets_of_giles_toml_are_read_only_and_keep_their_names() {
         assert!(key.is_root());
         assert_eq!(
             reason,
-            "the name is taken by `[toolset.docs]` in giles.toml"
+            "the name is taken by `[toolset.docs]` in doozers.toml"
         );
     }
 
@@ -829,7 +829,7 @@ async fn toolsets_of_giles_toml_are_read_only_and_keep_their_names() {
     assert_eq!(f.stored().await, ["good"]);
     assert_eq!(f.configured(), ["docs", "good"]);
 
-    // The giles.toml toolset kept running through all of that.
+    // The doozers.toml toolset kept running through all of that.
     assert_eq!(f.connector.connects("docs"), 1);
     assert_eq!(f.supervised(), ["docs", "good"]);
     assert_eq!(f.registry.config().toolsets.len(), 2);
@@ -872,7 +872,7 @@ async fn restarting_a_failed_stored_toolset_validates_it_again_and_starts_it() {
     let view = f.manager.retry("bad").await.unwrap();
     assert_eq!(view.failure, None);
     assert_eq!(f.connector.connects("bad"), 1);
-    // Unknown names and the toolsets of `giles.toml` aren't the manager's.
+    // Unknown names and the toolsets of `doozers.toml` aren't the manager's.
     assert!(!f.manager.restart(Kind::Toolset, "ghost"));
     assert!(matches!(
         f.manager.retry("ghost").await.unwrap_err(),
@@ -891,13 +891,13 @@ async fn a_toolset_the_host_cannot_start_is_taken_out_of_the_configuration_and_s
     f.manager.withdraw("files", "boom".to_owned());
     assert!(f.configured().is_empty());
     assert_eq!(f.failures(), [("files".to_owned(), "boom".to_owned())]);
-    // One view, the stored toolset, failed. Not also a toolset of `giles.toml`.
+    // One view, the stored toolset, failed. Not also a toolset of `doozers.toml`.
     let views = f.manager.list().await.unwrap();
     assert_eq!(views.len(), 1, "{views:?}");
     assert!(matches!(views[0].source, ToolsetSource::Stored { .. }));
     assert_eq!(views[0].failure.as_deref(), Some("boom"));
 
-    // It can be saved again (not refused as a name of `giles.toml`), which starts it.
+    // It can be saved again (not refused as a name of `doozers.toml`), which starts it.
     let view = f.manager.update("files", &spec(FILES), None).await.unwrap();
     assert_eq!(view.failure, None);
     assert_eq!(f.configured(), ["files"]);
@@ -915,14 +915,14 @@ async fn a_toolset_the_host_cannot_start_is_taken_out_of_the_configuration_and_s
 async fn the_name_taken_reason_wins_over_the_spec() {
     // A stdio spec, refused at `url` if the name were free.
     let stdio = r#"{ "command": "/nonexistent/web" }"#;
-    let giles_toml = "[toolset.web]\ncommand = \"/nonexistent/web\"\n\
+    let doozers_toml = "[toolset.web]\ncommand = \"/nonexistent/web\"\n\
                       [toolset.chat]\ncommand = \"/nonexistent/chat\"\n";
     let scripts = vec![
         ("web", Script::new(&["read"])),
         ("chat", Script::new(&["read"])),
     ];
-    let f = Fixture::start(giles_toml, &[("web", stdio)], scripts).await;
-    let taken = "the name is taken by `[toolset.web]` in giles.toml";
+    let f = Fixture::start(doozers_toml, &[("web", stdio)], scripts).await;
+    let taken = "the name is taken by `[toolset.web]` in doozers.toml";
     assert_eq!(f.failures(), [("web".to_owned(), taken.to_owned())]);
 
     // A name no stored toolset has gets the same reason (a stored name would be `Exists`).
@@ -930,7 +930,7 @@ async fn the_name_taken_reason_wins_over_the_spec() {
     assert!(key.is_root(), "{key}");
     assert_eq!(
         reason,
-        "the name is taken by `[toolset.chat]` in giles.toml"
+        "the name is taken by `[toolset.chat]` in doozers.toml"
     );
     let err = f.manager.add("Web", &spec(stdio)).await.unwrap_err();
     assert!(matches!(err, ToolsetManagerError::Exists), "{err:?}");
@@ -1181,10 +1181,10 @@ async fn an_agent_edit_waits_for_the_lock_the_toolset_manager_shares() {
 
 #[tokio::test]
 async fn a_name_that_is_taken_or_reserved_is_refused() {
-    let giles_toml = "[provider.anthropic]\n[channel.web]\n\
+    let doozers_toml = "[provider.anthropic]\n[channel.web]\n\
                       [toolset.docs]\ncommand = \"/nonexistent/docs\"\n";
     let f = Fixture::start_with_agents(
-        giles_toml,
+        doozers_toml,
         &[("files", FILES), ("other", FILES)],
         &[("jeeves", JEEVES)],
         vec![
@@ -1210,11 +1210,11 @@ async fn a_name_that_is_taken_or_reserved_is_refused() {
     let cases = [
         (
             "docs",
-            "the name is taken by `[toolset.docs]` in giles.toml",
+            "the name is taken by `[toolset.docs]` in doozers.toml",
         ),
         (
             "DOCS",
-            "the name is taken by `[toolset.docs]` in giles.toml",
+            "the name is taken by `[toolset.docs]` in doozers.toml",
         ),
         ("new", "can't be a toolset's name"),
         ("bad name", "invalid instance name"),
@@ -1490,7 +1490,7 @@ async fn a_failed_toolset_can_be_renamed_and_is_started_when_it_validates() {
 }
 
 #[tokio::test]
-async fn a_stored_toolset_that_lost_its_name_to_giles_toml_leaves_the_instances_globs_alone() {
+async fn a_stored_toolset_that_lost_its_name_to_doozers_toml_leaves_the_instances_globs_alone() {
     // `Files` is stored, but `[toolset.files]` took the name at startup, so the agents' `files__`
     // globs are the instance's.
     let f = Fixture::start_with_agents(

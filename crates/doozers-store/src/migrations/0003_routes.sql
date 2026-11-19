@@ -13,8 +13,8 @@ CREATE TABLE routes (
 
 CREATE INDEX routes_position ON routes (position, id);
 
--- A row exists once the `[[routes]]` of giles.toml have been imported (or found nothing to
--- import). After that giles.toml's routes are never read again, even if every route is deleted.
+-- A row exists once the `[[routes]]` of doozers.toml have been imported (or found nothing to
+-- import). After that doozers.toml's routes are never read again, even if every route is deleted.
 CREATE TABLE routes_imported (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     at INTEGER NOT NULL

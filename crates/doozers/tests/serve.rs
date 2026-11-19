@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// A sandbox for one `giles` run: a fake `HOME` and `TMPDIR` under a temporary directory.
+/// A sandbox for one `doozers` run: a fake `HOME` and `TMPDIR` under a temporary directory.
 struct Env {
     dir: tempfile::TempDir,
 }
@@ -41,14 +41,14 @@ impl Env {
         self.path("tmp")
     }
 
-    /// `giles <args>` with `HOME` and `TMPDIR` in the sandbox and no inherited `GILES_HOME`.
+    /// `doozers <args>` with `HOME` and `TMPDIR` in the sandbox and no inherited `DOOZERS_HOME`.
     fn command(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_doozers"));
         cmd.args(args)
             .env("HOME", self.home())
             .env("TMPDIR", self.tmp())
-            .env("GILES_LOG", "info")
-            .env_remove("GILES_HOME")
+            .env("DOOZERS_LOG", "info")
+            .env_remove("DOOZERS_HOME")
             .env_remove("RUST_LOG")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -76,7 +76,7 @@ fn output_within_timeout(mut cmd: Command) -> Output {
         if Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("giles did not exit; it should have failed at startup");
+            panic!("doozers did not exit; it should have failed at startup");
         }
         thread::sleep(Duration::from_millis(20));
     };
@@ -97,11 +97,11 @@ struct Daemon {
 impl Daemon {
     fn start(cmd: Command) -> Self {
         let mut daemon = Self::spawn(cmd);
-        daemon.wait_for_log("giles started");
+        daemon.wait_for_log("doozers started");
         daemon
     }
 
-    /// Starts `giles` without waiting for `giles started`.
+    /// Starts `doozers` without waiting for `doozers started`.
     fn spawn(mut cmd: Command) -> Self {
         let mut child = cmd.spawn().unwrap();
         let stderr = child.stderr.take().unwrap();
@@ -164,7 +164,7 @@ impl Daemon {
             }
             if Instant::now() > deadline {
                 let _ = self.child.kill();
-                panic!("giles did not exit after SIG{signal}");
+                panic!("doozers did not exit after SIG{signal}");
             }
             thread::sleep(Duration::from_millis(20));
         };
@@ -212,28 +212,28 @@ fn assert_layout(root: &Path) {
     assert_eq!(mode(&root.join("run")), 0o700);
 }
 
-/// The smallest valid `giles.toml`, plus an HTTP listener on a free port (the default 8080 would
+/// The smallest valid `doozers.toml`, plus an HTTP listener on a free port (the default 8080 would
 /// collide between tests running in parallel).
 const MINIMAL_CONFIG: &str =
     "[core]\nhttp_listen = \"127.0.0.1:0\"\n\n[owner]\nidentities = [\"web:owner\"]\n";
 
-/// Creates the data root `root` (mode 0700, as `doozers serve` would) holding `giles_toml`.
-fn write_config(root: &Path, giles_toml: &str) {
+/// Creates the data root `root` (mode 0700, as `doozers serve` would) holding `doozers_toml`.
+fn write_config(root: &Path, doozers_toml: &str) {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(root)
         .unwrap();
-    fs::write(root.join("giles.toml"), giles_toml).unwrap();
+    fs::write(root.join("doozers.toml"), doozers_toml).unwrap();
 }
 
 #[test]
-fn sigterm_stops_cleanly_and_home_flag_beats_giles_home() {
+fn sigterm_stops_cleanly_and_home_flag_beats_doozers_home() {
     let env = Env::new();
     let home = env.path("flag-home");
     write_config(&home, MINIMAL_CONFIG);
     let mut cmd = env.command(&["serve", "--home", home.to_str().unwrap()]);
-    cmd.env("GILES_HOME", env.path("env-home"));
+    cmd.env("DOOZERS_HOME", env.path("env-home"));
 
     let (status, log) = Daemon::start(cmd).stop("TERM");
     assert!(status.success(), "{status}\n{log}");
@@ -241,7 +241,7 @@ fn sigterm_stops_cleanly_and_home_flag_beats_giles_home() {
         log.contains("signal=\"SIGTERM\"") || log.contains("signal=SIGTERM"),
         "{log}"
     );
-    assert!(log.contains("giles stopped"), "{log}");
+    assert!(log.contains("doozers stopped"), "{log}");
     // The startup sandbox check logs one line either way (PLAN section 12.1).
     assert!(
         log.contains("plugin sandbox available") || log.contains("plugin sandbox unavailable"),
@@ -249,33 +249,33 @@ fn sigterm_stops_cleanly_and_home_flag_beats_giles_home() {
     );
     assert_layout(&home);
     // The runtime opened the database and built the (empty) registry.
-    assert!(home.join("data/giles.db").is_file());
+    assert!(home.join("data/doozers.db").is_file());
     assert!(log.contains("registry ready"), "{log}");
     assert!(!env.path("env-home").exists());
-    assert!(!env.home().join(".giles").exists());
+    assert!(!env.home().join(".doozers").exists());
 }
 
 #[test]
-fn sigint_stops_cleanly_and_giles_home_beats_home() {
+fn sigint_stops_cleanly_and_doozers_home_beats_home() {
     let env = Env::new();
     write_config(&env.path("env-home"), MINIMAL_CONFIG);
     let mut cmd = env.command(&["serve"]);
-    cmd.env("GILES_HOME", env.path("env-home"));
+    cmd.env("DOOZERS_HOME", env.path("env-home"));
 
     let (status, log) = Daemon::start(cmd).stop("INT");
     assert!(status.success(), "{status}\n{log}");
-    assert!(log.contains("giles stopped"), "{log}");
+    assert!(log.contains("doozers stopped"), "{log}");
     assert_layout(&env.path("env-home"));
-    assert!(!env.home().join(".giles").exists());
+    assert!(!env.home().join(".doozers").exists());
 }
 
 #[test]
-fn default_root_is_dot_giles_in_home() {
+fn default_root_is_dot_doozers_in_home() {
     let env = Env::new();
-    write_config(&env.home().join(".giles"), MINIMAL_CONFIG);
+    write_config(&env.home().join(".doozers"), MINIMAL_CONFIG);
     let (status, log) = Daemon::start(env.command(&["serve"])).stop("TERM");
     assert!(status.success(), "{status}\n{log}");
-    assert_layout(&env.home().join(".giles"));
+    assert_layout(&env.home().join(".doozers"));
 }
 
 #[test]
@@ -295,7 +295,7 @@ fn long_root_puts_sockets_in_tmpdir() {
     assert_eq!(socket_dirs.len(), 1, "{socket_dirs:?}");
     let socket_dir = &socket_dirs[0];
     let name = socket_dir.file_name().unwrap().to_str().unwrap();
-    assert!(name.starts_with("giles-"), "{name}");
+    assert!(name.starts_with("doozers-"), "{name}");
     assert_eq!(mode(socket_dir), 0o700);
     assert!(
         log.contains(name),
@@ -312,7 +312,7 @@ fn missing_home_is_a_clear_error() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("neither GILES_HOME nor HOME is set"),
+        stderr.contains("neither DOOZERS_HOME nor HOME is set"),
         "{stderr}"
     );
 }
@@ -324,7 +324,7 @@ fn missing_config_creates_the_layout_then_fails() {
     let output = output_within_timeout(env.command(&["serve", "--home", home.to_str().unwrap()]));
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let file = home.join("giles.toml");
+    let file = home.join("doozers.toml");
     assert!(
         stderr.contains(&format!("{}: not found", file.display())),
         "{stderr}"
@@ -346,7 +346,7 @@ fn invalid_config_fails_with_the_file_and_key() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let expected = format!(
         "{}:2:14: owner.identities: invalid type",
-        home.join("giles.toml").display()
+        home.join("doozers.toml").display()
     );
     assert!(stderr.contains(&expected), "{stderr}");
     assert!(!stderr.contains("unknown key"), "{stderr}");
@@ -375,7 +375,7 @@ fn unknown_config_keys_are_logged_once_and_do_not_stop_startup() {
          [[jobs]]\nid = \"j\"\ncron = \"0 8 * * *\"\nprompt = \"p\"\ndeliver_to = \"me\"\n",
     )
     .unwrap();
-    let file = home.join("giles.toml").display().to_string();
+    let file = home.join("doozers.toml").display().to_string();
     let (status, log) =
         Daemon::start(env.command(&["serve", "--home", home.to_str().unwrap()])).stop("TERM");
     assert!(status.success(), "{status}\n{log}");
@@ -420,7 +420,7 @@ fn a_remote_toolset_table_is_ignored_with_a_warning_and_its_name_is_free() {
              parallel = \"yes\"\nnmae = 1\n"
         ),
     );
-    let expected = "giles.toml: [toolset.x] is ignored: remote toolsets are managed in the web UI \
+    let expected = "doozers.toml: [toolset.x] is ignored: remote toolsets are managed in the web UI \
                     (Admin → MCP servers) or with doozers toolset set";
     let daemon = Daemon::start(env.command(&["serve", "--home", home_arg]));
 
@@ -467,9 +467,9 @@ fn a_remote_toolset_table_is_ignored_with_a_warning_and_its_name_is_free() {
     assert!(!log.contains("a stored toolset is not started"), "{log}");
 }
 
-/// The HTTP address in the `giles started` line (`http=http://<addr>/`).
+/// The HTTP address in the `doozers started` line (`http=http://<addr>/`).
 fn http_addr(log: &[String]) -> SocketAddr {
-    let line = log.iter().find(|l| l.contains("giles started")).unwrap();
+    let line = log.iter().find(|l| l.contains("doozers started")).unwrap();
     let url = line.split("http=http://").nth(1).unwrap();
     url.split('/').next().unwrap().parse().unwrap()
 }
@@ -524,7 +524,7 @@ fn busy_http_listen_fails_at_startup() {
         stderr.contains(&format!("cannot listen for HTTP on {addr}")),
         "{stderr}"
     );
-    assert!(!stderr.contains("giles started"), "{stderr}");
+    assert!(!stderr.contains("doozers started"), "{stderr}");
 }
 
 #[test]
@@ -539,7 +539,7 @@ fn one_daemon_per_root_with_a_private_admin_socket_and_token() {
     assert_eq!(mode(&token_file), 0o600);
     let token = fs::read_to_string(&token_file).unwrap();
     assert_eq!(token.len(), 64, "{token}");
-    assert_eq!(mode(&home.join("run/giles.lock")), 0o600);
+    assert_eq!(mode(&home.join("run/doozers.lock")), 0o600);
 
     // A second daemon on the same root fails before touching anything, naming the first.
     let output = output_within_timeout(env.command(&["serve", "--home", home.to_str().unwrap()]));
@@ -547,7 +547,7 @@ fn one_daemon_per_root_with_a_private_admin_socket_and_token() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let pid = daemon.child.id();
     assert!(
-        stderr.contains("giles is already running") && stderr.contains(&format!("pid {pid}")),
+        stderr.contains("doozers is already running") && stderr.contains(&format!("pid {pid}")),
         "{stderr}"
     );
     assert!(socket.exists(), "the running daemon's socket is left alone");
@@ -564,7 +564,7 @@ fn one_daemon_per_root_with_a_private_admin_socket_and_token() {
     assert!(status.success(), "{status}\n{log}");
 }
 
-/// Runs `giles <args>` to completion: whether it succeeded, its stdout, and its stderr.
+/// Runs `doozers <args>` to completion: whether it succeeded, its stdout, and its stderr.
 fn run_cli(env: &Env, args: &[&str]) -> (bool, String, String) {
     let output = env.command(args).stdout(Stdio::piped()).output().unwrap();
     (
@@ -581,7 +581,7 @@ fn record_usage(home: &Path, agent: &str, usage: doozers_types::Usage) {
         .build()
         .unwrap()
         .block_on(async {
-            let store = doozers_store::Store::open(home.join("data/giles.db"))
+            let store = doozers_store::Store::open(home.join("data/doozers.db"))
                 .await
                 .unwrap();
             store
@@ -624,7 +624,7 @@ fn status_usage_and_login_link_ask_the_running_daemon() {
     let (ok, _, stderr) = run_cli(&env, &["status", "--home", home_arg]);
     assert!(!ok);
     assert!(
-        stderr.contains("giles is not running") && stderr.contains("doozers serve"),
+        stderr.contains("doozers is not running") && stderr.contains("doozers serve"),
         "{stderr}"
     );
 
@@ -632,7 +632,7 @@ fn status_usage_and_login_link_ask_the_running_daemon() {
 
     let (ok, stdout, stderr) = run_cli(&env, &["status", "--home", home_arg]);
     assert!(ok, "{stderr}");
-    let version = format!("giles {}, running since ", env!("CARGO_PKG_VERSION"));
+    let version = format!("doozers {}, running since ", env!("CARGO_PKG_VERSION"));
     for expected in [
         version.as_str(),
         "Plugin sandbox: ",
@@ -678,7 +678,7 @@ fn status_usage_and_login_link_ask_the_running_daemon() {
     let (status, log) = daemon.stop("TERM");
     assert!(status.success(), "{status}\n{log}");
     let (ok, _, stderr) = run_cli(&env, &["usage", "--home", home_arg]);
-    assert!(!ok && stderr.contains("giles is not running"), "{stderr}");
+    assert!(!ok && stderr.contains("doozers is not running"), "{stderr}");
 }
 
 /// `POST <path>` with the urlencoded `form` to `addr`; the whole response.
@@ -792,7 +792,7 @@ fn backup_writes_a_database_snapshot_and_an_archive_into_a_directory() {
 
     let (ok, _, stderr) = backup("out");
     assert!(!ok);
-    assert!(stderr.contains("giles is not running"), "{stderr}");
+    assert!(stderr.contains("doozers is not running"), "{stderr}");
 
     let daemon = Daemon::start(env.command(&["serve", "--home", home_arg]));
 
@@ -822,8 +822,8 @@ fn backup_writes_a_database_snapshot_and_an_archive_into_a_directory() {
     assert!(
         fs::read(archive)
             .unwrap()
-            .windows("giles.toml".len())
-            .any(|w| w == b"giles.toml")
+            .windows("doozers.toml".len())
+            .any(|w| w == b"doozers.toml")
     );
 
     let (ok, stdout, stderr) = backup("missing");
@@ -836,7 +836,7 @@ fn backup_writes_a_database_snapshot_and_an_archive_into_a_directory() {
 
 /// The journal mode recorded in the database file: WAL is, the rollback modes read as `delete`.
 fn recorded_journal_mode(home: &Path) -> String {
-    rusqlite::Connection::open(home.join("data/giles.db"))
+    rusqlite::Connection::open(home.join("data/doozers.db"))
         .unwrap()
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap()
@@ -847,7 +847,7 @@ fn journal_files(home: &Path) -> Vec<&'static str> {
     ["-wal", "-shm", "-journal"]
         .into_iter()
         .filter(|suffix| {
-            home.join(format!("data/giles.db{suffix}"))
+            home.join(format!("data/doozers.db{suffix}"))
                 .try_exists()
                 .unwrap()
         })
@@ -881,7 +881,7 @@ fn journal_mode_switches_the_daemons_database_in_both_directions_across_restarts
 
     // `delete` switches it with no manual step, and the daemon runs without a WAL.
     fs::write(
-        home.join("giles.toml"),
+        home.join("doozers.toml"),
         with_mode("journal_mode = \"DELETE\""),
     )
     .unwrap();
@@ -927,7 +927,7 @@ fn journal_mode_switches_the_daemons_database_in_both_directions_across_restarts
     assert_eq!(recorded_journal_mode(&home), "delete");
 
     // Back to the default, again with no manual step.
-    fs::write(home.join("giles.toml"), with_mode("")).unwrap();
+    fs::write(home.join("doozers.toml"), with_mode("")).unwrap();
     let daemon = Daemon::start(env.command(&["serve", "--home", home_arg]));
     assert_eq!(recorded_journal_mode(&home), "wal");
     let (status, log) = daemon.stop("TERM");
@@ -951,15 +951,15 @@ fn a_journal_mode_that_gives_up_the_journal_is_refused_at_startup() {
             output_within_timeout(env.command(&["serve", "--home", home.to_str().unwrap()]));
         assert!(!output.status.success(), "{mode}");
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let file = home.join("giles.toml");
+        let file = home.join("doozers.toml");
         assert!(
             stderr.contains(&format!("{}:2:1: core.journal_mode: ", file.display())),
             "{mode}: {stderr}"
         );
         assert!(stderr.contains("\"delete\""), "{mode}: {stderr}");
-        assert!(!stderr.contains("giles started"), "{mode}: {stderr}");
+        assert!(!stderr.contains("doozers started"), "{mode}: {stderr}");
         // Nothing opened the database.
-        assert!(!home.join("data/giles.db").exists(), "{mode}");
+        assert!(!home.join("data/doozers.db").exists(), "{mode}");
     }
 }
 
@@ -978,12 +978,12 @@ fn a_component_that_cannot_be_built_fails_with_the_file_and_key() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let expected = format!(
         "{}:4:1: provider.anthropic.config: ",
-        home.join("giles.toml").display()
+        home.join("doozers.toml").display()
     );
     assert!(stderr.contains(&expected), "{stderr}");
     assert!(stderr.contains("`max_tokens`"), "{stderr}");
     assert!(!stderr.contains("sk-secret-key"), "{stderr}");
-    assert!(!stderr.contains("giles started"), "{stderr}");
+    assert!(!stderr.contains("doozers started"), "{stderr}");
 }
 
 /// Installs `body` as the `/bin/sh` plugin `doozers-channel-<component>` in `home`.
@@ -1000,7 +1000,7 @@ fn install_script_plugin(home: &Path, component: &str, body: &str) {
 }
 
 #[test]
-fn plugins_that_fail_to_launch_are_supervised_and_giles_runs() {
+fn plugins_that_fail_to_launch_are_supervised_and_doozers_runs() {
     let env = Env::new();
     let home = env.path("home");
     write_config(
@@ -1062,7 +1062,7 @@ fn plugins_that_fail_to_launch_are_supervised_and_giles_runs() {
 }
 
 #[test]
-fn toolsets_that_fail_to_start_leave_giles_running_and_retrying() {
+fn toolsets_that_fail_to_start_leave_doozers_running_and_retrying() {
     let env = Env::new();
     let home = env.path("home");
     let script = env.path("broken-server");
@@ -1100,7 +1100,7 @@ fn toolsets_that_fail_to_start_leave_giles_running_and_retrying() {
     }
     // Both were registered before the summary, so neither is pending.
     assert!(!log.contains("instance not started"), "{log}");
-    assert!(log.contains("giles stopped"), "{log}");
+    assert!(log.contains("doozers stopped"), "{log}");
 }
 
 /// Stores toolsets in `home`'s database, as the web UI would.
@@ -1110,7 +1110,7 @@ fn store_toolsets(home: &Path, toolsets: &[(&str, &str)]) {
         .build()
         .unwrap()
         .block_on(async {
-            let store = doozers_store::Store::open(home.join("data/giles.db"))
+            let store = doozers_store::Store::open(home.join("data/doozers.db"))
                 .await
                 .unwrap();
             for (name, spec) in toolsets {
@@ -1123,7 +1123,7 @@ fn store_toolsets(home: &Path, toolsets: &[(&str, &str)]) {
 }
 
 #[test]
-fn stored_toolsets_start_or_are_reported_failed_and_giles_runs() {
+fn stored_toolsets_start_or_are_reported_failed_and_doozers_runs() {
     let env = Env::new();
     let home = env.path("home");
     let home_arg = home.to_str().unwrap();
@@ -1151,12 +1151,12 @@ fn stored_toolsets_start_or_are_reported_failed_and_giles_runs() {
                 "stored-bad",
                 r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "bearer": { "env": "TOKEN" } } }"#,
             ),
-            // A name that a toolset of `giles.toml` uses. The channel `web` is no toolset.
+            // A name that a toolset of `doozers.toml` uses. The channel `web` is no toolset.
             ("web", unreachable),
         ],
     );
 
-    // Giles runs, though two of the three can't. The valid one is registered with the others
+    // Doozers runs, though two of the three can't. The valid one is registered with the others
     // before the summary (nothing is pending), and is started and retried.
     let mut daemon = Daemon::start(env.command(&["serve", "--home", home_arg]));
     daemon.wait_for_line(&[
@@ -1174,7 +1174,10 @@ fn stored_toolsets_start_or_are_reported_failed_and_giles_runs() {
     // The others are reported failed, with the reason.
     for (instance, reason) in [
         ("stored-bad", "auth.bearer: must be the credential itself"),
-        ("web", "the name is taken by `[toolset.web]` in giles.toml"),
+        (
+            "web",
+            "the name is taken by `[toolset.web]` in doozers.toml",
+        ),
     ] {
         // The failed stored toolset is listed after the configured toolset of the same name.
         let block = stdout
@@ -1211,7 +1214,7 @@ fn stored_toolsets_start_or_are_reported_failed_and_giles_runs() {
         });
         assert!(reported, "{instance}\n{log}");
     }
-    assert!(log.contains("giles stopped"), "{log}");
+    assert!(log.contains("doozers stopped"), "{log}");
 }
 
 /// A provider, a channel, and a toolset can all be named `aperture`. They run together, and the
@@ -1323,7 +1326,7 @@ fn a_shutdown_during_plugin_launch_kills_the_plugin_and_exits_promptly() {
 fn http_request(mut stream: impl Read + Write, path: &str, headers: &str) -> String {
     write!(
         stream,
-        "GET {path} HTTP/1.1\r\nHost: giles\r\n{headers}Connection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: doozers\r\n{headers}Connection: close\r\n\r\n"
     )
     .unwrap();
     let mut response = String::new();
@@ -1377,7 +1380,7 @@ fn the_web_channel_replaces_the_home_page_and_trusts_only_the_proxy_socket() {
         "x-user: owner\r\n",
     );
     assert!(response.starts_with("HTTP/1.1 200 "), "{response}");
-    let version = format!("giles {}", env!("CARGO_PKG_VERSION"));
+    let version = format!("doozers {}", env!("CARGO_PKG_VERSION"));
     assert!(response.contains(&version), "{response}");
     assert!(response.contains(r#"id="channel-web""#), "{response}");
 
@@ -1453,7 +1456,7 @@ fn fake_openai(reply: &'static str) -> String {
 fn http_post(mut stream: impl Read + Write, path: &str, headers: &str, form: &str) -> String {
     write!(
         stream,
-        "POST {path} HTTP/1.1\r\nHost: giles\r\n{headers}Connection: close\r\n\
+        "POST {path} HTTP/1.1\r\nHost: doozers\r\n{headers}Connection: close\r\n\
          Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{form}",
         form.len()
     )
@@ -1558,7 +1561,7 @@ fn an_agent_created_on_the_web_answers_in_a_web_chat_without_a_restart() {
     assert!(log.contains("agent created"), "{log}");
 }
 
-/// Runs `giles <args>` to completion with `input` on its standard input.
+/// Runs `doozers <args>` to completion with `input` on its standard input.
 fn run_cli_with_stdin(env: &Env, args: &[&str], input: &str) -> (bool, String, String) {
     let mut child = env
         .command(args)
@@ -1603,18 +1606,18 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
     };
 
     let (ok, _, stderr) = toolset(&["list"]);
-    assert!(!ok && stderr.contains("giles is not running"), "{stderr}");
+    assert!(!ok && stderr.contains("doozers is not running"), "{stderr}");
 
     let daemon = Daemon::start(env.command(&["serve", "--home", home_arg]));
 
-    // The toolset of giles.toml is listed and can't be shown, changed, or removed.
+    // The toolset of doozers.toml is listed and can't be shown, changed, or removed.
     let (ok, stdout, stderr) = toolset(&["list"]);
     assert!(ok, "{stderr}");
     assert!(stdout.starts_with("NAME  SOURCE"), "{stdout}");
     assert!(
         stdout
             .lines()
-            .any(|line| line.starts_with("docs") && line.contains("giles.toml")),
+            .any(|line| line.starts_with("docs") && line.contains("doozers.toml")),
         "{stdout}"
     );
     let docs = write_spec("docs.toml", "url = \"http://127.0.0.1:9/docs\"\n");
@@ -1625,12 +1628,12 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
     ] {
         let (ok, stdout, stderr) = toolset(args);
         assert!(!ok && stdout.is_empty(), "{args:?}: {stdout}");
-        assert!(stderr.contains("giles.toml"), "{args:?}: {stderr}");
+        assert!(stderr.contains("doozers.toml"), "{args:?}: {stderr}");
     }
 
     // A spec the daemon refuses is reported with its key, and nothing is stored.
     for (text, expected) in [
-        // A stdio server is configured in giles.toml, and a stored token is the toolset's own.
+        // A stdio server is configured in doozers.toml, and a stored token is the toolset's own.
         (
             "command = \"/nonexistent/files\"\n",
             "url: a stored toolset is a remote server",
@@ -1790,7 +1793,7 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
     for (args, reason) in [
         (
             &["rename", "papers", "docs"],
-            "the name is taken by `[toolset.docs]` in giles.toml",
+            "the name is taken by `[toolset.docs]` in doozers.toml",
         ),
         (
             &["rename", "papers", "NOTES"],
@@ -1804,7 +1807,7 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
             &["rename", "ghost", "other"],
             "there is no toolset called `ghost`",
         ),
-        (&["rename", "docs", "other"], "stop Giles first"),
+        (&["rename", "docs", "other"], "stop Doozers first"),
     ] {
         let (ok, stdout, stderr) = toolset(args);
         assert!(!ok && stdout.is_empty(), "{args:?}: {stdout}");
@@ -1822,10 +1825,10 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
     let (status, log) = daemon.stop("TERM");
     assert!(status.success(), "{status}\n{log}");
     let (ok, _, stderr) = toolset(&["list"]);
-    assert!(!ok && stderr.contains("giles is not running"), "{stderr}");
+    assert!(!ok && stderr.contains("doozers is not running"), "{stderr}");
 
-    // With Giles stopped, rename works on the data root: a stored toolset is renamed as its row,
-    // and a toolset of giles.toml, which the running daemon refused, as its table.
+    // With Doozers stopped, rename works on the data root: a stored toolset is renamed as its row,
+    // and a toolset of doozers.toml, which the running daemon refused, as its table.
     let (ok, stdout, stderr) = toolset(&["rename", "papers", "memos"]);
     assert!(ok, "{stderr}");
     assert!(
@@ -1836,10 +1839,10 @@ fn toolset_commands_list_show_set_remove_rename_and_restart_toolsets_of_the_runn
     let (ok, stdout, stderr) = toolset(&["rename", "docs", "manuals"]);
     assert!(ok, "{stderr}");
     assert!(
-        stdout.contains("giles.toml: [toolset.docs] -> [toolset.manuals]"),
+        stdout.contains("doozers.toml: [toolset.docs] -> [toolset.manuals]"),
         "{stdout}"
     );
-    let config = fs::read_to_string(home.join("giles.toml")).unwrap();
+    let config = fs::read_to_string(home.join("doozers.toml")).unwrap();
     assert!(config.contains("[toolset.manuals]"), "{config}");
     assert!(!config.contains("[toolset.docs]"), "{config}");
     let (ok, _, stderr) = toolset(&["rename", "papers", "other"]);

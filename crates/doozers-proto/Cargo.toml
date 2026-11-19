@@ -1,6 +1,6 @@
 [package]
 name = "doozers-proto"
-description = "Generated gRPC code for the Giles plugin and admin protocols."
+description = "Generated gRPC code for the Doozers plugin and admin protocols."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

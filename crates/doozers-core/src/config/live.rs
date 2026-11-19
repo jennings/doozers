@@ -207,7 +207,7 @@ impl LiveConfig {
     /// configuration they had. Starting it is the toolset host's job
     /// ([`ToolsetHost::add`](crate::toolsets::ToolsetHost::add)).
     ///
-    /// Names are compared ignoring ASCII case, as in `giles.toml`: toolset names key data
+    /// Names are compared ignoring ASCII case, as in `doozers.toml`: toolset names key data
     /// directories and tool prefixes, and are unique among toolsets. A provider or a channel may
     /// have the same name.
     ///

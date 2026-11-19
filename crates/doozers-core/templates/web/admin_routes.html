@@ -1,6 +1,6 @@
 {% extends "web/app.html" %}
 
-{% block title %}Routes - Giles{% endblock %}
+{% block title %}Routes - Doozers{% endblock %}
 
 {% block content %}
 <div class="page-head">
@@ -9,7 +9,7 @@
 </div>
 <p class="lede">Routes pick the agent for each conversation. They are tried in order and the first one that matches wins; a route matches when every key it sets matches. A message in a conversation no route matches is dropped. A web chat started for a particular agent goes to that agent whatever the routes say.</p>
 {%- if legacy > 0 %}
-<p class="banner banner-warn"><span>giles.toml still has {{ legacy }} <code>[[routes]]</code> {% if legacy == 1 %}rule{% else %}rules{% endif %}. Giles imported {% if legacy == 1 %}it{% else %}them{% endif %} once and doesn't read {% if legacy == 1 %}it{% else %}them{% endif %} any more: change routes here, and remove {% if legacy == 1 %}it{% else %}them{% endif %} from the file.</span></p>
+<p class="banner banner-warn"><span>doozers.toml still has {{ legacy }} <code>[[routes]]</code> {% if legacy == 1 %}rule{% else %}rules{% endif %}. Doozers imported {% if legacy == 1 %}it{% else %}them{% endif %} once and doesn't read {% if legacy == 1 %}it{% else %}them{% endif %} any more: change routes here, and remove {% if legacy == 1 %}it{% else %}them{% endif %} from the file.</span></p>
 {%- endif %}
 {%- if routes.is_empty() %}
 <p>No routes, so every message is dropped. Add one with <a href="/admin/routes/new">New route</a>.</p>

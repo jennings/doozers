@@ -194,7 +194,7 @@ mod tests {
     }
 
     /// Set in a child to turn [`seccomp_probe`] into the probe: `off` or `network`.
-    const PROBE: &str = "GILES_SECCOMP_PROBE";
+    const PROBE: &str = "DOOZERS_SECCOMP_PROBE";
 
     /// The spec and Landlock ABI each probe mode runs under.
     fn probe_setup(mode: &str) -> (Spec, u32) {
@@ -429,7 +429,7 @@ mod tests {
 
     /// The real probes on this host. Prints what it finds (run with `--nocapture` to see it);
     /// the probes must not fail in an unexpected way, and a working seccomp must be reported.
-    /// With `GILES_REQUIRE_LANDLOCK=1` (CI's Linux job), Landlock must be available.
+    /// With `DOOZERS_REQUIRE_LANDLOCK=1` (CI's Linux job), Landlock must be available.
     #[test]
     fn host_probes_run() {
         let result = Linux::check_host();
@@ -446,8 +446,8 @@ mod tests {
                     "{err}"
                 );
                 assert!(
-                    std::env::var_os("GILES_REQUIRE_LANDLOCK").is_none_or(|v| v != "1"),
-                    "GILES_REQUIRE_LANDLOCK=1, but: {err}"
+                    std::env::var_os("DOOZERS_REQUIRE_LANDLOCK").is_none_or(|v| v != "1"),
+                    "DOOZERS_REQUIRE_LANDLOCK=1, but: {err}"
                 );
             }
         }

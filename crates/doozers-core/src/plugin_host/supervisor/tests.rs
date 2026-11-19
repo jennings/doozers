@@ -117,7 +117,7 @@ impl Running for FakeRun {
         if self.healthy.load(Ordering::SeqCst) {
             Ok(())
         } else {
-            Err("giles.channel.v1.ChannelService is NOT_SERVING".into())
+            Err("doozers.channel.v1.ChannelService is NOT_SERVING".into())
         }
     }
 
@@ -317,7 +317,7 @@ async fn a_failed_health_check_restarts_the_plugin() {
     assert!(matches!(status.state, PluginState::BackingOff { .. }));
     assert_eq!(
         status.last_error.as_deref(),
-        Some("health check failed: giles.channel.v1.ChannelService is NOT_SERVING")
+        Some("health check failed: doozers.channel.v1.ChannelService is NOT_SERVING")
     );
     let second = h.next_launch().await;
     assert_eq!(second.at - first.at, HEALTH_INTERVAL + FIRST_BACKOFF);

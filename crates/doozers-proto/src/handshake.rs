@@ -8,21 +8,21 @@
 use std::fmt;
 
 /// Environment variable carrying [`MAGIC_COOKIE`]. Run by hand without it, a plugin says that it's
-/// a Giles plugin and exits. A usability check, not security.
-pub const MAGIC_COOKIE_ENV: &str = "GILES_PLUGIN_MAGIC";
+/// a Doozers plugin and exits. A usability check, not security.
+pub const MAGIC_COOKIE_ENV: &str = "DOOZERS_PLUGIN_MAGIC";
 
 /// The fixed value of [`MAGIC_COOKIE_ENV`]. It never changes: protocol versions are negotiated
 /// separately, through [`PROTOCOLS_ENV`].
-pub const MAGIC_COOKIE: &str = "giles-plugin:5b2f0c7e9a1d4836";
+pub const MAGIC_COOKIE: &str = "doozers-plugin:5b2f0c7e9a1d4836";
 
 /// Environment variable listing the plugin protocol majors the core speaks, comma-separated in any
 /// order, e.g. `1` or `1,2`. The plugin picks the highest one it shares and names it in the
 /// handshake line.
-pub const PROTOCOLS_ENV: &str = "GILES_PLUGIN_PROTOCOLS";
+pub const PROTOCOLS_ENV: &str = "DOOZERS_PLUGIN_PROTOCOLS";
 
 /// Environment variable holding the instance's data directory, the plugin's only writable directory
 /// (PLAN section 11.6).
-pub const DATA_ENV: &str = "GILES_PLUGIN_DATA";
+pub const DATA_ENV: &str = "DOOZERS_PLUGIN_DATA";
 
 /// The subcommand the core launches a plugin with, as `doozers-channel-<name> socket`: the plugin
 /// serves on [`PLUGIN_FD`] and follows the rest of this handshake. The other subcommand, `serve`,
@@ -32,7 +32,8 @@ pub const SOCKET_COMMAND: &str = "socket";
 /// The descriptor of the plugin's end of the socket pair.
 pub const PLUGIN_FD: i32 = 3;
 
-/// The protocol major of the packages in this crate (`giles.plugin.v1`, `giles.channel.v1`, ...).
+/// The protocol major of the packages in this crate (`doozers.plugin.v1`, `doozers.channel.v1`,
+/// ...).
 pub const PROTOCOL_MAJOR: u32 = 1;
 
 /// The version of the handshake line's own layout, its first field.

@@ -318,7 +318,7 @@ async fn an_edit_changes_only_what_the_form_manages_and_applies_to_new_chats_at_
         env.root(),
         &LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..LoadOptions::default()
         },
     )

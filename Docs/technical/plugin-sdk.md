@@ -14,7 +14,7 @@ parser, so the SDK needs no `clap`:
 
 - `socket` is how the core launches the plugin (`doozers_proto::handshake::SOCKET_COMMAND`, the
   plugin's only argument). It runs `serve` below, so [Startup](#startup) applies. Nobody runs it by
-  hand; run so, it still says that it's a Giles plugin. It takes no further argument.
+  hand; run so, it still says that it's a Doozers plugin. It takes no further argument.
 - `serve` runs the plugin as a [remote plugin](#remote-plugins). Its transport settings are flags,
   each also a key of a TOML file given with `--config` (unknown keys refused, flags win), the same
   for every plugin.
@@ -28,10 +28,10 @@ parser, so the SDK needs no `clap`:
 ### Version skew
 
 The core passes `socket` to every plugin it launches. A plugin built before `run` ignores the
-argument and keeps working with a newer core, so `GILES_PLUGIN_PROTOCOLS` stays at 1. In the other
+argument and keeps working with a newer core, so `DOOZERS_PLUGIN_PROTOCOLS` stays at 1. In the other
 direction, a plugin built on `run` that an older core launches with no argument and with
-`GILES_PLUGIN_MAGIC` set prints that the core is older than the plugin and exits with status 1. The
-core reports the exit and its stderr as a failed launch.
+`DOOZERS_PLUGIN_MAGIC` set prints that the core is older than the plugin and exits with status 1.
+The core reports the exit and its stderr as a failed launch.
 
 ### Transport settings of `serve`
 
@@ -47,7 +47,7 @@ core reports the exit and its stderr as a failed launch.
 
 - Relative paths in the file are relative to the working directory, not to the file.
 - The settings here are the plugin's transport. A channel's own settings, which a launched channel
-  also gets, come from the instance's `config` in the core's `giles.toml` through `Configure`, in
+  also gets, come from the instance's `config` in the core's `doozers.toml` through `Configure`, in
   both modes (PLAN section 7.7). `serve` has no file for them, so one place defines an instance.
   Their secrets therefore travel to a remote plugin, which is why the core wants TLS off loopback. A
   channel's file with a `[config]` table is refused.
@@ -59,9 +59,9 @@ core reports the exit and its stderr as a failed launch.
   `config_json` is a non-empty object. An environment's settings are largely credentials for
   something on the plugin's host, such as a container engine, and don't belong on the core's side.
 - The token is `RemoteAuth::Bearer`. It comes from `token_file`, or from the environment variable
-  `GILES_<KIND>_<NAME>_TOKEN` (the kind and the plugin name in capitals, anything but a letter or
-  digit in the name as `_`), e.g. `GILES_CHANNEL_DISCORD_TOKEN` and
-  `GILES_ENVIRONMENT_DOCKER_TOKEN`. There's no flag for the token, as it would show in the process
+  `DOOZERS_<KIND>_<NAME>_TOKEN` (the kind and the plugin name in capitals, anything but a letter or
+  digit in the name as `_`), e.g. `DOOZERS_CHANNEL_DISCORD_TOKEN` and
+  `DOOZERS_ENVIRONMENT_DOCKER_TOKEN`. There's no flag for the token, as it would show in the process
   list. Both sources, or either with `--no-auth`, is an error, as is neither without `--no-auth`. A
   token must be one non-empty line of visible ASCII, the same rule as a launched plugin's; its
   trailing newline is dropped. A token file with any `0o077` mode bit set is refused, as the core
@@ -77,15 +77,15 @@ core reports the exit and its stderr as a failed launch.
 With `socket`, the SDK does these steps in order, and any failure ends the process with a message on
 stderr:
 
-1. Magic cookie: `GILES_PLUGIN_MAGIC` must equal `doozers_proto::handshake::MAGIC_COOKIE`. Without
-   it, someone ran the binary by hand: the plugin says that it's a Giles plugin, launched by Giles,
-   and exits with status 1. Nothing else is touched, fd 3 included.
-2. Protocol: `GILES_PLUGIN_PROTOCOLS` is a comma-separated list of majors (spaces around entries are
-   allowed). The SDK picks the highest one it also speaks (now only 1). A missing or malformed list
-   exits with status 1; a list with no shared major exits with status 76
+1. Magic cookie: `DOOZERS_PLUGIN_MAGIC` must equal `doozers_proto::handshake::MAGIC_COOKIE`. Without
+   it, someone ran the binary by hand: the plugin says that it's a Doozers plugin, launched by
+   Doozers, and exits with status 1. Nothing else is touched, fd 3 included.
+2. Protocol: `DOOZERS_PLUGIN_PROTOCOLS` is a comma-separated list of majors (spaces around entries
+   are allowed). The SDK picks the highest one it also speaks (now only 1). A missing or malformed
+   list exits with status 1; a list with no shared major exits with status 76
    (`EXIT_NO_SHARED_PROTOCOL`), naming both sides' versions, so the core knows not to retry the same
    binary.
-3. Data directory: `GILES_PLUGIN_DATA` must be an absolute path to an existing directory.
+3. Data directory: `DOOZERS_PLUGIN_DATA` must be an absolute path to an existing directory.
 4. Fd 3: adopted as described in [Plugin transport](plugin-transport.md). Before taking ownership,
    the SDK checks with `F_GETFD` that it's open and with `fstat` that it's a socket, so a missing fd
    3 (whose number the runtime may already have reused for its own kqueue or epoll descriptor) is
@@ -94,7 +94,7 @@ stderr:
 5. Token: the first line of stdin, ended by `\n` (or `\r\n`), 1 to 1024 visible ASCII characters, so
    `Bearer <token>` is a valid header value. Stdin ending first is an error.
 
-A dedicated thread (`giles-plugin-stdin`) reads the token and then keeps reading stdin until
+A dedicated thread (`doozers-plugin-stdin`) reads the token and then keeps reading stdin until
 end-of-file. It's a plain thread, not tokio's blocking pool: a blocking read can't be cancelled, and
 a pending blocking task would hold up the runtime's shutdown. End-of-file means the core is gone,
 and it's the only time the plugin exits on its own (PLAN section 7.4).
@@ -111,11 +111,11 @@ the token its `RemoteAuth` names instead ([Remote plugins](#remote-plugins)).
 
 ## State in the data directory
 
-The SDK keeps its own state in `giles-sdk/` inside `GILES_PLUGIN_DATA`; plugin authors use the rest
-of the directory.
+The SDK keeps its own state in `doozers-sdk/` inside `DOOZERS_PLUGIN_DATA`; plugin authors use the
+rest of the directory.
 
 ```text
-giles-sdk/
+doozers-sdk/
   blobs/<sha256>       blobs the plugin put, until no unacked event refers to them
   blobs/<sha256>.json  their media type and file name
   outbound/<sha256>    blobs the core put, until the Send that uses them ends
@@ -216,7 +216,7 @@ async fn main() -> ExitCode {
   `Status` mapping (below), public so the core's adapters and tests can share them.
 - `config`: `parse_duration` and `parse_size`, and the serde field types `HumanDuration` and
   `ByteSize` built on them, so a plugin's `config` table writes durations (`"10m"`) and sizes
-  (`"50 MiB"`) like `giles.toml` does. The core's own config uses the same functions
+  (`"50 MiB"`) like `doozers.toml` does. The core's own config uses the same functions
   ([Configuration](config.md#values)).
 - Re-exports `doozers_types` and `async_trait`, so a plugin uses the same versions as the SDK.
 
@@ -235,10 +235,10 @@ signal handlers: the core's SIGTERM and SIGKILL keep their default effect, which
 unacked events are already on disk. (`serve_remote` stops on `SIGINT` or `SIGTERM` by default, with
 the same drain.)
 
-Health (`grpc.health.v1`): the overall service `""` and `giles.plugin.v1.PluginService` are
-`SERVING` from the start; the kind's service (`giles.channel.v1.ChannelService` or
-`giles.environment.v1.EnvironmentService`) is `NOT_SERVING` until `Configure` succeeds. At shutdown
-`""` becomes `NOT_SERVING`.
+Health (`grpc.health.v1`): the overall service `""` and `doozers.plugin.v1.PluginService` are
+`SERVING` from the start; the kind's service (`doozers.channel.v1.ChannelService` or
+`doozers.environment.v1.EnvironmentService`) is `NOT_SERVING` until `Configure` succeeds. At
+shutdown `""` becomes `NOT_SERVING`.
 
 ## Channels
 
@@ -295,7 +295,7 @@ the core put for it (see [Blobs](#blobs)).
 
 ### Conversions and errors
 
-`convert` moves fields between `doozers-types` and `giles.channel.v1` following the tables in
+`convert` moves fields between `doozers-types` and `doozers.channel.v1` following the tables in
 [gRPC Protocols](protocols.md#mapping-to-doozers-types). Wire to domain validates ids, requires
 "Always set" fields, and refuses unspecified enum values and unknown `oneof` variants. Timestamps
 keep nanoseconds in `0..1e9`, so a time before 1970 has negative seconds and positive nanoseconds.
@@ -307,7 +307,7 @@ content. The core's `RemoteChannel` uses these helpers but takes a message's att
 converting it, so it accepts any handle, and it never trusts one: it fetches the bytes with
 `GetBlob` and hashes them.
 
-| `doozers_types::Error`          | gRPC status        | Back to `Error` (`error_from_status`) |
+| `doozers_types::Error`        | gRPC status        | Back to `Error` (`error_from_status`) |
 | ----------------------------- | ------------------ | ------------------------------------- |
 | `InvalidId`, `InvalidRequest` | `INVALID_ARGUMENT` | `InvalidRequest`                      |
 | `NotFound`                    | `NOT_FOUND`        | `NotFound`                            |
@@ -319,9 +319,10 @@ converting it, so it accepts any handle, and it never trusts one: it fetches the
 ## Environments
 
 `EnvironmentPlugin` has the same entry points as `ChannelPlugin` (`new`, `requested_grants`,
-`serve`, `serve_remote`, `run`) and serves `giles.environment.v1.EnvironmentService` by adapting the
-`doozers_types::Environment` its `configure` closure returns. The closure gets the same `Configure`
-as a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and empty `EnvironmentCapabilities`.
+`serve`, `serve_remote`, `run`) and serves `doozers.environment.v1.EnvironmentService` by adapting
+the `doozers_types::Environment` its `configure` closure returns. The closure gets the same
+`Configure` as a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and empty
+`EnvironmentCapabilities`.
 
 - `Configure` calls the closure under a lock, as for channels, answers with an empty identity
   namespace, and marks `EnvironmentService` serving. A repeated identical `Configure` (same instance
@@ -352,7 +353,7 @@ side in [Plugin Host](plugin-host.md#remote-plugins)), is
 `Configure`, persistence, and blobs are the same; what differs:
 
 - `RemoteServer::new(listener, data_dir, auth)` takes a bound `tokio::net::TcpListener`, the data
-  directory (created with mode 0700 if missing; `giles-sdk/` inside it as above), and a
+  directory (created with mode 0700 if missing; `doozers-sdk/` inside it as above), and a
   `RemoteAuth`: `Bearer(token)` (exact match, as for a launched plugin; an empty token refuses every
   call, with a warning, so an unset setting can't open the plugin), `Verify(fn)` (the token after
   `Bearer `, never empty, for tokens an OAuth server issued to the core), or `None`. There are no
@@ -415,7 +416,7 @@ stored again as the plugin's own blobs); `unavailable` (recipients whose sends f
 `UNAVAILABLE`). It reports `output = blocks` and `can_initiate = true`.
 
 It's built on `run` like the shipped plugins, so `doozers-channel-echo serve` runs it as a remote
-plugin, with the token in `GILES_CHANNEL_ECHO_TOKEN` or `--no-auth`.
+plugin, with the token in `DOOZERS_CHANNEL_ECHO_TOKEN` or `--no-auth`.
 `plugins/doozers-channel-echo/tests/cli.rs` tests the command line through the binary.
 
 Its integration tests (`plugins/doozers-channel-echo/tests/plugin.rs`) launch the binary exactly as

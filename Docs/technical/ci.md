@@ -8,7 +8,7 @@ a finished run.
 
 ## CI jobs
 
-**Rust** runs on `ubuntu-latest` and `macos-latest`, the two platforms Giles supports. Each runner
+**Rust** runs on `ubuntu-latest` and `macos-latest`, the two platforms Doozers supports. Each runner
 installs the toolchain pinned in `rust-toolchain.toml` (`rustup toolchain install` with no argument
 reads it, so the version is never repeated in the workflow), restores the Cargo cache
 (`Swatinem/rust-cache`), and runs:
@@ -22,7 +22,7 @@ cargo test --workspace --locked
 `--locked` fails the build if `Cargo.lock` is out of date instead of silently updating it, and
 `-D warnings` turns the workspace lints (see [Cargo workspace](workspace.md)) into errors.
 
-On Ubuntu the tests run with `GILES_REQUIRE_LANDLOCK=1`: the Linux sandbox tests skip on kernels
+On Ubuntu the tests run with `DOOZERS_REQUIRE_LANDLOCK=1`: the Linux sandbox tests skip on kernels
 without Landlock (like the Apple `container` kernel used locally), and this makes them fail instead,
 so CI always runs them (see [Plugin Sandbox](sandbox.md#testing-without-landlock)). A step before
 the tests runs `host_probes_run` with `--nocapture`, so the log shows the Landlock ABI the runner's
@@ -31,7 +31,7 @@ branches the sandbox tests exercise. The end-to-end suite ([End-to-end tests](e2
 inside `cargo test --workspace` and launches its echo plugin in the sandbox wherever the host has
 one.
 
-On Ubuntu the tests also run with `GILES_REQUIRE_DOCKER=1`. The Docker environment plugin's
+On Ubuntu the tests also run with `DOOZERS_REQUIRE_DOCKER=1`. The Docker environment plugin's
 integration tests need a Docker API socket and skip, printing why, when none answers; GitHub's
 Ubuntu runners have Docker, and this makes the tests fail instead of skipping. The tests build the
 Linux helper for the engine's architecture with `cargo build --target <arch>-unknown-linux-musl`,
@@ -61,17 +61,17 @@ of every package. Lint and formatting still run. Rebase merges keep the trailer,
 same repository. It doesn't wait for Rust: the `Dockerfile` builds the workspace itself, so the two
 run side by side. A commit that fails formatting, Clippy, or tests can still publish its image. A
 compile error fails the image build. It publishes the image the `Dockerfile` builds
-([Container image](container-image.md)) to the GitHub Container Registry as `ghcr.io/jennings/giles`
-(`ghcr.io/` plus the repository name, lowercased by `docker/metadata-action`). It is the only job
-with `packages: write`. Each push to `main` is tagged `latest`. Each pull request is tagged
-`pr-<number>` (`pr-37` for pull request 37), and a new push to the pull request moves the tag. Pull
-requests from forks skip the job, because their `GITHUB_TOKEN` can't write packages. The job's own
-concurrency group runs one publish at a time for `main`, in push order, so `latest` ends at the
-newest commit, and one at a time per pull request. A push that arrives while another is waiting
-replaces it.
+([Container image](container-image.md)) to the GitHub Container Registry as
+`ghcr.io/jennings/doozers` (`ghcr.io/`, the repository owner, and `doozers`, lowercased by
+`docker/metadata-action`). It is the only job with `packages: write`. Each push to `main` is tagged
+`latest`. Each pull request is tagged `pr-<number>` (`pr-37` for pull request 37), and a new push to
+the pull request moves the tag. Pull requests from forks skip the job, because their `GITHUB_TOKEN`
+can't write packages. The job's own concurrency group runs one publish at a time for `main`, in push
+order, so `latest` ends at the newest commit, and one at a time per pull request. A push that
+arrives while another is waiting replaces it.
 
 The job sets up Buildx (`docker/setup-buildx-action`), builds the image for `linux/amd64` with
-`docker/build-push-action`, loads it into the runner's Docker as `giles:test`, and smoke-tests it
+`docker/build-push-action`, loads it into the runner's Docker as `doozers:test`, and smoke-tests it
 before anything is pushed:
 
 - `doozers --version` runs, and the four channel plugin binaries (IRC, email, WhatsApp, Discord),
@@ -79,7 +79,7 @@ before anything is pushed:
   `/usr/local/bin/`. The helper runs (`df /`) with no libraries of the image, which shows it is a
   static binary.
 - `doozers serve` starts with the default entrypoint, a fresh named volume at `/data` holding a
-  `giles.toml` with only `http_listen = "0.0.0.0:8080"` and the owner, and the port published.
+  `doozers.toml` with only `http_listen = "0.0.0.0:8080"` and the owner, and the port published.
 - `doozers status`, run in the container until the admin socket answers (up to 30 seconds), must
   report `Plugin sandbox: Landlock ABI ...`: the startup sandbox check passes under Docker's default
   seccomp profile on the runner's kernel. The status and the container log are printed.
@@ -103,12 +103,12 @@ The `environment-docker-image` job builds and publishes the
 [Docker environment image](container-image.md#the-docker-environment-image) the same way, as
 `ghcr.io/jennings/doozers-environment-docker` with the same tags. It has its own concurrency group
 and its own `gha` cache scope, so the two image jobs run side by side without evicting each other's
-layers. Its smoke test plays the Giles core against the runner's Docker engine before anything is
+layers. Its smoke test plays the Doozers core against the runner's Docker engine before anything is
 pushed:
 
 - Both `doozers-workspace-helper-*` files are in the image, and the `x86_64` one runs.
 - The container starts with `/var/run/docker.sock` mounted and the token in
-  `GILES_ENVIRONMENT_DOCKER_TOKEN`, and logs `listening on`.
+  `DOOZERS_ENVIRONMENT_DOCKER_TOKEN`, and logs `listening on`.
 - `grpcurl` (a pinned release) calls `Configure`, `CreateWorkspace` with `alpine:3.20`,
   `StartWorkspace`, and `Exec` (`echo hello`, whose output must come back), then `DeleteWorkspace`.
   No container or volume labeled with the test instance may be left.
@@ -136,8 +136,8 @@ requests stop after the build.
 and `id-token: write` permissions (the rest of both workflows get `contents: read`). Deployments
 share the `pages` concurrency group without cancelling, so they run one at a time in push order. The
 repository's Pages source must be set to "GitHub Actions". The site is served at
-<http://jennings.io/giles/>, so `Docs/book.toml` sets `site-url = "/giles/"`, the base path mdBook
-needs for its 404 page.
+<http://jennings.io/doozers/>, so `Docs/book.toml` sets `site-url = "/doozers/"`, the base path
+mdBook needs for its 404 page.
 
 ## Running the checks locally
 

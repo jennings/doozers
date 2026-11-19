@@ -381,7 +381,7 @@ mod tests {
 
     async fn open() -> (tempfile::TempDir, Store, BlobStore) {
         let dir = tempfile::tempdir().unwrap();
-        let db = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let db = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let blobs = BlobStore::open(dir.path().join("blobs"), db.clone())
             .await
             .unwrap();

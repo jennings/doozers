@@ -173,7 +173,7 @@ impl Setup {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
-            dir.path().join("giles.toml"),
+            dir.path().join("doozers.toml"),
             "[owner]\nidentities = [\"fake:owner\"]\n",
         )
         .unwrap();
@@ -182,7 +182,7 @@ impl Setup {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )

@@ -400,7 +400,7 @@ impl<'a> Session<'a> {
     /// Says goodbye: the channel was dropped.
     async fn quit(&mut self) -> Step {
         // Best effort: the connection is closed either way.
-        let _ = self.write("QUIT :Giles is shutting down").await;
+        let _ = self.write("QUIT :Doozers is shutting down").await;
         Ok(())
     }
 
@@ -442,7 +442,7 @@ impl<'a> Session<'a> {
         }
         if !self.pinged && quiet >= self.timing.ping_after {
             self.pinged = true;
-            self.write("PING :giles").await?;
+            self.write("PING :doozers").await?;
         }
         if self
             .lookups

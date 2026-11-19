@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn default_profile_denies_by_default() {
-        let spec = Spec::new("/tmp/giles-test/data");
+        let spec = Spec::new("/tmp/doozers-test/data");
         let profile = render(&spec);
         assert!(
             profile.starts_with("(version 1)\n(deny default)\n"),
@@ -346,11 +346,11 @@ mod tests {
         let writable: Vec<_> = rules.iter().filter(|r| r.contains("file-write*")).collect();
         assert_eq!(
             writable,
-            ["allow file-read* file-write* (subpath \"/private/tmp/giles-test/data\"))"]
+            ["allow file-read* file-write* (subpath \"/private/tmp/doozers-test/data\"))"]
         );
         // ...and the directory itself can't be removed or replaced, by a rule after that one.
         let deny = "deny file-write-unlink file-write-create \
-                    (literal \"/private/tmp/giles-test/data\"))";
+                    (literal \"/private/tmp/doozers-test/data\"))";
         let allow_at = rules.iter().position(|r| r == writable[0]).unwrap();
         assert_eq!(
             rules.iter().position(|r| r == deny),
@@ -367,7 +367,7 @@ mod tests {
             .iter()
             .find(|r| r.starts_with("allow file-read-metadata"))
             .unwrap();
-        // (`/tmp/giles-test` doesn't exist, so there's nothing more to look up.)
+        // (`/tmp/doozers-test` doesn't exist, so there's nothing more to look up.)
         for path in ["/tmp", "/private", "/private/tmp"] {
             assert!(
                 metadata.contains(&format!("(literal \"{path}\")")),
@@ -379,10 +379,10 @@ mod tests {
     #[test]
     fn grants_become_real_path_rules() {
         let spec = Spec {
-            read: vec!["/tmp/giles-test/read".into()],
-            write: vec!["/tmp/giles-test/write".into()],
+            read: vec!["/tmp/doozers-test/read".into()],
+            write: vec!["/tmp/doozers-test/write".into()],
             execute: vec!["/usr/bin".into()],
-            ..Spec::new("/tmp/giles-test/data")
+            ..Spec::new("/tmp/doozers-test/data")
         };
         let rules = rules(&render(&spec));
         assert!(rules.contains(
@@ -391,14 +391,14 @@ mod tests {
         assert!(
             rules.contains(
                 &"allow file-read* (literal \"/bin/sh\") \
-              (subpath \"/private/tmp/giles-test/read\") (subpath \"/usr/bin\"))"
+              (subpath \"/private/tmp/doozers-test/read\") (subpath \"/usr/bin\"))"
                     .to_owned()
             )
         );
         assert!(
             rules.contains(
-                &"allow file-read* file-write* (subpath \"/private/tmp/giles-test/data\") \
-              (subpath \"/private/tmp/giles-test/write\"))"
+                &"allow file-read* file-write* (subpath \"/private/tmp/doozers-test/data\") \
+              (subpath \"/private/tmp/doozers-test/write\"))"
                     .to_owned()
             )
         );

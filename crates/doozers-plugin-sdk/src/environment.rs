@@ -1,4 +1,4 @@
-//! Serving an [`Environment`] as `giles.environment.v1.EnvironmentService` (PLAN section 8.8).
+//! Serving an [`Environment`] as `doozers.environment.v1.EnvironmentService` (PLAN section 8.8).
 
 use std::ffi::OsString;
 use std::io;
@@ -44,10 +44,10 @@ use crate::server::{self, Context};
 /// An environment plugin: what it reports in `Describe`, and how it builds its [`Environment`].
 ///
 /// An environment plugin gives agents isolated workspaces: it creates and deletes them and serves
-/// the primitives (run a command, read and write a file, find, grep) that Giles builds the model's
-/// workspace tools on. Call [`run`](EnvironmentPlugin::run) from `main`. It parses the plugin's
-/// command line: `socket` does everything a launched plugin must do and returns when the plugin
-/// should exit, and `serve` runs the plugin for its operator as a remote plugin.
+/// the primitives (run a command, read and write a file, find, grep) that Doozers builds the
+/// model's workspace tools on. Call [`run`](EnvironmentPlugin::run) from `main`. It parses the
+/// plugin's command line: `socket` does everything a launched plugin must do and returns when the
+/// plugin should exit, and `serve` runs the plugin for its operator as a remote plugin.
 ///
 /// ```no_run
 /// use std::process::ExitCode;
@@ -168,8 +168,8 @@ impl EnvironmentPlugin {
     /// different config fails with `FAILED_PRECONDITION`.
     ///
     /// It returns when the core asks the plugin to shut down or goes away (stdin closes), after
-    /// giving open calls a few seconds to finish. Run by hand, it explains that it's a Giles plugin
-    /// and returns a failure status. Startup failures are printed to stderr.
+    /// giving open calls a few seconds to finish. Run by hand, it explains that it's a Doozers
+    /// plugin and returns a failure status. Startup failures are printed to stderr.
     ///
     /// Call it first thing in `main`, before anything opens or closes file descriptors. It uses the
     /// ambient tokio runtime, which must enable I/O and timers (`#[tokio::main]` does).
@@ -233,14 +233,14 @@ impl EnvironmentPlugin {
     /// `main`. This is what a shipped plugin's `main` calls instead of [`serve`](Self::serve) or
     /// [`serve_remote`](Self::serve_remote).
     ///
-    /// - `socket` is how Giles launches the plugin: [`serve`](Self::serve). Run by hand, it
-    ///   explains that it's a Giles plugin.
+    /// - `socket` is how Doozers launches the plugin: [`serve`](Self::serve). Run by hand, it
+    ///   explains that it's a Doozers plugin.
     /// - `serve [options]` is a plugin its operator runs, for a core whose instance has an
     ///   `address`: [`serve_remote`](Self::serve_remote) on a TCP listener, with TLS if the
     ///   options give a certificate, and checking a static bearer token. The options are
     ///   `--listen`, `--data`, `--tls-cert`, `--tls-key`, `--token-file`, and `--no-auth`, or the
     ///   same as keys of a TOML file named by `--config` (a flag wins). The token is the
-    ///   `GILES_ENVIRONMENT_<NAME>_TOKEN` environment variable (`<NAME>` is the plugin's name in
+    ///   `DOOZERS_ENVIRONMENT_<NAME>_TOKEN` environment variable (`<NAME>` is the plugin's name in
     ///   capitals, with `_` for anything but letters and digits) or `--token-file`, a file only
     ///   its owner can access; without either, `serve` refuses to start unless `--no-auth` says
     ///   to accept any caller. It prints `listening on <address>` to stdout once it listens.
@@ -248,9 +248,9 @@ impl EnvironmentPlugin {
     ///   exits with status 2).
     ///
     /// The plugin's own settings reach `configure` in both modes, but from different places. A
-    /// launched plugin gets the instance's `config` from the core's `giles.toml`. A plugin run
+    /// launched plugin gets the instance's `config` from the core's `doozers.toml`. A plugin run
     /// with `serve` gets the `[config]` table of its `--config` file, or `{}` without one: the
-    /// instance in `giles.toml` has an `address` and no `config`.
+    /// instance in `doozers.toml` has an `address` and no `config`.
     ///
     /// As with [`serve`](Self::serve), call it first thing in `main`, with tokio's runtime
     /// enabling I/O and timers.
@@ -405,7 +405,7 @@ impl Kind for EnvironmentKind {
                     return Err(Status::invalid_argument(
                         "this environment plugin runs remotely, and a remote environment's \
                          settings live in its own config file ([config] in the file given to \
-                         `serve --config`); remove `config` from this instance in giles.toml",
+                         `serve --config`); remove `config` from this instance in doozers.toml",
                     ));
                 }
                 own.clone()

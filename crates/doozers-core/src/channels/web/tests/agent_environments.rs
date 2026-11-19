@@ -230,7 +230,7 @@ async fn an_environment_that_is_not_configured_still_shows_and_saving_it_is_refu
     let (status, html) = env.edit_page(&manager, "jeeves").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        html.contains(r#"name="environment:gone" checked> <span><code>gone</code> <span class="warn-text">Not configured in giles.toml, so saving fails until you untick it.</span>"#),
+        html.contains(r#"name="environment:gone" checked> <span><code>gone</code> <span class="warn-text">Not configured in doozers.toml, so saving fails until you untick it.</span>"#),
         "{html}"
     );
     assert!(html.contains(&format!(r#"{BOX_FIELD} checked>"#)), "{html}");

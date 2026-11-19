@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn an_oauth_client_secret_is_a_credential_too() {
-        let mut spec = spec(r#"{ "oauth": { "client_id": "giles", "client_secret": "cs-1" } }"#);
+        let mut spec = spec(r#"{ "oauth": { "client_id": "doozers", "client_secret": "cs-1" } }"#);
         let taken = take_literals("Files", &mut spec).unwrap();
         assert_eq!(taken[0].0.as_str(), "toolsets/files/oauth-client-secret");
         assert_eq!(references(&spec), ["toolsets/files/oauth-client-secret"]);

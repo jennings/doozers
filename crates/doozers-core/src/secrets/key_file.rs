@@ -20,7 +20,7 @@ pub(super) const SOURCE: &str = "key-file";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyFile {
     path: PathBuf,
-    /// Whether it's the default, `<root>/secret.key`, which Giles may create.
+    /// Whether it's the default, `<root>/secret.key`, which Doozers may create.
     default: bool,
     /// Whether it's in the data root, where group and others must have no access to it. Outside,
     /// whatever mounts it (systemd, an orchestrator) owns its mode.
@@ -28,7 +28,7 @@ pub struct KeyFile {
 }
 
 impl KeyFile {
-    /// The key file at `path` (`core.secret_key_file`) for the data root `root`. Giles creates
+    /// The key file at `path` (`core.secret_key_file`) for the data root `root`. Doozers creates
     /// it, mode 0600, when it's missing and no secret is stored, but only at the default location,
     /// `<root>/secret.key`.
     pub fn new(root: &DataRoot, path: &Path) -> Self {
@@ -44,7 +44,7 @@ impl KeyFile {
         &self.path
     }
 
-    /// Whether Giles may create the file: it's at the default location.
+    /// Whether Doozers may create the file: it's at the default location.
     pub(super) fn may_create(&self) -> bool {
         self.default
     }
@@ -149,7 +149,7 @@ mod tests {
     fn outside_the_data_root_the_mode_is_left_to_whatever_mounts_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path().join("root"), Path::new("/tmp")).unwrap();
-        let mounted = dir.path().join("run-secrets-giles");
+        let mounted = dir.path().join("run-secrets-doozers");
         fs::write(&mounted, "00".repeat(32)).unwrap();
         fs::set_permissions(&mounted, fs::Permissions::from_mode(0o444)).unwrap();
         let file = KeyFile::new(&root, &mounted);

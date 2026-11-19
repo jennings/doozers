@@ -1,5 +1,5 @@
 //! Domain types and component traits (`Provider`, `Channel`, `Toolset`, `Environment`) shared by
-//! the Giles core and its plugins.
+//! the Doozers core and its plugins.
 //!
 //! - [`message`]: the content-block message model stored in transcripts (PLAN section 5).
 //! - [`provider`]: the [`Provider`] trait and the completion request and event stream.

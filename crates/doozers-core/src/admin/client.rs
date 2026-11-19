@@ -22,7 +22,7 @@ pub type AdminClient = AdminServiceClient<InterceptedService<Channel, BearerToke
 #[non_exhaustive]
 pub enum ConnectError {
     /// No core is listening on the socket (it's missing, or left behind by a core that died).
-    #[error("giles is not running (nothing listens on {})", .socket.display())]
+    #[error("doozers is not running (nothing listens on {})", .socket.display())]
     NotRunning {
         /// The admin socket.
         socket: PathBuf,

@@ -1,6 +1,6 @@
 [package]
 name = "doozers-types"
-description = "Domain types and component traits shared by Giles and its plugins."
+description = "Domain types and component traits shared by Doozers and its plugins."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

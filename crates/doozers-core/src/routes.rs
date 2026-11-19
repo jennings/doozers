@@ -23,15 +23,15 @@
 //! special message for a duplicate) or if the changed route would hide a later route
 //! ([`RouteError::Hides`]). Hiding is judged against the list before the change: a route that was
 //! already unreachable stays so without blocking unrelated changes (the page flags it, and so does
-//! the startup log), so a list imported from `giles.toml`, which never checked this, can still be
+//! the startup log), so a list imported from `doozers.toml`, which never checked this, can still be
 //! edited into shape.
 //!
 //! # Import
 //!
-//! `giles.toml`'s `[[routes]]` are imported once, by [`Routes::open`], when the import has never
+//! `doozers.toml`'s `[[routes]]` are imported once, by [`Routes::open`], when the import has never
 //! run (the database records that it did). They're validated first, exactly like a route made in
 //! the web UI except that a shadowed route is kept as written. After that they're never read
-//! again; `open` warns while `giles.toml` still has them.
+//! again; `open` warns while `doozers.toml` still has them.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -151,7 +151,7 @@ pub fn kind_name(kind: ConversationKind) -> &'static str {
     }
 }
 
-/// A route as typed in a form (or as read from `giles.toml`): text, where empty means any
+/// A route as typed in a form (or as read from `doozers.toml`): text, where empty means any
 /// (except for the agent).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RouteSpec {
@@ -274,7 +274,8 @@ impl RouteError {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum RoutesError {
-    /// A `[[routes]]` rule in `giles.toml` is invalid, so it can't be imported. Fix it or remove it.
+    /// A `[[routes]]` rule in `doozers.toml` is invalid, so it can't be imported. Fix it or remove
+    /// it.
     #[error("{file}: routes[{index}]{}: {reason}", key_suffix(.key))]
     Import {
         /// The file.
@@ -494,7 +495,7 @@ fn from_stored(stored: &StoredRoute) -> Result<Route, String> {
     })
 }
 
-/// What `[[routes]]` in `giles.toml` can hold.
+/// What `[[routes]]` in `doozers.toml` can hold.
 #[derive(Debug, Deserialize)]
 struct LegacyRoute {
     channel: Option<String>,
@@ -503,11 +504,11 @@ struct LegacyRoute {
     agent: String,
 }
 
-/// The `[[routes]]` rules of `giles.toml`, validated like routes made in the web UI, but with
+/// The `[[routes]]` rules of `doozers.toml`, validated like routes made in the web UI, but with
 /// shadowed routes kept as written. A key a rule doesn't have is logged and ignored.
 fn import_rules(legacy: &[toml::Value], config: &Config) -> Result<Vec<Route>, RoutesError> {
     let at = |index, key, reason: String| RoutesError::Import {
-        file: "giles.toml".to_owned(),
+        file: "doozers.toml".to_owned(),
         index,
         key,
         reason,
@@ -523,7 +524,7 @@ fn import_rules(legacy: &[toml::Value], config: &Config) -> Result<Vec<Route>, R
             .map_err(|e: toml::de::Error| at(index, None, e.message().to_owned()))?;
             for key in unknown {
                 let key = KeyPath::root().key("routes").index(index).join(&key);
-                warn!("giles.toml: unknown key `{key}` (ignored)");
+                warn!("doozers.toml: unknown key `{key}` (ignored)");
             }
             for (key, value) in [
                 ("channel", &raw.channel),
@@ -624,7 +625,7 @@ pub struct Routes {
 }
 
 impl Routes {
-    /// Opens the routes of `store`: imports `giles.toml`'s `[[routes]]` if the import has never
+    /// Opens the routes of `store`: imports `doozers.toml`'s `[[routes]]` if the import has never
     /// run, loads the stored list, and logs what's wrong with it. Validation uses `config`'s
     /// current configuration.
     ///
@@ -645,22 +646,22 @@ impl Routes {
             if let Some(count @ 1..) = count {
                 info!(
                     count,
-                    "imported the [[routes]] of giles.toml; manage routes in the web UI"
+                    "imported the [[routes]] of doozers.toml; manage routes in the web UI"
                 );
             }
         }
         if legacy > 0 {
             if imported {
                 info!(
-                    "giles.toml still has [[routes]]: they were imported once and are not read again; \
-                     remove them from giles.toml"
+                    "doozers.toml still has [[routes]]: they were imported once and are not read again; \
+                     remove them from doozers.toml"
                 );
             } else {
                 warn!(
                     count = legacy,
-                    "giles.toml has [[routes]], which are ignored: routes are managed in the web UI \
+                    "doozers.toml has [[routes]], which are ignored: routes are managed in the web UI \
                      (/admin/routes) and were imported when they were first stored; remove them \
-                     from giles.toml"
+                     from doozers.toml"
                 );
             }
         }
@@ -866,7 +867,7 @@ mod tests {
     const LIBERA: &str = "libera";
 
     /// A configuration with channels `web` and `libera` and agents `jeeves` and `bunter`, and
-    /// `extra` appended to giles.toml.
+    /// `extra` appended to doozers.toml.
     fn config(dir: &Path, extra: &str) -> Config {
         let root = DataRoot::new(dir, &dir.join("tmp")).unwrap();
         std::fs::write(
@@ -887,7 +888,7 @@ mod tests {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -907,13 +908,13 @@ mod tests {
 
         async fn with(extra: &str) -> Self {
             let dir = tempfile::tempdir().unwrap();
-            let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+            let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
             let config = LiveConfig::new(Arc::new(config(dir.path(), extra)));
             let routes = Routes::open(store.clone(), config).await.unwrap();
             Self { dir, store, routes }
         }
 
-        /// Opens the routes again over the same store, with a new giles.toml.
+        /// Opens the routes again over the same store, with a new doozers.toml.
         async fn reopen(&self, extra: &str) -> Result<Routes, RoutesError> {
             let config = LiveConfig::new(Arc::new(config(self.dir.path(), extra)));
             Routes::open(self.store.clone(), config).await
@@ -1248,7 +1249,7 @@ mod tests {
 
     #[tokio::test]
     async fn routes_that_were_already_unreachable_are_flagged_and_do_not_block_other_changes() {
-        // giles.toml never checked this, so an import can hold such a route.
+        // doozers.toml never checked this, so an import can hold such a route.
         let h = Harness::with(
             "[[routes]]\nagent = \"jeeves\"\n[[routes]]\nchannel = \"libera\"\nagent = \"bunter\"\n\
              [[routes]]\nchannel = \"libera\"\nagent = \"bunter\"\n",
@@ -1499,7 +1500,7 @@ mod tests {
                           [[routes]]\nkind = \"direct\"\nagent = \"bunter\"\n";
 
     #[tokio::test]
-    async fn giles_toml_routes_are_imported_in_order_when_none_are_stored() {
+    async fn doozers_toml_routes_are_imported_in_order_when_none_are_stored() {
         let h = Harness::with(LEGACY).await;
         let views = h.routes.view().await.unwrap();
         assert_eq!(views.len(), 2);
@@ -1566,7 +1567,7 @@ mod tests {
     #[tokio::test]
     async fn an_invalid_rule_stops_the_import_with_its_key_and_stores_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let cases = [
             (
                 "channel = \"irc\"\nagent = \"jeeves\"",
@@ -1612,7 +1613,7 @@ mod tests {
             let err = Routes::open(store.clone(), config).await.unwrap_err();
             let shown = err.to_string();
             assert!(
-                shown.starts_with("giles.toml: ") && shown.contains(want),
+                shown.starts_with("doozers.toml: ") && shown.contains(want),
                 "{rule}: {shown}"
             );
             assert!(store.routes().await.unwrap().is_empty());

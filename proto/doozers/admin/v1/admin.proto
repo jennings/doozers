@@ -1,14 +1,14 @@
 // The admin service (PLAN section 8.7).
 syntax = "proto3";
 
-package giles.admin.v1;
+package doozers.admin.v1;
 
-import "giles/channel/v1/channel.proto";
-import "giles/plugin/v1/plugin.proto";
-import "giles/types/v1/types.proto";
+import "doozers/channel/v1/channel.proto";
+import "doozers/plugin/v1/plugin.proto";
+import "doozers/types/v1/types.proto";
 import "google/protobuf/timestamp.proto";
 
-// Served by the core on run/admin.sock. The giles CLI and the web admin pages are its clients.
+// Served by the core on run/admin.sock. The doozers CLI and the web admin pages are its clients.
 // Every call carries the token from run/admin.token as "authorization: Bearer TOKEN" metadata.
 //
 // The user and pairing RPCs of PLAN section 8.7 are multi-user features and are added here,
@@ -32,27 +32,27 @@ service AdminService {
   rpc UsageReport(UsageReportRequest) returns (UsageReportResponse);
   // Writes a consistent snapshot of the data root to a directory (PLAN section 11.4).
   rpc Backup(BackupRequest) returns (BackupResponse);
-  // Every toolset: the ones stored in the database and the ones in giles.toml, by name.
+  // Every toolset: the ones stored in the database and the ones in doozers.toml, by name.
   rpc ListToolsets(ListToolsetsRequest) returns (ListToolsetsResponse);
   // One toolset, with its spec as TOML. NOT_FOUND if there is no such toolset.
   rpc GetToolset(GetToolsetRequest) returns (GetToolsetResponse);
   // Creates a stored toolset, a remote MCP server, or replaces the spec of the one with that name,
-  // with no Giles restart. Status codes: INVALID_ARGUMENT (the message starts with the key of the
+  // with no Doozers restart. Status codes: INVALID_ARGUMENT (the message starts with the key of the
   // spec at fault, such as url for a stdio server), ALREADY_EXISTS (another call created the name
   // first), NOT_FOUND (expected_updated_at is set and there is no such toolset),
   // FAILED_PRECONDITION (the toolset changed since expected_updated_at, or it is configured in
-  // giles.toml), and UNAVAILABLE (no toolset management).
+  // doozers.toml), and UNAVAILABLE (no toolset management).
   rpc SetToolset(SetToolsetRequest) returns (SetToolsetResponse);
   // Removes a stored toolset. NOT_FOUND if there is none; FAILED_PRECONDITION if it is configured
-  // in giles.toml.
+  // in doozers.toml.
   rpc RemoveToolset(RemoveToolsetRequest) returns (RemoveToolsetResponse);
   // Renames a stored toolset, with its tool prefix and the globs of every agent that names it,
-  // with no Giles restart. Running sessions keep the old tool names. Status codes: NOT_FOUND (no
+  // with no Doozers restart. Running sessions keep the old tool names. Status codes: NOT_FOUND (no
   // such toolset), ALREADY_EXISTS (another stored toolset has the new name), INVALID_ARGUMENT (the
-  // new name is the same, invalid, reserved, taken by a giles.toml instance, or retired; or an
+  // new name is the same, invalid, reserved, taken by a doozers.toml instance, or retired; or an
   // agent has globs that match the toolset's tools without starting with "<old>__", which the
-  // message lists), FAILED_PRECONDITION (the toolset is configured in giles.toml), INTERNAL (a step
-  // failed: the message says which, and what could not be undone), and UNAVAILABLE (no toolset
+  // message lists), FAILED_PRECONDITION (the toolset is configured in doozers.toml), INTERNAL (a
+  // step failed: the message says which, and what could not be undone), and UNAVAILABLE (no toolset
   // management).
   rpc RenameToolset(RenameToolsetRequest) returns (RenameToolsetResponse);
 }
@@ -94,7 +94,7 @@ message ChannelInstance {
   // Where it runs.
   ChannelRuntime runtime = 3;
   // The last status it reported since the core started. Unset before its first.
-  giles.channel.v1.ChannelStatus status = 4;
+  doozers.channel.v1.ChannelStatus status = 4;
   // When the core received that status.
   google.protobuf.Timestamp status_at = 5;
 }
@@ -145,9 +145,9 @@ message PluginInstance {
   // The sandbox the plugin runs in. Unset for remote instances.
   SandboxStatus sandbox = 11;
   // The grants the plugin asked for in Describe. Advisory only.
-  giles.plugin.v1.SandboxGrants requested_grants = 12;
+  doozers.plugin.v1.SandboxGrants requested_grants = 12;
   // The last status a channel plugin reported.
-  giles.channel.v1.ChannelStatus channel_status = 13;
+  doozers.channel.v1.ChannelStatus channel_status = 13;
   // In BACKOFF: when the next launch or connection attempt starts.
   google.protobuf.Timestamp retry_at = 14;
   // The number of tools an MCP toolset currently offers to new sessions. Unset for other kinds.
@@ -222,7 +222,7 @@ message Session {
   // The channel instance. Unset for sessions without a conversation, e.g. isolated job runs.
   optional string instance = 3;
   // The conversation. Unset for sessions without a conversation.
-  giles.types.v1.ConversationRef conversation = 4;
+  doozers.types.v1.ConversationRef conversation = 4;
   // When the session started.
   google.protobuf.Timestamp started_at = 5;
   // When the session ended. Unset while it is active.
@@ -278,7 +278,7 @@ message UsageRow {
   uint64 fallback_requests = 5;
   // The summed token counts. The prompt cache hit rate is cache_read_tokens divided by all input
   // tokens (input, cache read, and cache write).
-  giles.types.v1.Usage usage = 6;
+  doozers.types.v1.Usage usage = 6;
 }
 
 message BackupRequest {
@@ -299,7 +299,7 @@ message ListToolsetsResponse {
 }
 
 // An MCP toolset (PLAN section 7.10): a remote server stored in the database, or a
-// [toolset.<name>] table of giles.toml.
+// [toolset.<name>] table of doozers.toml.
 message Toolset {
   // The name, as it was written. It is also the prefix of the toolset's tools.
   string name = 1;
@@ -307,11 +307,11 @@ message Toolset {
   ToolsetSource source = 2;
   // The spec as TOML text: the keys of a [toolset.<name>] table at the top level. The bearer token
   // is a reference ({ secret = "name" }), as it was written, never resolved.
-  // Unset for a giles.toml toolset, and for a stored one whose spec can't be read (failure says
+  // Unset for a doozers.toml toolset, and for a stored one whose spec can't be read (failure says
   // why).
   optional string spec_toml = 3;
   // When the stored toolset was last changed. Send it back as SetToolsetRequest.expected_updated_at
-  // to replace the spec only if nothing changed meanwhile. Unset for a giles.toml toolset.
+  // to replace the spec only if nothing changed meanwhile. Unset for a doozers.toml toolset.
   google.protobuf.Timestamp updated_at = 4;
   // Why a stored toolset isn't running (it failed validation at startup, or the change that
   // should have started it failed). Never contains a secret value. Unset otherwise.
@@ -324,8 +324,8 @@ enum ToolsetSource {
   // A remote server in the database, made in the web UI or with SetToolset. Can be changed,
   // renamed, and removed.
   TOOLSET_SOURCE_STORED = 1;
-  // A [toolset.<name>] table of giles.toml, which can only be changed there.
-  TOOLSET_SOURCE_GILES_TOML = 2;
+  // A [toolset.<name>] table of doozers.toml, which can only be changed there.
+  TOOLSET_SOURCE_DOOZERS_TOML = 2;
 }
 
 message GetToolsetRequest {
@@ -343,7 +343,7 @@ message SetToolsetRequest {
   string name = 1;
   // The spec as TOML text, with the keys of a remote server's [toolset.<name>] table at the top
   // level: url, auth, insecure, deadline, parallel, and skills. A stdio server (command) is refused:
-  // it is configured in giles.toml.
+  // it is configured in doozers.toml.
   string spec_toml = 2;
   // The updated_at of the toolset as the caller last read it. If set, the call is refused
   // (FAILED_PRECONDITION) when the toolset has changed since, and NOT_FOUND when there is no such

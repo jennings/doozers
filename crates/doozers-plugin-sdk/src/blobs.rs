@@ -708,7 +708,7 @@ mod tests {
         let mut writer = blobs.writer().await.unwrap();
         writer.write(b"partial").await.unwrap();
         drop(writer);
-        let tmp = data.path().join("giles-sdk/tmp");
+        let tmp = data.path().join("doozers-sdk/tmp");
         assert_eq!(std::fs::read_dir(tmp).unwrap().count(), 0);
     }
 }

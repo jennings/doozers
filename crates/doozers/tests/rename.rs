@@ -1,6 +1,6 @@
 //! End-to-end tests of `doozers channel rename`, `doozers provider rename`, and
-//! `doozers toolset rename` with Giles stopped, running the real binary on a temporary data root
-//! with a populated database. The toolset command with Giles running is tested with a real daemon
+//! `doozers toolset rename` with Doozers stopped, running the real binary on a temporary data root
+//! with a populated database. The toolset command with Doozers running is tested with a real daemon
 //! in `serve.rs`.
 
 use std::fs;
@@ -13,7 +13,7 @@ use doozers_core::paths::DataRoot;
 use doozers_store::{JournalMode, OpenOptions, SessionKey, SessionKind, Store, UsageRecord};
 use doozers_types::{AgentId, ConversationId, UserId};
 
-const GILES_TOML: &str = r#"# Giles
+const DOOZERS_TOML: &str = r#"# Doozers
 [owner]
 identities = ["irc:libera:account:me"]
 
@@ -37,16 +37,17 @@ const AGENT_TOML: &str = "models = [\"anthropic/claude\"]\n\
                           tools = [\"github__*\", \"notes__*\"]\n\
                           ask = [\"notes__delete\"]\n";
 
-/// A stored toolset: a remote server, with no table in `giles.toml`.
+/// A stored toolset: a remote server, with no table in `doozers.toml`.
 const NOTES_SPEC: &str = r#"{ "url": "https://notes.example.com/mcp" }"#;
 
 /// A data root with one agent, an IRC instance named `libera` with a session, a provider
-/// `anthropic` with a usage row, a `github` toolset in `giles.toml`, and a stored toolset `notes`.
+/// `anthropic` with a usage row, a `github` toolset in `doozers.toml`, and a stored toolset
+/// `notes`.
 async fn populated(dir: &Path) -> DataRoot {
     let root = DataRoot::new(dir, Path::new("/tmp")).unwrap();
     fs::create_dir_all(root.run_dir()).unwrap();
     fs::create_dir_all(root.data_dir()).unwrap();
-    fs::write(root.config_file(), GILES_TOML).unwrap();
+    fs::write(root.config_file(), DOOZERS_TOML).unwrap();
     let agent = dir.join("agents/jeeves");
     fs::create_dir_all(&agent).unwrap();
     fs::write(agent.join("agent.toml"), AGENT_TOML).unwrap();
@@ -97,14 +98,14 @@ async fn record_usage(store: &Store, provider: &str) {
         .unwrap();
 }
 
-fn giles(home: &Path, args: &[&str]) -> Output {
+fn doozers(home: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_doozers"))
         .args(args)
         .arg("--home")
         .arg(home)
-        .env_remove("GILES_HOME")
+        .env_remove("DOOZERS_HOME")
         .env_remove("RUST_LOG")
-        .env("GILES_LOG", "warn")
+        .env("DOOZERS_LOG", "warn")
         .output()
         .unwrap()
 }
@@ -126,7 +127,7 @@ async fn channel_rename_moves_the_data_and_prints_what_it_did() {
     let dir = tempfile::tempdir().unwrap();
     let root = populated(dir.path()).await;
 
-    let output = giles(dir.path(), &["channel", "rename", "libera", "libera-chat"]);
+    let output = doozers(dir.path(), &["channel", "rename", "libera", "libera-chat"]);
     assert!(output.status.success(), "{}", stderr(&output));
     let out = stdout(&output);
     assert!(
@@ -168,7 +169,7 @@ async fn provider_rename_moves_the_usage_and_rewrites_the_agents_models() {
     let dir = tempfile::tempdir().unwrap();
     let root = populated(dir.path()).await;
 
-    let output = giles(dir.path(), &["provider", "rename", "anthropic", "claude"]);
+    let output = doozers(dir.path(), &["provider", "rename", "anthropic", "claude"]);
     assert!(output.status.success(), "{}", stderr(&output));
     let out = stdout(&output);
     assert!(
@@ -185,7 +186,7 @@ async fn provider_rename_moves_the_usage_and_rewrites_the_agents_models() {
         "{out}"
     );
 
-    let config = read(&root, "giles.toml");
+    let config = read(&root, "doozers.toml");
     assert!(config.contains("[provider.claude]"), "{config}");
     assert!(!config.contains("[provider.anthropic]"), "{config}");
     assert!(
@@ -205,11 +206,11 @@ async fn provider_rename_moves_the_usage_and_rewrites_the_agents_models() {
 }
 
 #[tokio::test]
-async fn toolset_rename_with_giles_stopped_renames_a_table_of_giles_toml() {
+async fn toolset_rename_with_doozers_stopped_renames_a_table_of_doozers_toml() {
     let dir = tempfile::tempdir().unwrap();
     let root = populated(dir.path()).await;
 
-    let output = giles(dir.path(), &["toolset", "rename", "github", "gh"]);
+    let output = doozers(dir.path(), &["toolset", "rename", "github", "gh"]);
     assert!(output.status.success(), "{}", stderr(&output));
     let out = stdout(&output);
     assert!(
@@ -218,7 +219,7 @@ async fn toolset_rename_with_giles_stopped_renames_a_table_of_giles_toml() {
     );
     assert!(out.contains("[toolset.github] -> [toolset.gh]"), "{out}");
 
-    let config = read(&root, "giles.toml");
+    let config = read(&root, "doozers.toml");
     assert!(
         config.contains("# A local server.\n[toolset.gh]\ncommand = \"/bin/github\""),
         "{config}"
@@ -241,11 +242,11 @@ async fn toolset_rename_with_giles_stopped_renames_a_table_of_giles_toml() {
 }
 
 #[tokio::test]
-async fn toolset_rename_with_giles_stopped_renames_a_stored_toolset() {
+async fn toolset_rename_with_doozers_stopped_renames_a_stored_toolset() {
     let dir = tempfile::tempdir().unwrap();
     let root = populated(dir.path()).await;
 
-    let output = giles(dir.path(), &["toolset", "rename", "notes", "memos"]);
+    let output = doozers(dir.path(), &["toolset", "rename", "notes", "memos"]);
     assert!(output.status.success(), "{}", stderr(&output));
     let out = stdout(&output);
     assert!(
@@ -256,10 +257,10 @@ async fn toolset_rename_with_giles_stopped_renames_a_stored_toolset() {
         out.contains("database: the stored toolset \"notes\" is now \"memos\""),
         "{out}"
     );
-    assert!(!out.contains("giles.toml"), "{out}");
+    assert!(!out.contains("doozers.toml"), "{out}");
 
-    // giles.toml has no table for it, so it is left as it was.
-    assert_eq!(read(&root, "giles.toml"), GILES_TOML);
+    // doozers.toml has no table for it, so it is left as it was.
+    assert_eq!(read(&root, "doozers.toml"), DOOZERS_TOML);
     let agent = read(&root, "agents/jeeves/agent.toml");
     assert!(agent.contains("\"memos__*\""), "{agent}");
     assert!(agent.contains("ask = [\"memos__delete\"]"), "{agent}");
@@ -291,7 +292,7 @@ async fn a_rename_leaves_what_another_kind_keeps_under_the_same_name() {
     record_usage(&store, "libera").await;
     drop(store);
 
-    let output = giles(dir.path(), &["channel", "rename", "libera", "libera-chat"]);
+    let output = doozers(dir.path(), &["channel", "rename", "libera", "libera-chat"]);
     assert!(output.status.success(), "{}", stderr(&output));
 
     for kind in [Kind::Provider, Kind::Toolset] {
@@ -341,7 +342,7 @@ async fn rename_leaves_the_database_in_the_journal_mode_it_is_in() {
         };
         assert_eq!(recorded_journal_mode(&root), recorded);
 
-        let output = giles(dir.path(), &["channel", "rename", "libera", "libera-chat"]);
+        let output = doozers(dir.path(), &["channel", "rename", "libera", "libera-chat"]);
         assert!(output.status.success(), "{mode}: {}", stderr(&output));
         assert_eq!(recorded_journal_mode(&root), recorded, "{mode}");
         for suffix in ["-wal", "-journal"] {
@@ -390,7 +391,7 @@ async fn a_failed_rename_exits_nonzero_and_changes_nothing() {
             "invalid instance name",
         ),
     ] {
-        let output = giles(dir.path(), &args);
+        let output = doozers(dir.path(), &args);
         assert!(!output.status.success(), "{args:?}");
         assert!(stdout(&output).is_empty(), "{args:?}: {}", stdout(&output));
         assert!(
@@ -400,7 +401,7 @@ async fn a_failed_rename_exits_nonzero_and_changes_nothing() {
         );
     }
 
-    assert_eq!(read(&root, "giles.toml"), GILES_TOML);
+    assert_eq!(read(&root, "doozers.toml"), DOOZERS_TOML);
     assert_eq!(read(&root, "agents/jeeves/agent.toml"), AGENT_TOML);
     assert!(
         root.plugin_data_dir(Kind::Channel, "libera")
@@ -409,7 +410,7 @@ async fn a_failed_rename_exits_nonzero_and_changes_nothing() {
     );
 }
 
-/// The command says which kind to rename. A name that only another kind has, in `giles.toml` or
+/// The command says which kind to rename. A name that only another kind has, in `doozers.toml` or
 /// stored in the database, is no instance of that kind, so the command refuses and nothing changes.
 #[tokio::test]
 async fn a_name_only_another_kind_has_is_refused() {
@@ -423,11 +424,11 @@ async fn a_name_only_another_kind_has_is_refused() {
         ),
         (
             ["toolset", "rename", "libera", "other"],
-            "no toolset named \"libera\": giles.toml has no `[toolset.libera]` table",
+            "no toolset named \"libera\": doozers.toml has no `[toolset.libera]` table",
         ),
         (
             ["toolset", "rename", "libera", "other"],
-            "(giles.toml has `[channel.libera]`; use `doozers channel rename`)",
+            "(doozers.toml has `[channel.libera]`; use `doozers channel rename`)",
         ),
         (
             ["channel", "rename", "anthropic", "other"],
@@ -455,7 +456,7 @@ async fn a_name_only_another_kind_has_is_refused() {
             "no provider named \"notes\"",
         ),
     ] {
-        let output = giles(dir.path(), &args);
+        let output = doozers(dir.path(), &args);
         assert!(!output.status.success(), "{args:?}");
         assert!(
             stderr(&output).contains(reason),
@@ -464,13 +465,13 @@ async fn a_name_only_another_kind_has_is_refused() {
         );
     }
 
-    assert_eq!(read(&root, "giles.toml"), GILES_TOML);
+    assert_eq!(read(&root, "doozers.toml"), DOOZERS_TOML);
     assert_eq!(read(&root, "agents/jeeves/agent.toml"), AGENT_TOML);
     let store = Store::open(root.database_file()).await.unwrap();
     assert_eq!(store.toolsets().await.unwrap()[0].name, "notes");
 }
 
-const SHARED_GILES_TOML: &str = r#"[owner]
+const SHARED_DOOZERS_TOML: &str = r#"[owner]
 identities = ["irc:libera:account:me"]
 
 [provider.aperture]
@@ -498,7 +499,7 @@ async fn shared(dir: &Path) -> DataRoot {
     let root = DataRoot::new(dir, Path::new("/tmp")).unwrap();
     fs::create_dir_all(root.run_dir()).unwrap();
     fs::create_dir_all(root.data_dir()).unwrap();
-    fs::write(root.config_file(), SHARED_GILES_TOML).unwrap();
+    fs::write(root.config_file(), SHARED_DOOZERS_TOML).unwrap();
     let agent = dir.join("agents/jeeves");
     fs::create_dir_all(&agent).unwrap();
     fs::write(agent.join("agent.toml"), SHARED_AGENT_TOML).unwrap();
@@ -544,7 +545,7 @@ async fn each_command_renames_only_its_own_kinds_instance_of_a_shared_name() {
         rows.get(name).map(|rows| rows.usage)
     };
     let rename = |kind: &str, new: &str| {
-        let output = giles(dir.path(), &[kind, "rename", "aperture", new]);
+        let output = doozers(dir.path(), &[kind, "rename", "aperture", new]);
         assert!(output.status.success(), "{kind}: {}", stderr(&output));
         stdout(&output)
     };
@@ -554,7 +555,7 @@ async fn each_command_renames_only_its_own_kinds_instance_of_a_shared_name() {
         out.contains("[provider.aperture] -> [provider.gateway]"),
         "{out}"
     );
-    let toml = read(&root, "giles.toml");
+    let toml = read(&root, "doozers.toml");
     for table in [
         "[provider.gateway]",
         "[channel.aperture]",
@@ -581,7 +582,7 @@ async fn each_command_renames_only_its_own_kinds_instance_of_a_shared_name() {
         out.contains("[channel.aperture] -> [channel.chat]"),
         "{out}"
     );
-    let toml = read(&root, "giles.toml");
+    let toml = read(&root, "doozers.toml");
     for table in ["[provider.gateway]", "[channel.chat]", "[toolset.aperture]"] {
         assert!(toml.contains(table), "{table}\n{toml}");
     }
@@ -604,7 +605,7 @@ async fn each_command_renames_only_its_own_kinds_instance_of_a_shared_name() {
         out.contains("[toolset.aperture] -> [toolset.tools]"),
         "{out}"
     );
-    let toml = read(&root, "giles.toml");
+    let toml = read(&root, "doozers.toml");
     for table in ["[provider.gateway]", "[channel.chat]", "[toolset.tools]"] {
         assert!(toml.contains(table), "{table}\n{toml}");
     }
@@ -631,7 +632,7 @@ async fn a_running_core_blocks_the_channel_and_provider_renames() {
         ["channel", "rename", "libera", "libera-chat"],
         ["provider", "rename", "anthropic", "claude"],
     ] {
-        let output = giles(dir.path(), &args);
+        let output = doozers(dir.path(), &args);
         assert!(!output.status.success(), "{args:?}");
         assert!(
             stderr(&output).contains("already running"),
@@ -639,7 +640,7 @@ async fn a_running_core_blocks_the_channel_and_provider_renames() {
             stderr(&output)
         );
     }
-    let config = read(&root, "giles.toml");
+    let config = read(&root, "doozers.toml");
     assert!(config.contains("[channel.libera]"), "{config}");
     assert!(config.contains("[provider.anthropic]"), "{config}");
 }
@@ -647,7 +648,7 @@ async fn a_running_core_blocks_the_channel_and_provider_renames() {
 #[test]
 fn the_instance_command_is_gone() {
     let dir = tempfile::tempdir().unwrap();
-    let output = giles(dir.path(), &["instance", "rename", "libera", "libera-chat"]);
+    let output = doozers(dir.path(), &["instance", "rename", "libera", "libera-chat"]);
     assert!(!output.status.success());
     assert!(
         stderr(&output).contains("unrecognized subcommand 'instance'"),

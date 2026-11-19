@@ -159,7 +159,7 @@ fn vendored_files_match_the_recorded_releases() {
 fn stylesheet_path_is_its_content_hash() {
     let stylesheet = assets::stylesheet();
     let hash = &sha256_hex(stylesheet.body)[..16];
-    assert_eq!(stylesheet.path, format!("/static/giles-{hash}.css"));
+    assert_eq!(stylesheet.path, format!("/static/doozers-{hash}.css"));
 }
 
 #[test]
@@ -188,8 +188,11 @@ async fn home_page_renders_in_the_layout() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
     assert!(html.starts_with("<!DOCTYPE html>"), "{html}");
-    assert!(html.contains("<title>Giles</title>"), "{html}");
-    assert!(html.contains(&format!("Giles {} is running.", env!("CARGO_PKG_VERSION"))));
+    assert!(html.contains("<title>Doozers</title>"), "{html}");
+    assert!(html.contains(&format!(
+        "Doozers {} is running.",
+        env!("CARGO_PKG_VERSION")
+    )));
     assert!(html.contains(&format!(
         r#"<link rel="stylesheet" href="{}">"#,
         assets::stylesheet_path()
@@ -222,7 +225,10 @@ async fn unknown_paths_get_the_not_found_page() {
     let (response, html) = get_page("/no/such/page").await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
-    assert!(html.contains("<title>Not found - Giles</title>"), "{html}");
+    assert!(
+        html.contains("<title>Not found - Doozers</title>"),
+        "{html}"
+    );
     assert!(html.contains(HTMX.path), "not in the layout: {html}");
 }
 

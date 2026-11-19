@@ -61,10 +61,10 @@ impl Env {
             .arg(spec_file)
             .arg("--")
             .args(command)
-            .env("GILES_HOME", self.dir.path())
+            .env("DOOZERS_HOME", self.dir.path())
             .env("SECRET_TOKEN", "leaked")
             .env("LANG", "C")
-            .env_remove("GILES_LOG")
+            .env_remove("DOOZERS_LOG")
             .env_remove("RUST_LOG")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -129,7 +129,7 @@ fn data_dir_and_its_tmp_are_writable() {
     let env = Env::new();
     let script = r#"
         set -e
-        echo data > "$HOME/f" && cat "$GILES_PLUGIN_DATA/f"
+        echo data > "$HOME/f" && cat "$DOOZERS_PLUGIN_DATA/f"
         echo tmp > "$TMPDIR/t" && cat "$TMPDIR/t"
         mkdir sub && echo nested > sub/x && cat sub/x && rm -r sub
         pwd -P
@@ -356,7 +356,7 @@ fn environment_is_scrubbed_under_the_sandbox() {
     let env = Env::new();
     let mut spec = env.spec();
     spec.env
-        .insert("GILES_PLUGIN_MAGIC".into(), "cookie".into());
+        .insert("DOOZERS_PLUGIN_MAGIC".into(), "cookie".into());
     let probe = Probe::run(env.command(&spec, &["/usr/bin/env"]));
     let vars: BTreeMap<&str, &str> = probe
         .ok()
@@ -366,8 +366,8 @@ fn environment_is_scrubbed_under_the_sandbox() {
     let data = env.data_dir.to_str().unwrap();
     let tmp = env.data_dir.join("tmp");
     let expected = BTreeMap::from([
-        ("GILES_PLUGIN_DATA", data),
-        ("GILES_PLUGIN_MAGIC", "cookie"),
+        ("DOOZERS_PLUGIN_DATA", data),
+        ("DOOZERS_PLUGIN_MAGIC", "cookie"),
         ("HOME", data),
         ("LANG", "C"),
         ("PATH", "/usr/bin:/bin"),
@@ -586,7 +586,7 @@ fn hostile_data_dir_names_are_escaped() {
 }
 
 /// The variable that turns [`rust_runtime_probe`] into the probe.
-const PROBE_PORT: &str = "GILES_SANDBOX_PROBE_PORT";
+const PROBE_PORT: &str = "DOOZERS_SANDBOX_PROBE_PORT";
 
 /// A Rust program (this test binary) under a channel-like spec: threads, the clock, files in
 /// `TMPDIR`, a socket pair, name resolution, and an outbound TCP connection work; an ungranted
@@ -604,7 +604,7 @@ fn rust_runtime_runs_under_the_sandbox() {
     };
     spec.env.insert(PROBE_PORT.into(), port.to_string());
     spec.env.insert(
-        "GILES_SANDBOX_PROBE_SOCKET".into(),
+        "DOOZERS_SANDBOX_PROBE_SOCKET".into(),
         socket.display().to_string(),
     );
     let exe = std::env::current_exe().unwrap();
@@ -658,7 +658,7 @@ fn rust_runtime_probe() {
     BufReader::new(stream).read_line(&mut line).unwrap();
     assert_eq!(line, "hello\n");
 
-    let socket = std::env::var("GILES_SANDBOX_PROBE_SOCKET").unwrap();
+    let socket = std::env::var("DOOZERS_SANDBOX_PROBE_SOCKET").unwrap();
     let err = UnixStream::connect(socket).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::PermissionDenied, "{err}");
     println!("probe: ok");

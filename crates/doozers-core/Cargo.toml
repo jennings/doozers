@@ -1,6 +1,6 @@
 [package]
 name = "doozers-core"
-description = "Giles orchestration: agent loop, routing, sessions, scheduling, and plugin supervision."
+description = "Doozers orchestration: agent loop, routing, sessions, scheduling, and plugin supervision."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -61,7 +61,8 @@ tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "
 tokio-rustls.workspace = true
 tokio-util = { workspace = true, features = ["io", "rt"] }
 toml.workspace = true
-# Edits `giles.toml` and `agent.toml` for `giles <kind> rename`, keeping comments and formatting.
+# Edits `doozers.toml` and `agent.toml` for `doozers <kind> rename`, keeping comments and
+# formatting.
 toml_edit = { version = "0.25.15", default-features = false, features = ["parse", "display"] }
 tonic.workspace = true
 tonic-health.workspace = true

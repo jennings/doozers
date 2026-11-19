@@ -23,7 +23,7 @@ const PLUGIN_FD: RawFd = 3;
 // SAFETY: `F_GETFD` only reads the descriptor flags; it fails with `EBADF` if fd 3 isn't open.
 let flags = unsafe { libc::fcntl(PLUGIN_FD, libc::F_GETFD) };
 if flags == -1 {
-    return Err(io::Error::last_os_error()); // not launched by Giles: fd 3 isn't open
+    return Err(io::Error::last_os_error()); // not launched by Doozers: fd 3 isn't open
 }
 // SAFETY: fd 3 is open (checked above) and is the socket the core passed us; nothing else in the
 // process uses or closes it, so the `OwnedFd` becomes its only owner.

@@ -4,24 +4,24 @@ The core runs one HTTP server (PLAN section 9) for web chat, the admin pages, an
 lives in `doozers_core::http`, is built on `axum`, renders pages with `askama` templates compiled
 into the binary, and ships its JavaScript (`htmx`, its SSE extension, and one small script of our
 own for the new-agent form) inside the binary too. There is no build step. TLS is terminated by a
-reverse proxy, never by Giles.
+reverse proxy, never by Doozers.
 
 ## Lifecycle
 
-`doozers serve` (see [The `giles` Binary](daemon.md#doozers-serve-lifecycle)):
+`doozers serve` (see [The `doozers` Binary](daemon.md#doozers-serve-lifecycle)):
 
-1. `http::bind(config.core.http_listen)` opens the listener before `giles started` is logged, so a
+1. `http::bind(config.core.http_listen)` opens the listener before `doozers started` is logged, so a
    busy or forbidden address is a startup error: `cannot listen for HTTP on <addr>` with the OS
    error as the cause (`http::BindError { addr, source }`).
 2. `http::RouterBuilder::new().build()` assembles the application, and
    `http::serve(listener, app, shutdown)` runs on its own task. `serve` takes any
    `axum::serve::Listener`: the TCP listener here, or a `tokio::net::UnixListener` (the web
-   channel's trusted-proxy socket). The `giles started` line carries `http=http://<addr>/` (the
+   channel's trusted-proxy socket). The `doozers started` line carries `http=http://<addr>/` (the
    bound address, so port `0` shows the port the OS picked).
 3. When the shutdown token is cancelled, the server stops accepting connections, closes idle
    keep-alive connections, and waits for in-flight requests, for at most `http::DRAIN_TIMEOUT` (5
    s). Requests still open then are dropped with a warning, and `serve` returns; the runtime
-   shutting down cancels their tasks. `serve` awaits the server before logging `giles stopped`.
+   shutting down cancels their tasks. `serve` awaits the server before logging `doozers stopped`.
 4. If the server task ends before shutdown (it shouldn't: accept errors are retried), `serve`
    cancels the token and exits with an error instead of running on without its web interface.
 
@@ -62,7 +62,7 @@ into the binary by `#[derive(askama::Template)]`; a template error is a compile 
 
 `layout.html` is the base every page extends. It has four blocks:
 
-- `title` (default `Giles`).
+- `title` (default `Doozers`).
 - `head` (default empty), for a page's own `<script src>` or `<link>`; the new-agent form loads its
   script here.
 - `body`: everything in `<body>`. By default it's a standalone page, one card centered on the page
@@ -88,7 +88,7 @@ The layout also sets `htmx`'s configuration through a `<meta name="htmx-config">
   anyway; with this `htmx` refuses them up front (an `htmx:evalDisallowedError` event) instead of
   tripping a CSP violation.
 - `allowScriptTags: false`: `htmx` doesn't execute `<script>` tags found in swapped-in content.
-  Giles never sends any, so this only matters if something slips through the renderer.
+  Doozers never sends any, so this only matters if something slips through the renderer.
 
 The home page (`index.html`) shows the version; it's `/` only when no web channel is configured
 (with one, `/` is the chat list: [Web channel](web-channel.md)). `not_found.html` is the 404 page.
@@ -101,7 +101,7 @@ The home page (`index.html`) shows the version; it's `/` only when no web channe
 | ------------------------------------ | --------------------------------------------- | -------------------------------- |
 | `/static/htmx-2.0.11.min.js`         | `assets/vendor/htmx-2.0.11/htmx.min.js`       | `text/javascript; charset=utf-8` |
 | `/static/htmx-ext-sse-2.2.4.min.js`  | `assets/vendor/htmx-ext-sse-2.2.4/sse.min.js` | `text/javascript; charset=utf-8` |
-| `/static/giles-<hash>.css`           | `assets/giles.css`                            | `text/css; charset=utf-8`        |
+| `/static/doozers-<hash>.css`         | `assets/doozers.css`                          | `text/css; charset=utf-8`        |
 | `/static/agent-form-<hash>.js`       | `assets/agent-form.js`                        | `text/javascript; charset=utf-8` |
 | `/static/mcp-server-form-<hash>.js`  | `assets/mcp-server-form.js`                   | `text/javascript; charset=utf-8` |
 
@@ -169,11 +169,11 @@ Why each part:
 - `script-src 'self'` and `style-src 'self'`, no `'unsafe-inline'` or `'unsafe-eval'`: the only
   scripts are the two vendored files, `agent-form.js` (only the new-agent form loads it), and
   `mcp-server-form.js` (only the MCP server form loads it), each through the layout's `head` block,
-  and the only stylesheet is `giles.css`. Any injected `<script>`, `on*=` handler, or `javascript:`
-  URL is inert even if it got past the renderer. This also blocks inline `style="..."` attributes,
-  so pages style with classes. Note for 2.22: `pulldown-cmark` writes table column alignment as
-  `style="text-align: ..."`, which browsers drop (and log as a violation) under this policy; tables
-  still render, unaligned.
+  and the only stylesheet is `doozers.css`. Any injected `<script>`, `on*=` handler, or
+  `javascript:` URL is inert even if it got past the renderer. This also blocks inline `style="..."`
+  attributes, so pages style with classes. Note for 2.22: `pulldown-cmark` writes table column
+  alignment as `style="text-align: ..."`, which browsers drop (and log as a violation) under this
+  policy; tables still render, unaligned.
 - `connect-src 'self'`: `htmx` requests and the SSE `EventSource` go to this origin only. Already
   implied by `default-src`, but stated because the SSE extension depends on it.
 - `default-src 'self'`: everything not named (fonts, media for audio attachments, manifests,
@@ -188,12 +188,12 @@ Why each part:
 - `Referrer-Policy: no-referrer`: links in agent output are clicked from conversation URLs, and the
   conversation id shouldn't leak to whatever site the link points to.
 - `Cross-Origin-Opener-Policy: same-origin`: a page opened from a link in a reply gets no
-  `window.opener` handle back to Giles.
-- `Cross-Origin-Resource-Policy: same-origin`: other sites can't embed Giles responses (blobs,
+  `window.opener` handle back to Doozers.
+- `Cross-Origin-Resource-Policy: same-origin`: other sites can't embed Doozers responses (blobs,
   scripts) as subresources, which closes cross-origin leaks via timing or size of a logged-in user's
   blobs.
 
-Not set, on purpose: `Strict-Transport-Security` (Giles speaks plain HTTP behind the TLS proxy,
+Not set, on purpose: `Strict-Transport-Security` (Doozers speaks plain HTTP behind the TLS proxy,
 which sets it), `upgrade-insecure-requests` (it would break the plain-HTTP localhost case), and
 `require-trusted-types-for` (`htmx` parses HTML with `DOMParser` and assigns `innerHTML`, which
 Trusted Types would block).
@@ -203,7 +203,7 @@ How handlers interact with the layer:
 - `Content-Security-Policy` is appended: a handler may set its own, and browsers enforce every
   policy on a response, so the result is at least as strict as the base. The web channel's blob
   route adds `Content-Security-Policy: sandbox` this way, so a stored HTML blob can't run script in
-  Giles's origin.
+  Doozers' origin.
 - The other five are overwritten, so no handler can weaken them by accident.
 
 ## Tests

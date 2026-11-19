@@ -263,7 +263,7 @@ async fn openrouter_reasoning_headers_and_caching() {
         json!({
             "api_key": "sk-or-test",
             "dialect": "openrouter",
-            "headers": {"HTTP-Referer": "https://giles.example", "X-Title": "Giles"},
+            "headers": {"HTTP-Referer": "https://doozers.example", "X-Title": "Doozers"},
         }),
     );
     let mut req = request("anthropic/claude-sonnet-4.5", hello());
@@ -311,9 +311,9 @@ async fn openrouter_reasoning_headers_and_caching() {
     assert_eq!(recorded.header("authorization"), Some("Bearer sk-or-test"));
     assert_eq!(
         recorded.header("http-referer"),
-        Some("https://giles.example")
+        Some("https://doozers.example")
     );
-    assert_eq!(recorded.header("x-title"), Some("Giles"));
+    assert_eq!(recorded.header("x-title"), Some("Doozers"));
     assert_eq!(
         recorded.json(),
         json!({

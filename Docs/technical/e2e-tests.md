@@ -23,7 +23,7 @@ daemon, data root, and provider.
 
 Provider plugins aren't supported yet, and there is no way to put a different `Provider` into
 `doozers serve`, so the fake is a server instead of a component: `FakeProvider` is a loopback HTTP
-server speaking the OpenAI Chat Completions streaming protocol, and the data root's `giles.toml`
+server speaking the OpenAI Chat Completions streaming protocol, and the data root's `doozers.toml`
 configures the built-in `openai` provider with `base_url` pointing at it
 ([Providers](providers.md)). The daemon's real provider code, SSE parsing, and tool call handling
 run; only the model is scripted.
@@ -47,12 +47,12 @@ by accident through a turn it didn't plan, and scripts say exactly what the mode
 ## The harness
 
 - **Data root.** `Home::new(provider, agent_extra)` creates a temporary root (mode 0700, resolved
-  through symbolic links, since the macOS sandbox compares real paths) with `giles.toml` (an owner
+  through symbolic links, since the macOS sandbox compares real paths) with `doozers.toml` (an owner
   `echo:owner`, the fake provider, the echo channel, one catch-all route to `jeeves`),
   `agents/jeeves/agent.toml` (`agent_extra` is appended: `tools`, `ask`, `[[jobs]]`), and the echo
   plugin symlinked into `plugins/`. `HOME` and `TMPDIR` point into the temporary directory, the HTTP
   server listens on `127.0.0.1:0`, and the daemon's sockets are under the root (or `TMPDIR` when the
-  path is long, as in production). Nothing touches the real `~/.giles`.
+  path is long, as in production). Nothing touches the real `~/.doozers`.
 - **The environment plugin** is opt-in: `Home::with_environment` also symlinks
   `doozers-environment-echo` (built the same way, on first use) and configures it as
   `[environment.box]`. The agent still lists it in `environments`. The plugin keeps workspaces and
@@ -74,10 +74,10 @@ by accident through a turn it didn't plan, and scripts say exactly what the mode
   database (read-only use; the daemon owns it) for facts the channel can't show, such as an inbox
   row being `started` or `unknown`.
 - **The daemon.** `Daemon::start(&home)` spawns `doozers serve --home <root>` and waits for
-  `giles started`; its stderr is collected for `wait_for_log`. `stop()` sends SIGTERM and checks for
-  a clean exit, `kill()` is a SIGKILL crash, and dropping a daemon kills it and, when the test is
-  failing, prints its log. A killed daemon's plugin sees stdin close and exits; the next start reaps
-  one that doesn't ([Plugin Host](plugin-host.md#pid-files-and-orphans)).
+  `doozers started`; its stderr is collected for `wait_for_log`. `stop()` sends SIGTERM and checks
+  for a clean exit, `kill()` is a SIGKILL crash, and dropping a daemon kills it and, when the test
+  is failing, prints its log. A killed daemon's plugin sees stdin close and exits; the next start
+  reaps one that doesn't ([Plugin Host](plugin-host.md#pid-files-and-orphans)).
 - **Waiting.** `wait_until` polls every 20 ms up to 30 s; the fake provider and the log use
   condition variables. Waiting for something the outbox delivers allows 90 s (`OUTBOX_WAIT`): its
   retry delay grows to a minute. A log wait fails at once if the daemon's output has ended, and the

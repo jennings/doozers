@@ -34,7 +34,7 @@ fn help_goes_to_stdout_and_succeeds() {
             stdout.starts_with("Usage: doozers-channel-echo <command>"),
             "{stdout}"
         );
-        assert!(stdout.contains("GILES_CHANNEL_ECHO_TOKEN"), "{stdout}");
+        assert!(stdout.contains("DOOZERS_CHANNEL_ECHO_TOKEN"), "{stdout}");
         assert_eq!(text(&output.stderr), "");
     }
 }
@@ -53,7 +53,7 @@ fn a_core_that_launches_it_without_socket_gets_a_clear_error() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = text(&output.stderr);
     assert!(
-        stderr.contains("without the `socket` argument") && stderr.contains("upgrade Giles"),
+        stderr.contains("without the `socket` argument") && stderr.contains("upgrade Doozers"),
         "{stderr}"
     );
 }
@@ -84,7 +84,7 @@ fn mistakes_name_themselves_and_exit_2() {
         ),
         (
             &["serve", "--listen=127.0.0.1:0", "--data=d"],
-            "no bearer token: set GILES_CHANNEL_ECHO_TOKEN",
+            "no bearer token: set DOOZERS_CHANNEL_ECHO_TOKEN",
         ),
     ];
     for (args, message) in cases {

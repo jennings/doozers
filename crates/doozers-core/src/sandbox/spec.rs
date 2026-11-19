@@ -1,10 +1,10 @@
 //! The trampoline's input: a JSON sandbox spec.
 //!
-//! The core builds a [`Spec`] for each launch from the instance's `sandbox` grants in `giles.toml`
-//! and the per-kind defaults (PLAN section 12.4), writes it with [`Spec::to_json`] to a file, and
-//! passes that file's path to `doozers sandbox-exec`. The trampoline reads it back with
-//! [`Spec::load`], which rejects unknown fields and anything [`Spec::validate`] rejects, so a spec
-//! the trampoline doesn't fully understand never runs a command.
+//! The core builds a [`Spec`] for each launch from the instance's `sandbox` grants in
+//! `doozers.toml` and the per-kind defaults (PLAN section 12.4), writes it with [`Spec::to_json`]
+//! to a file, and passes that file's path to `doozers sandbox-exec`. The trampoline reads it back
+//! with [`Spec::load`], which rejects unknown fields and anything [`Spec::validate`] rejects, so a
+//! spec the trampoline doesn't fully understand never runs a command.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -25,10 +25,10 @@ pub const TMP_DIR_NAME: &str = "tmp";
 
 /// The variable the trampoline sets to the data directory. Derived from [`Spec::data_dir`], so a
 /// spec can't set it in [`Spec::env`].
-pub const PLUGIN_DATA_ENV: &str = "GILES_PLUGIN_DATA";
+pub const PLUGIN_DATA_ENV: &str = "DOOZERS_PLUGIN_DATA";
 
 /// Prefix of the variables a spec may pass in [`Spec::env`] (besides `LANG`).
-const GILES_ENV_PREFIX: &str = "GILES_";
+const DOOZERS_ENV_PREFIX: &str = "DOOZERS_";
 
 /// What one sandboxed launch may do, and the environment it gets.
 ///
@@ -39,8 +39,8 @@ const GILES_ENV_PREFIX: &str = "GILES_";
 #[serde(deny_unknown_fields)]
 pub struct Spec {
     /// The instance's data directory (`data/<kind>/<instance>/`, PLAN section 11.6). Absolute,
-    /// and it must exist. Always writable; it becomes `HOME`, `GILES_PLUGIN_DATA`, and the working
-    /// directory, and `TMPDIR` is [`TMP_DIR_NAME`] inside it.
+    /// and it must exist. Always writable; it becomes `HOME`, `DOOZERS_PLUGIN_DATA`, and the
+    /// working directory, and `TMPDIR` is [`TMP_DIR_NAME`] inside it.
     pub data_dir: PathBuf,
     /// Extra read grants: absolute paths the command may read, recursively. The backend adds the
     /// platform defaults (the command, system libraries, TLS certificates, DNS config).
@@ -70,7 +70,7 @@ pub struct Spec {
     /// of PLAN section 12). The environment is still scrubbed.
     #[serde(default)]
     pub unsandboxed: bool,
-    /// Variables passed to the command: `GILES_*` names (except the derived
+    /// Variables passed to the command: `DOOZERS_*` names (except the derived
     /// [`PLUGIN_DATA_ENV`]) and `LANG`. Nothing else from the trampoline's environment reaches
     /// the command, except `LANG` when this map doesn't set it, and [`Spec::inherit_env`].
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -134,7 +134,7 @@ pub enum SpecError {
     },
     /// A variable in `env` is not one a spec may pass.
     #[error(
-        "invalid sandbox spec: `env` may only set GILES_* variables (other than \
+        "invalid sandbox spec: `env` may only set DOOZERS_* variables (other than \
          {PLUGIN_DATA_ENV}) and LANG, not {0:?}"
     )]
     EnvName(String),
@@ -284,13 +284,13 @@ fn check_path(field: &'static str, path: &Path) -> Result<(), SpecError> {
     Ok(())
 }
 
-/// `LANG`, or `GILES_` followed by at least one of `A-Z`, `0-9`, `_`, except
+/// `LANG`, or `DOOZERS_` followed by at least one of `A-Z`, `0-9`, `_`, except
 /// [`PLUGIN_DATA_ENV`].
 fn is_passable_env_name(name: &str) -> bool {
     if name == "LANG" {
         return true;
     }
-    match name.strip_prefix(GILES_ENV_PREFIX) {
+    match name.strip_prefix(DOOZERS_ENV_PREFIX) {
         Some(rest) => {
             !rest.is_empty()
                 && rest
@@ -402,7 +402,7 @@ mod tests {
                 "unix": ["/run/user/1000/bus"],
                 "min_abi": 4,
                 "unsandboxed": false,
-                "env": {"GILES_PLUGIN_MAGIC": "cookie", "LANG": "C.UTF-8"},
+                "env": {"DOOZERS_PLUGIN_MAGIC": "cookie", "LANG": "C.UTF-8"},
                 "path": "/opt/homebrew/bin:/usr/bin"
             }"#,
         )
@@ -413,7 +413,7 @@ mod tests {
         assert_eq!(spec.network, Network::Tcp(BTreeSet::from([443, 6697])));
         assert_eq!(spec.unix, [Path::new("/run/user/1000/bus")]);
         assert_eq!(spec.min_abi, Some(4));
-        assert_eq!(spec.env["GILES_PLUGIN_MAGIC"], "cookie");
+        assert_eq!(spec.env["DOOZERS_PLUGIN_MAGIC"], "cookie");
         assert_eq!(spec.search_path(), "/opt/homebrew/bin:/usr/bin");
     }
 
@@ -424,7 +424,8 @@ mod tests {
         spec.unix.push("/s.sock".into());
         spec.network = Network::Tcp(BTreeSet::from([443]));
         spec.min_abi = Some(6);
-        spec.env.insert("GILES_PLUGIN_PROTOCOLS".into(), "1".into());
+        spec.env
+            .insert("DOOZERS_PLUGIN_PROTOCOLS".into(), "1".into());
         for spec in [spec, Spec::new("/d")] {
             assert_eq!(Spec::parse(&spec.to_json().unwrap()).unwrap(), spec);
         }
@@ -483,8 +484,8 @@ mod tests {
     }
 
     #[test]
-    fn only_giles_and_lang_variables_may_be_passed() {
-        for name in ["GILES_PLUGIN_MAGIC", "GILES_X_1", "LANG"] {
+    fn only_doozers_and_lang_variables_may_be_passed() {
+        for name in ["DOOZERS_PLUGIN_MAGIC", "DOOZERS_X_1", "LANG"] {
             let json = format!(r#"{{"data_dir": "/d", "env": {{"{name}": "v"}}}}"#);
             Spec::parse(&json).unwrap();
         }
@@ -493,18 +494,18 @@ mod tests {
             "TMPDIR",
             "PATH",
             "LC_ALL",
-            "GILES_",
-            "GILES_lower",
-            "GILES_A=B",
-            "giles_x",
+            "DOOZERS_",
+            "DOOZERS_lower",
+            "DOOZERS_A=B",
+            "doozers_x",
             PLUGIN_DATA_ENV,
         ] {
             let json = format!(r#"{{"data_dir": "/d", "env": {{"{name}": "v"}}}}"#);
             let err = parse_err(&json);
             assert!(err.contains("`env` may only set"), "{name}: {err}");
         }
-        let err = parse_err(r#"{"data_dir": "/d", "env": {"GILES_X": "a\u0000b"}}"#);
-        assert!(err.contains("`env.GILES_X` contains a NUL byte"), "{err}");
+        let err = parse_err(r#"{"data_dir": "/d", "env": {"DOOZERS_X": "a\u0000b"}}"#);
+        assert!(err.contains("`env.DOOZERS_X` contains a NUL byte"), "{err}");
     }
 
     #[test]

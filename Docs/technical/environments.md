@@ -118,8 +118,8 @@ environment instance it:
 
 While an instance's plugin is away, the sweep only prunes its rows: nothing is stopped or deleted
 (the plugin couldn't be told), and the delete of a `deleting` row waits for the connection. An
-instance that is no longer in `giles.toml` isn't visited at all, so its workspaces stay as they are
-until it is configured again.
+instance that is no longer in `doozers.toml` isn't visited at all, so its workspaces stay as they
+are until it is configured again.
 
 A workspace is therefore stopped or deleted at most one interval after its threshold. A job's
 workspace has only its own use to go by, which matters only for one that outlived its run. A step

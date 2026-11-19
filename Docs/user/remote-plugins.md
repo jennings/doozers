@@ -1,28 +1,28 @@
 # Running a plugin on another machine
 
-This page shows how to run a channel plugin that ships with Giles (`doozers-channel-discord`,
+This page shows how to run a channel plugin that ships with Doozers (`doozers-channel-discord`,
 `doozers-channel-email`, `doozers-channel-irc`, or `doozers-channel-whatsapp`) on a different
-machine from Giles, and how to point Giles at it. By default Giles launches its plugins itself and
-doesn't need any of this.
+machine from Doozers, and how to point Doozers at it. By default Doozers launches its plugins itself
+and doesn't need any of this.
 
 The steps are the same for the [Docker environment plugin](docker-environment.md), except that its
-settings go in the `[config]` table of the transport file instead of in `giles.toml`.
+settings go in the `[config]` table of the transport file instead of in `doozers.toml`.
 
-A plugin you run yourself is a [remote plugin](configuration.md#remote-plugins). Giles neither
+A plugin you run yourself is a [remote plugin](configuration.md#remote-plugins). Doozers neither
 starts nor sandboxes it, so it runs with your own privileges.
 
 ## Install the plugin
 
-Install the plugin's binary on the machine where it will run. It doesn't need Giles.
+Install the plugin's binary on the machine where it will run. It doesn't need Doozers.
 
 ## Create a token
 
-Giles proves who it is to the plugin with a bearer token. Make one and keep it in a file only you
+Doozers proves who it is to the plugin with a bearer token. Make one and keep it in a file only you
 can read:
 
 ```sh
-openssl rand -hex 32 > /etc/giles/discord.token
-chmod 600 /etc/giles/discord.token
+openssl rand -hex 32 > /etc/doozers/discord.token
+chmod 600 /etc/doozers/discord.token
 ```
 
 The plugin refuses a token file that group or others can read.
@@ -35,29 +35,29 @@ for every plugin:
 ```toml
 listen = "0.0.0.0:7443"
 data = "/var/lib/doozers-channel-discord"
-tls_cert = "/etc/giles/fullchain.pem"
-tls_key = "/etc/giles/key.pem"
-token_file = "/etc/giles/discord.token"
+tls_cert = "/etc/doozers/fullchain.pem"
+tls_key = "/etc/doozers/key.pem"
+token_file = "/etc/doozers/discord.token"
 ```
 
 - `listen`: the address to listen on. Required.
-- `data`: the plugin's data directory. Required. Giles creates it if it's missing.
+- `data`: the plugin's data directory. Required. Doozers creates it if it's missing.
 - `tls_cert` and `tls_key`: a PEM certificate chain and its private key. Set both or neither.
 - `token_file`: the file with the token.
 
-**Use TLS for any plugin that Giles reaches over a network.** The plugin's own settings, including
-secrets such as a Discord bot token, stay in `giles.toml` and travel from Giles to the plugin on
-every connection. Giles only connects without TLS to an address on its own machine.
+**Use TLS for any plugin that Doozers reaches over a network.** The plugin's own settings, including
+secrets such as a Discord bot token, stay in `doozers.toml` and travel from Doozers to the plugin on
+every connection. Doozers only connects without TLS to an address on its own machine.
 
 Every key is also a flag: `--listen`, `--data`, `--tls-cert`, `--tls-key`, and `--token-file`. A
 flag wins over the file. To pass the token in the environment instead of a file, set
-`GILES_CHANNEL_<NAME>_TOKEN`, such as `GILES_CHANNEL_DISCORD_TOKEN`. The plugin has no flag for the
-token, because a flag shows in the process list.
+`DOOZERS_CHANNEL_<NAME>_TOKEN`, such as `DOOZERS_CHANNEL_DISCORD_TOKEN`. The plugin has no flag for
+the token, because a flag shows in the process list.
 
 ## Start the plugin
 
 ```sh
-doozers-channel-discord serve --config /etc/giles/discord-serve.toml
+doozers-channel-discord serve --config /etc/doozers/discord-serve.toml
 ```
 
 The plugin prints `listening on <address>` and runs until you stop it with `SIGINT` or `SIGTERM`. It
@@ -67,10 +67,10 @@ something else protects, pass `--no-auth`.
 
 Run `doozers-channel-discord --help` for the full list of options.
 
-## Point Giles at it
+## Point Doozers at it
 
-Add `address` and `auth` to the instance in `giles.toml`. The plugin's settings stay in `config`,
-the same as for a plugin Giles launches:
+Add `address` and `auth` to the instance in `doozers.toml`. The plugin's settings stay in `config`,
+the same as for a plugin Doozers launches:
 
 ```toml
 [channel.discord]
@@ -105,15 +105,15 @@ certificate.
 
 ## Change the plugin's settings
 
-The plugin builds its channel from the `config` Giles sends on its first connection, and refuses a
-different one until it restarts. After you change the instance's `config` in `giles.toml`, restart
-the plugin. Giles then reconnects by itself.
+The plugin builds its channel from the `config` Doozers sends on its first connection, and refuses a
+different one until it restarts. After you change the instance's `config` in `doozers.toml`, restart
+the plugin. Doozers then reconnects by itself.
 
 ## Run an environment plugin remotely
 
 An `[environment.<name>]` with `address` connects to an environment plugin you run yourself, the
 same way. Create a token and start the plugin as above, then set `address` and `auth` in
-`giles.toml`:
+`doozers.toml`:
 
 ```toml
 [environment.docker]
@@ -121,8 +121,8 @@ address = "https://builder.example.com:7443"
 auth = { bearer = { secret = "docker-remote" } }
 ```
 
-To pass the token in the environment instead of a file, set `GILES_ENVIRONMENT_DOCKER_TOKEN`.
+To pass the token in the environment instead of a file, set `DOOZERS_ENVIRONMENT_DOCKER_TOKEN`.
 
-A remote environment has no `config` in `giles.toml`. Giles refuses it, because the plugin reads its
-settings from the `[config]` table of its own `--config` file, on the machine that runs it. Restart
-the plugin after you change them.
+A remote environment has no `config` in `doozers.toml`. Doozers refuses it, because the plugin reads
+its settings from the `[config]` table of its own `--config` file, on the machine that runs it.
+Restart the plugin after you change them.

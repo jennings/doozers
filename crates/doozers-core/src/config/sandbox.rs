@@ -3,9 +3,9 @@
 //!
 //! No plugin may be granted any part of the data root except its own data directory, or the
 //! directory holding the admin and proxy sockets. Otherwise a file-writing tool could edit
-//! `giles.toml` (e.g. set `unsandboxed = true`) or read `secrets.toml`. Nor may it be granted the
+//! `doozers.toml` (e.g. set `unsandboxed = true`) or read `secrets.toml`. Nor may it be granted the
 //! secret store's key file, wherever `core.secret_key_file` puts it, or a directory holding it.
-//! Nor may it write to (or connect to sockets in) a directory holding a binary Giles runs
+//! Nor may it write to (or connect to sockets in) a directory holding a binary Doozers runs
 //! ([`BinaryDirs`]).
 
 use std::fmt;
@@ -127,7 +127,7 @@ fn parse_port(entry: &str) -> Result<u16, String> {
 }
 
 /// A `sandbox` table as written, before its paths are checked: the raw form of
-/// [`Sandbox`](super::Sandbox). Like the rest of `giles.toml`, a key it doesn't have is ignored
+/// [`Sandbox`](super::Sandbox). Like the rest of `doozers.toml`, a key it doesn't have is ignored
 /// and reported.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SandboxSpec {
@@ -323,7 +323,7 @@ pub(crate) fn grants(
     })
 }
 
-/// The directories holding binaries Giles runs: the `doozers` binary itself (which is also the
+/// The directories holding binaries Doozers runs: the `doozers` binary itself (which is also the
 /// sandbox trampoline) and every launched plugin and stdio server, each as found now. A plugin
 /// may read them (the core itself adds an install prefix to read grants, PLAN section 7.10), but
 /// a `write` or `unix` grant overlapping one is rejected: a plugin that replaced a binary there
@@ -445,10 +445,10 @@ mod tests {
     /// A data root that doesn't exist, so only the lexical checks apply.
     fn protected() -> Protected {
         Protected::new(
-            Path::new("/srv/giles"),
-            Path::new("/srv/giles/run"),
-            Path::new("/srv/giles/secret.key"),
-            Path::new("/srv/giles/data/toolset/files"),
+            Path::new("/srv/doozers"),
+            Path::new("/srv/doozers/run"),
+            Path::new("/srv/doozers/secret.key"),
+            Path::new("/srv/doozers/data/toolset/files"),
         )
     }
 
@@ -456,54 +456,54 @@ mod tests {
     fn overlap_with_the_data_root_in_either_direction() {
         let p = protected();
         for ok in [
-            "/srv/giles/data/toolset/files",
-            "/srv/giles/data/toolset/files/sub",
+            "/srv/doozers/data/toolset/files",
+            "/srv/doozers/data/toolset/files/sub",
             "/srv/other",
-            "/srv/giles-other",
+            "/srv/doozers-other",
             "/srv/gile",
             "/opt/homebrew",
-            "/srv/giles2/data",
+            "/srv/doozers2/data",
         ] {
             assert_eq!(p.check(Path::new(ok)), Ok(()), "{ok}");
         }
         for bad in [
             "/",
             "/srv",
-            "/srv/giles",
-            "/srv/giles/giles.toml",
-            "/srv/giles/secrets.toml",
-            "/srv/giles/plugins",
-            "/srv/giles/plugins/doozers-channel-irc",
-            "/srv/giles/data",
-            "/srv/giles/data/toolset",
-            "/srv/giles/data/toolset/files-other",
-            "/srv/giles/data/toolset/other",
-            "/srv/giles/data/channel/files",
-            "/srv/giles/data/provider/files",
-            "/srv/giles/run/admin.sock",
+            "/srv/doozers",
+            "/srv/doozers/doozers.toml",
+            "/srv/doozers/secrets.toml",
+            "/srv/doozers/plugins",
+            "/srv/doozers/plugins/doozers-channel-irc",
+            "/srv/doozers/data",
+            "/srv/doozers/data/toolset",
+            "/srv/doozers/data/toolset/files-other",
+            "/srv/doozers/data/toolset/other",
+            "/srv/doozers/data/channel/files",
+            "/srv/doozers/data/provider/files",
+            "/srv/doozers/run/admin.sock",
         ] {
             let err = p.check(Path::new(bad)).unwrap_err();
             assert!(
-                err.contains("overlaps the data root, /srv/giles"),
+                err.contains("overlaps the data root, /srv/doozers"),
                 "{bad}: {err}"
             );
-            assert!(err.contains("/srv/giles/data/toolset/files"), "{err}");
+            assert!(err.contains("/srv/doozers/data/toolset/files"), "{err}");
         }
     }
 
     #[test]
     fn overlap_with_a_fallback_socket_directory() {
         let p = Protected::new(
-            Path::new("/srv/giles"),
-            Path::new("/tmp/giles-0123456789abcdef"),
-            Path::new("/srv/giles/secret.key"),
-            Path::new("/srv/giles/data/toolset/x"),
+            Path::new("/srv/doozers"),
+            Path::new("/tmp/doozers-0123456789abcdef"),
+            Path::new("/srv/doozers/secret.key"),
+            Path::new("/srv/doozers/data/toolset/x"),
         );
         assert_eq!(p.check(Path::new("/tmp/other")), Ok(()));
         for bad in [
             "/tmp",
-            "/tmp/giles-0123456789abcdef",
-            "/tmp/giles-0123456789abcdef/admin.sock",
+            "/tmp/doozers-0123456789abcdef",
+            "/tmp/doozers-0123456789abcdef/admin.sock",
         ] {
             let err = p.check(Path::new(bad)).unwrap_err();
             assert!(
@@ -516,22 +516,22 @@ mod tests {
     #[test]
     fn a_key_file_outside_the_data_root_is_never_granted() {
         let p = Protected::new(
-            Path::new("/srv/giles"),
-            Path::new("/srv/giles/run"),
-            Path::new("/run/secrets/giles_key"),
-            Path::new("/srv/giles/data/toolset/files"),
+            Path::new("/srv/doozers"),
+            Path::new("/srv/doozers/run"),
+            Path::new("/run/secrets/doozers_key"),
+            Path::new("/srv/doozers/data/toolset/files"),
         );
         for ok in [
             "/run/secrets/other",
-            "/run/secrets/giles_key2",
+            "/run/secrets/doozers_key2",
             "/opt/homebrew",
         ] {
             assert_eq!(p.check(Path::new(ok)), Ok(()), "{ok}");
         }
-        for bad in ["/run", "/run/secrets", "/run/secrets/giles_key"] {
+        for bad in ["/run", "/run/secrets", "/run/secrets/doozers_key"] {
             let err = p.check(Path::new(bad)).unwrap_err();
             assert!(
-                err.contains("overlaps the secret store's key file, /run/secrets/giles_key"),
+                err.contains("overlaps the secret store's key file, /run/secrets/doozers_key"),
                 "{bad}: {err}"
             );
         }
@@ -559,7 +559,7 @@ mod tests {
         assert_eq!(p.check(&dir.path().join("outside")), Ok(()));
         assert_eq!(p.check(&own.join("sub")), Ok(()));
         // A grant that leads into the data root through a symlink.
-        let err = p.check(&link_to_root.join("giles.toml")).unwrap_err();
+        let err = p.check(&link_to_root.join("doozers.toml")).unwrap_err();
         assert!(err.contains("overlaps the data root"), "{err}");
         assert!(p.check(&link_to_root).is_err());
         // A symlink inside the instance's own directory that leads out of it.

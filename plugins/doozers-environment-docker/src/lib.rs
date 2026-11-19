@@ -1,4 +1,4 @@
-//! `doozers-environment-docker`: the Giles environment plugin that runs workspaces in containers,
+//! `doozers-environment-docker`: the Doozers environment plugin that runs workspaces in containers,
 //! through the Docker Engine API (Docker, Podman's compatible API, Docker Desktop, OrbStack,
 //! Colima).
 //!
@@ -7,12 +7,12 @@
 //! needs to find a workspace again is in labels on the volume (which outlives the container) and
 //! the container:
 //!
-//! - `giles.instance` and `giles.workspace` say whose it is. A different plugin instance on the
+//! - `doozers.instance` and `doozers.workspace` say whose it is. A different plugin instance on the
 //!   same engine never sees it.
-//! - `giles.image-digest` pins the image the workspace was created from, so a recreated container
+//! - `doozers.image-digest` pins the image the workspace was created from, so a recreated container
 //!   runs the same software even if a tag like `latest` moved.
-//! - `giles.pulled` marks an image this plugin pulled, so deleting the last workspace that uses it
-//!   removes it again and an image the operator already had is left alone.
+//! - `doozers.pulled` marks an image this plugin pulled, so deleting the last workspace that uses
+//!   it removes it again and an image the operator already had is left alone.
 //!
 //! Commands run through `doozers-workspace-helper` (see the `doozers-workspace-helper` crate),
 //! which the plugin copies into each container: it is the process-group wrapper that lets a second
@@ -57,7 +57,7 @@ pub(crate) const API_TIMEOUT: std::time::Duration =
 
 /// A Docker engine hosting workspaces for one `[environment.<name>]` instance.
 ///
-/// Cheap to clone; clones share the connection. Methods mirror `giles.environment.v1`.
+/// Cheap to clone; clones share the connection. Methods mirror `doozers.environment.v1`.
 #[derive(Clone)]
 pub struct DockerEnvironment {
     inner: Arc<Inner>,

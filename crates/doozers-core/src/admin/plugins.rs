@@ -36,7 +36,7 @@ pub trait PluginControl: Send + Sync {
 ///
 /// `plugins()` is every control's instances, in the order of the controls (so `ListPlugins` gives a
 /// configured instance the report of the first control that has one: a name can also be reported
-/// by a later control, as a stored toolset that lost its name to a `giles.toml` toolset is).
+/// by a later control, as a stored toolset that lost its name to a `doozers.toml` toolset is).
 /// `restart` goes to the first control that accepts the kind and instance: each control restarts
 /// only the kind it supervises, so a same-named instance of another kind is left alone.
 pub struct MergedControl {

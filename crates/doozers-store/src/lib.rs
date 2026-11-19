@@ -1,6 +1,6 @@
-//! Storage for the Giles core: the SQLite database and files under the data root.
+//! Storage for the Doozers core: the SQLite database and files under the data root.
 //!
-//! [`Store`] is the database (`data/giles.db`, PLAN 11.4): open it once with [`Store::open`],
+//! [`Store`] is the database (`data/doozers.db`, PLAN 11.4): open it once with [`Store::open`],
 //! clone the handle freely, and call its typed methods; callers never write SQL. The schema,
 //! concurrency model, and migrations are described in `Docs/technical/storage.md`.
 //!

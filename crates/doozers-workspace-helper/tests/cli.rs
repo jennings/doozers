@@ -12,7 +12,7 @@ use tempfile::TempDir;
 
 fn helper(run_dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_doozers-workspace-helper"));
-    command.env("GILES_RUN_DIR", run_dir);
+    command.env("DOOZERS_RUN_DIR", run_dir);
     command
 }
 

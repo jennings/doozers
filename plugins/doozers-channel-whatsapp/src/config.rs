@@ -11,7 +11,7 @@ use crate::identity::parse_phone;
 /// The default for `max_blob`: the core's default limit for an attachment from a plugin.
 pub(crate) const DEFAULT_MAX_BLOB: u64 = 50 * 1024 * 1024;
 /// The default for `device_name`.
-pub(crate) const DEFAULT_DEVICE_NAME: &str = "Giles";
+pub(crate) const DEFAULT_DEVICE_NAME: &str = "Doozers";
 /// The longest `device_name` accepted, in characters.
 const MAX_DEVICE_NAME: usize = 64;
 
@@ -26,7 +26,7 @@ pub(crate) struct Config {
     /// The phone number of the account to link, with country code. Required for `pair_code`.
     #[serde(default)]
     phone_number: Option<String>,
-    /// The name WhatsApp shows for this device under Linked devices. Default `Giles`.
+    /// The name WhatsApp shows for this device under Linked devices. Default `Doozers`.
     #[serde(default)]
     device_name: Option<String>,
     /// The largest attachment the plugin downloads or sends. Default `50 MiB`.
@@ -166,7 +166,7 @@ mod tests {
             settings(json!({})).unwrap(),
             Settings {
                 link: Link::Qr,
-                device_name: "Giles".into(),
+                device_name: "Doozers".into(),
                 max_blob: 50 * 1024 * 1024,
             }
         );
@@ -178,7 +178,7 @@ mod tests {
             settings(json!({
                 "link": "pair_code",
                 "phone_number": "+1 (555) 123-4567",
-                "device_name": "Giles at home",
+                "device_name": "Doozers at home",
                 "max_blob": "8 MiB",
             }))
             .unwrap(),
@@ -186,7 +186,7 @@ mod tests {
                 link: Link::PairCode {
                     phone: "15551234567".into()
                 },
-                device_name: "Giles at home".into(),
+                device_name: "Doozers at home".into(),
                 max_blob: 8 * 1024 * 1024,
             }
         );

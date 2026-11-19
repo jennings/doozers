@@ -1,13 +1,13 @@
 # Configuration
 
-This page lists every setting in Giles' configuration files. Both kinds live in the
+This page lists every setting in Doozers' configuration files. Both kinds live in the
 [data root](running.md#the-data-root):
 
-- `giles.toml`: the core, the owner, and component instances.
+- `doozers.toml`: the core, the owner, and component instances.
 - `agents/<agent>/agent.toml`: one per agent.
 
-Giles reads them when `doozers serve` starts, so restart it after you edit them. Giles never changes
-`giles.toml`.
+Doozers reads them when `doozers serve` starts, so restart it after you edit them. Doozers never
+changes `doozers.toml`.
 
 Agents you create or edit in [the web UI](web.md#agents) are saved to `agent.toml` and take effect
 at once. The web UI keeps the rest of the file as you wrote it, comments included.
@@ -16,18 +16,18 @@ If a file has an error, `doozers serve` refuses to start. It prints one error na
 line and column when known, the key, and what is wrong:
 
 ```text
-Error: /home/me/.giles/giles.toml:12:12: channel.libera.max_blob: invalid size "50MB": expected a
+Error: /home/me/.doozers/doozers.toml:12:12: channel.libera.max_blob: invalid size "50MB": expected a
 number of bytes or an integer and a unit (B, KiB, MiB, GiB), e.g. "50 MiB"
 ```
 
-A key Giles doesn't recognize, in `giles.toml` or an `agent.toml`, doesn't stop it. Giles ignores
-the key and logs a warning, so check the log after an edit. A misspelled key leaves its setting at
-the default.
+A key Doozers doesn't recognize, in `doozers.toml` or an `agent.toml`, doesn't stop it. Doozers
+ignores the key and logs a warning, so check the log after an edit. A misspelled key leaves its
+setting at the default.
 
 ```text
-WARN /home/me/.giles/giles.toml:7:1: unknown key `core.http_listn` (ignored)
-WARN /home/me/.giles/giles.toml:12:30: unknown key `provider.anthropic.config.modle` (ignored)
-WARN /home/me/.giles/agents/jeeves/agent.toml:3:1: unknown key `aks` (ignored)
+WARN /home/me/.doozers/doozers.toml:7:1: unknown key `core.http_listn` (ignored)
+WARN /home/me/.doozers/doozers.toml:12:30: unknown key `provider.anthropic.config.modle` (ignored)
+WARN /home/me/.doozers/agents/jeeves/agent.toml:3:1: unknown key `aks` (ignored)
 ```
 
 **Check the log for misspelled `sandbox` and `ask` keys.** A misspelled `sandbox.network = false`
@@ -49,7 +49,7 @@ leaves the plugin's network open, and a misspelled `ask` lets those tools run wi
   `"email:me@example.com"`, or `"irc:libera.chat:account:stephen"`. Each channel's page gives its
   namespace and id format.
 
-## `giles.toml`
+## `doozers.toml`
 
 ### `[core]`
 
@@ -58,20 +58,20 @@ Settings of the core itself. Optional.
 | Key               | Default            | Meaning                                                                        |
 | ----------------- | ------------------ | ------------------------------------------------------------------------------ |
 | `http_listen`     | `"127.0.0.1:8080"` | Address of the HTTP server (web chat, admin pages, login links)                |
-| `journal_mode`    | `"wal"`            | SQLite journal mode of `data/giles.db`: `wal`, `delete`, `truncate`, `persist` |
-| `secret_key_file` | `"secret.key"`     | The key that unlocks the secrets Giles stores, relative to the data root       |
+| `journal_mode`    | `"wal"`            | SQLite journal mode of `data/doozers.db`: `wal`, `delete`, `truncate`, `persist` |
+| `secret_key_file` | `"secret.key"`     | The key that unlocks the secrets Doozers stores, relative to the data root     |
 
-To reach Giles from other machines, or from outside a container, set `http_listen` to
+To reach Doozers from other machines, or from outside a container, set `http_listen` to
 `"0.0.0.0:8080"`. The web interface does not handle TLS, so read
 [The web interface](running.md#the-web-interface) before you do.
 
 #### `journal_mode`
 
-Leave this at `"wal"` unless Giles can't start with it. WAL needs shared memory, which network file
-systems don't provide. These include NFS, SMB, and some container and FUSE mounts.
+Leave this at `"wal"` unless Doozers can't start with it. WAL needs shared memory, which network
+file systems don't provide. These include NFS, SMB, and some container and FUSE mounts.
 
-On such a file system, Giles stops at startup with an error that names this option. Set
-`journal_mode = "delete"`, or better, move `~/.giles` to a local disk.
+On such a file system, Doozers stops at startup with an error that names this option. Set
+`journal_mode = "delete"`, or better, move `~/.doozers` to a local disk.
 
 | Value        | Journal                                                                         |
 | ------------ | ------------------------------------------------------------------------------- |
@@ -80,15 +80,15 @@ On such a file system, Giles stops at startup with an error that names this opti
 | `"truncate"` | Like `delete`, but empties the journal file instead of deleting it              |
 | `"persist"`  | Like `delete`, but keeps the journal file and marks it unused                   |
 
-Values are case-insensitive. Giles refuses SQLite's `memory` and `off` modes, because a crash or
+Values are case-insensitive. Doozers refuses SQLite's `memory` and `off` modes, because a crash or
 power loss during a write could then corrupt the database or lose data.
 
-To switch modes, change the value and restart Giles. It converts the existing database in place.
-First stop any other program that has `giles.db` open, such as the `sqlite3` shell.
+To switch modes, change the value and restart Doozers. It converts the existing database in place.
+First stop any other program that has `doozers.db` open, such as the `sqlite3` shell.
 
 #### `secret_key_file`
 
-Giles encrypts the secrets it stores in `data/giles.db` with the key in `secret.key`, which it
+Doozers encrypts the secrets it stores in `data/doozers.db` with the key in `secret.key`, which it
 creates on first start. Keep a copy of `secret.key`. Without it, the stored secrets can't be read,
 and [backups](backups.md) leave it out.
 
@@ -96,32 +96,33 @@ With the key and the database on one disk, anyone who takes the whole disk can r
 a host with systemd, keep the key in an encrypted systemd credential instead. It's bound to the
 host's TPM2 chip when there is one.
 
-1. Encrypt the key Giles made, then delete the plain copy:
+1. Encrypt the key Doozers made, then delete the plain copy:
 
    ```sh
    sudo mkdir -p /etc/credstore.encrypted
-   sudo systemd-creds encrypt --name=secret-key ~/.giles/secret.key \
+   sudo systemd-creds encrypt --name=secret-key ~/.doozers/secret.key \
      /etc/credstore.encrypted/secret-key
-   rm ~/.giles/secret.key
+   rm ~/.doozers/secret.key
    ```
 
-2. Give it to Giles in its unit file, here `giles.service`:
+2. Give it to Doozers in its unit file, here `doozers.service`:
 
    ```ini
    [Service]
    LoadCredentialEncrypted=secret-key:/etc/credstore.encrypted/secret-key
    ```
 
-3. Point Giles at the decrypted copy systemd provides:
+3. Point Doozers at the decrypted copy systemd provides:
 
    ```toml
    [core]
-   secret_key_file = "/run/credentials/giles.service/secret-key"
+   secret_key_file = "/run/credentials/doozers.service/secret-key"
    ```
 
-Giles creates a key file only at the default location. If the file `secret_key_file` names is
-missing, or holds a different key than the stored secrets need, Giles refuses to start and names the
-file. To go back, copy the key back to `~/.giles/secret.key` (mode 0600) and remove the setting.
+Doozers creates a key file only at the default location. If the file `secret_key_file` names is
+missing, or holds a different key than the stored secrets need, Doozers refuses to start and names
+the file. To go back, copy the key back to `~/.doozers/secret.key` (mode 0600) and remove the
+setting.
 
 In a container, use the platform's secret files instead
 ([Running in a container](container.md#secrets)). No plugin may be granted the key file or a
@@ -129,7 +130,7 @@ directory holding it in its [sandbox](#sandbox).
 
 ### `[owner]`
 
-Giles v1 serves one person, the owner. Required.
+Doozers v1 serves one person, the owner. Required.
 
 | Key          | Default                  | Meaning                                                     |
 | ------------ | ------------------------ | ----------------------------------------------------------- |
@@ -137,7 +138,7 @@ Giles v1 serves one person, the owner. Required.
 | `default`    | the only identity        | Where jobs and other proactive messages go; required when there are several identities |
 | `timezone`   | the agent's, else system | The owner's time zone, for message times and job schedules  |
 
-Giles drops and logs these messages:
+Doozers drops and logs these messages:
 
 - messages from any identity not listed here
 - messages whose sender the channel couldn't verify
@@ -154,8 +155,8 @@ example:
 | WhatsApp | `whatsapp:+15551234567`           |
 | Discord  | `discord:82198898841029460`       |
 
-Giles logs a message from an unlisted identity with the identity as the channel reported it, so you
-can copy it here.
+Doozers logs a message from an unlisted identity with the identity as the channel reported it, so
+you can copy it here.
 
 Identities match exactly, capitalization included. Email domains are the exception:
 `email:me@Example.com` matches `me@example.com`, but not `Me@example.com`.
@@ -188,8 +189,8 @@ A provider, a channel, an environment, and a toolset can share a name. They are 
 with their own data. Names are unique within a kind, ignoring case. `Libera` and `libera` clash.
 
 A provider, channel, or environment's `component` says what runs the instance, and defaults to the
-instance name. Giles uses its built-in component of that kind and name, if it has one. Otherwise the
-instance runs the plugin `doozers-<kind>-<component>`, found in `<data root>/plugins/` or on
+instance name. Doozers uses its built-in component of that kind and name, if it has one. Otherwise
+the instance runs the plugin `doozers-<kind>-<component>`, found in `<data root>/plugins/` or on
 `$PATH`. A toolset has no component. It runs its `command`.
 
 Two IRC networks are two instances of one component:
@@ -204,9 +205,9 @@ component = "irc"
 config = { server = "irc.oftc.net", nick = "jeeves", network = "oftc.net" }
 ```
 
-Giles passes the `config` table to the component without checking it. The component checks it when
+Doozers passes the `config` table to the component without checking it. The component checks it when
 it starts, and each component's page documents its keys. Every other key of an instance table
-belongs to Giles.
+belongs to Doozers.
 
 #### Providers
 
@@ -237,14 +238,14 @@ config = { base_url = "http://127.0.0.1:11434/v1" }
 The built-in channel is `web`. Its `config` keys, `public_url` and `proxy`, are in
 [Web Chat](web.md#logging-in).
 
-Any other component is a plugin. Giles launches it, or with `address`, connects to it where someone
-else runs it.
+Any other component is a plugin. Doozers launches it, or with `address`, connects to it where
+someone else runs it.
 
 | Key           | Applies to        | Default    | Meaning                                                  |
 | ------------- | ----------------- | ---------- | -------------------------------------------------------- |
 | `component`   | all               | name       | The component                                            |
 | `config`      | all               | `{}`       | Settings for the component                               |
-| `max_blob`    | plugins           | `"50 MiB"` | The largest attachment Giles accepts from the plugin     |
+| `max_blob`    | plugins           | `"50 MiB"` | The largest attachment Doozers accepts from the plugin   |
 | `sandbox`     | launched plugins  |            | Extra sandbox grants ([Sandbox](#sandbox))               |
 | `unsandboxed` | launched plugins  | `false`    | Run without a sandbox (logged as a warning at every launch) |
 | `address`     | remote plugins    |            | `https://host:port` (or `http://`) of a running plugin   |
@@ -266,7 +267,7 @@ address = "https://mail-bridge.example.com:7443"
 
 [channel.mail.auth.oauth]
 token_url = "https://auth.example.com/token"
-client_id = "giles"
+client_id = "doozers"
 client_secret = { secret = "mail-bridge" }
 scopes = ["channel"]
 ```
@@ -281,24 +282,24 @@ scopes = ["channel"]
 ##### Remote plugins
 
 A channel with `address` is a plugin you run yourself, on this machine or another one. The plugins
-that ship with Giles [run this way](remote-plugins.md), and
-[you can write your own](writing-a-plugin.md#running-a-plugin-remotely). Giles never starts, stops,
-or sandboxes it, and the plugin keeps its own state.
+that ship with Doozers [run this way](remote-plugins.md), and
+[you can write your own](writing-a-plugin.md#running-a-plugin-remotely). Doozers never starts,
+stops, or sandboxes it, and the plugin keeps its own state.
 
-- While Giles can't connect, it runs without that channel and keeps retrying. That includes when the
-  plugin refuses Giles' token or its certificate doesn't check out. `doozers status` shows the
+- While Doozers can't connect, it runs without that channel and keeps retrying. That includes when
+  the plugin refuses Doozers' token or its certificate doesn't check out. `doozers status` shows the
   instance as `down, retrying at ...` with the last error, or once connected, as `running` with no
   pid.
 - With `https://`, the plugin's certificate must be valid for the host in `address`. It must be
-  issued by a public certificate authority in Giles' built-in copy of the Mozilla list. Giles
+  issued by a public certificate authority in Doozers' built-in copy of the Mozilla list. Doozers
   doesn't use the system's trust store.
 - `insecure = true` only allows plain `http://`. It never turns certificate checks off.
 - `auth = { bearer = ... }` sends `Authorization: Bearer <token>` on every call. Without `auth`,
-  Giles sends no credentials.
-- With `oauth`, Giles gets an access token from `token_url` before connecting, using HTTP Basic auth
-  with the client id and secret. It sends that token, and gets a new one before it expires.
-- When Giles stops, the plugin keeps running. Messages that arrive meanwhile wait in it until Giles
-  connects again.
+  Doozers sends no credentials.
+- With `oauth`, Doozers gets an access token from `token_url` before connecting, using HTTP Basic
+  auth with the client id and secret. It sends that token, and gets a new one before it expires.
+- When Doozers stops, the plugin keeps running. Messages that arrive meanwhile wait in it until
+  Doozers connects again.
 
 #### Environments
 
@@ -325,13 +326,13 @@ An agent uses an environment when `environments = ["<name>"]` in its `agent.toml
 
 #### Toolsets
 
-A toolset is an MCP server. A `[toolset.<name>]` table configures a stdio server, which Giles
+A toolset is an MCP server. A `[toolset.<name>]` table configures a stdio server, which Doozers
 launches and talks to over its standard input and output. Set `toolset.<name>.command` to the
-server's program, as an absolute path or a program name Giles looks up on `$PATH`.
+server's program, as an absolute path or a program name Doozers looks up on `$PATH`.
 
-A remote server, one Giles reaches over the network, is added in the [web UI](web.md#mcp-servers) or
-with [`doozers toolset set`](cli.md#doozers-toolset). Giles ignores a `[toolset.<name>]` table that
-has `url`, and logs a warning naming it at every start.
+A remote server, one Doozers reaches over the network, is added in the [web UI](web.md#mcp-servers)
+or with [`doozers toolset set`](cli.md#doozers-toolset). Doozers ignores a `[toolset.<name>]` table
+that has `url`, and logs a warning naming it at every start.
 
 | Key           | Default   | Meaning                                                       |
 | ------------- | --------- | ------------------------------------------------------------- |
@@ -347,10 +348,10 @@ has `url`, and logs a warning naming it at every start.
 
 Toolsets have no `config` table. Configure a server through its `args`.
 
-No plugin may write to a `skills` directory. Giles refuses a `skills` path inside the plugins' data
-directories, and any `write` or `unix` sandbox grant that overlaps one.
+No plugin may write to a `skills` directory. Doozers refuses a `skills` path inside the plugins'
+data directories, and any `write` or `unix` sandbox grant that overlaps one.
 
-Giles looks up a stdio server's `command` on its own `$PATH`, and runs it in the
+Doozers looks up a stdio server's `command` on its own `$PATH`, and runs it in the
 [sandbox](#sandbox). The server may read and run everything in the command's install prefix. That's
 the directory above `bin/`, such as `/opt/homebrew` or a Python virtual environment, else the
 command's own directory.
@@ -371,17 +372,17 @@ interpreter.
   caches, which the sandbox doesn't grant.
 - A server that needs the network needs a grant, such as `sandbox = { network = ["tcp:443"] }`.
 - The server gets only its `env`, plus `LANG`, `HOME` and `TMPDIR` inside its data directory,
-  `GILES_PLUGIN_DATA` (its data directory), and a `PATH` of the directories above followed by
-  `/usr/bin:/bin`. `env` can't set `HOME`, `TMPDIR`, `PATH`, or `GILES_PLUGIN_DATA`.
+  `DOOZERS_PLUGIN_DATA` (its data directory), and a `PATH` of the directories above followed by
+  `/usr/bin:/bin`. `env` can't set `HOME`, `TMPDIR`, `PATH`, or `DOOZERS_PLUGIN_DATA`.
 
-Giles starts every toolset when it starts, and [keeps it running](running.md#running-the-daemon). A
-server's tools stay offered while the server is stopped. If a server changes its list of tools while
-it runs, conversations that start afterwards get the new list.
+Doozers starts every toolset when it starts, and [keeps it running](running.md#running-the-daemon).
+A server's tools stay offered while the server is stopped. If a server changes its list of tools
+while it runs, conversations that start afterwards get the new list.
 
 Images, audio, and files a tool returns are kept like attachments, up to 50 MiB each. The model sees
 them if its provider takes that type, and can send them on with `send_attachment`.
 
-The model can also give an attachment to a toolset's tool. Giles copies it into the server's
+The model can also give an attachment to a toolset's tool. Doozers copies it into the server's
 `TMPDIR` for the length of the call and passes the file's path.
 
 ```toml
@@ -394,8 +395,8 @@ idle_stop = "30m"
 
 ### Sandbox
 
-Every plugin Giles launches, channel and environment plugins and stdio toolsets, runs in a sandbox.
-By default it can:
+Every plugin Doozers launches, channel and environment plugins and stdio toolsets, runs in a
+sandbox. By default it can:
 
 - read its own binary, system libraries, TLS certificates, and DNS configuration
 - read and write its own data directory
@@ -415,7 +416,7 @@ sandbox = { network = ["tcp:443"], read = ["/opt/homebrew"], write = ["/Users/me
 | `unix`    | Absolute paths of Unix sockets the plugin may connect to (on Linux before Landlock ABI 9, kernel 7.1, any entry allows connecting to every socket) |
 | `min_abi` | Linux only: refuse to start the plugin unless the kernel's Landlock ABI is at least this (table below) |
 
-On Linux, what the sandbox can enforce depends on the kernel's Landlock ABI. Giles logs the ABI at
+On Linux, what the sandbox can enforce depends on the kernel's Landlock ABI. Doozers logs the ABI at
 every launch, and warns when the kernel lacks something the plugin's grants rely on.
 
 To refuse older kernels, set `min_abi`. A plugin whose kernel is below it doesn't start, and the log
@@ -423,36 +424,36 @@ says why.
 
 | `min_abi` | Kernel | Guarantees                                                                       |
 | --------- | ------ | -------------------------------------------------------------------------------- |
-| 1         | 5.13   | Files: read, write, and execute grants (the minimum; Giles needs Landlock)       |
+| 1         | 5.13   | Files: read, write, and execute grants (the minimum; Doozers needs Landlock)     |
 | 3         | 6.2    | Files can't be truncated outside write grants by Landlock itself                 |
 | 4         | 6.7    | `network` port lists are enforced, and plugins can't listen on TCP ports         |
-| 6         | 6.12   | The plugin can't signal processes outside its sandbox, Giles included            |
+| 6         | 6.12   | The plugin can't signal processes outside its sandbox, Doozers included          |
 | 9         | 7.1    | `unix` grants allow exactly the listed sockets (they must exist when the plugin starts) |
 
 On Linux, grants must exist when the plugin starts. A path created later isn't covered.
 
 No grant may touch the data root, except the instance's own data directory. A path inside the data
 root, or one containing it, is an error. That includes your home directory when the data root is
-`~/.giles`.
+`~/.doozers`.
 
-For a path that goes through a symbolic link, Giles checks where the link leads when Giles starts. A
-link created or changed later isn't checked, so don't grant directories that other programs can
-rewire.
+For a path that goes through a symbolic link, Doozers checks where the link leads when Doozers
+starts. A link created or changed later isn't checked, so don't grant directories that other
+programs can rewire.
 
-`write` and `unix` grants may not touch a directory holding a program Giles runs. That's the `giles`
-binary itself, and each plugin or toolset command. Granting `write = ["/opt/homebrew"]` would let a
-plugin replace `giles` or another plugin. Reading those directories is fine.
+`write` and `unix` grants may not touch a directory holding a program Doozers runs. That's the
+`doozers` binary itself, and each plugin or toolset command. Granting `write = ["/opt/homebrew"]`
+would let a plugin replace `doozers` or another plugin. Reading those directories is fine.
 
-A plugin can create symbolic links wherever it may write, so Giles never follows links there. Write
-`write` grants, and grants inside the plugin's data directory, with the real path, in the same upper
-and lower case as on disk. A plugin won't start if its data directory is a symbolic link.
+A plugin can create symbolic links wherever it may write, so Doozers never follows links there.
+Write `write` grants, and grants inside the plugin's data directory, with the real path, in the same
+upper and lower case as on disk. A plugin won't start if its data directory is a symbolic link.
 
 `unsandboxed = true` turns the sandbox off for one instance, and can't be combined with `sandbox`.
 Built-in components and remote plugins don't take these keys.
 
 ### Secrets
 
-Keep credentials out of `giles.toml`. Put them in `secrets.toml` in the data root, a flat table of
+Keep credentials out of `doozers.toml`. Put them in `secrets.toml` in the data root, a flat table of
 names to strings:
 
 ```toml
@@ -460,11 +461,11 @@ anthropic = "sk-ant-..."
 github = "ghp_..."
 ```
 
-Giles refuses to start if group or others have any access to `secrets.toml`. Make it private with
-`chmod 600 ~/.giles/secrets.toml`. You don't need the file if nothing refers to it.
+Doozers refuses to start if group or others have any access to `secrets.toml`. Make it private with
+`chmod 600 ~/.doozers/secrets.toml`. You don't need the file if nothing refers to it.
 
-Refer to a secret with `{ secret = "<name>" }`. To take a value from Giles' own environment instead,
-use `{ env = "<VARIABLE>" }`. A reference works in these places:
+Refer to a secret with `{ secret = "<name>" }`. To take a value from Doozers' own environment
+instead, use `{ env = "<VARIABLE>" }`. A reference works in these places:
 
 - Anywhere in an instance's `config` table, at any depth. There, a table whose only key is `secret`
   or `env` is always a reference.
@@ -481,19 +482,19 @@ args = ["stdio"]
 env = { GITHUB_PERSONAL_ACCESS_TOKEN = { secret = "github" } }
 ```
 
-Giles refuses to start if a secret is missing or a variable is unset. Logs and error messages name
-the secret or variable, never the value. Where Giles shows an instance's `config`, values from
+Doozers refuses to start if a secret is missing or a variable is unset. Logs and error messages name
+the secret or variable, never the value. Where Doozers shows an instance's `config`, values from
 references read `<redacted>`.
 
 ### Routes
 
 Routes pick the agent for each conversation. You manage them in [the web UI](web.md#routes), not in
-`giles.toml`, and a change applies to the next message without a restart.
+`doozers.toml`, and a change applies to the next message without a restart.
 
-Giles tries routes in order, and the first match wins. A route matches when every key it sets
+Doozers tries routes in order, and the first match wins. A route matches when every key it sets
 matches. Conversation ids match exactly, capitalization included.
 
-Giles drops and logs messages in a conversation no route matches, including
+Doozers drops and logs messages in a conversation no route matches, including
 [chat commands](commands.md).
 
 | Key            | Meaning                                                            |
@@ -508,7 +509,7 @@ channel instance or agent doesn't exist. It also refuses a route that could neve
 duplicate, or a move that would put a route before one it hides.
 
 A fresh install has no routes, so add them in the web UI. Earlier versions kept routes in
-`giles.toml`:
+`doozers.toml`:
 
 ```toml
 [[routes]]
@@ -520,17 +521,17 @@ agent = "jeeves"
 agent = "jeeves"
 ```
 
-Giles imports `[[routes]]` like these, in order, the first time it starts after the upgrade. A route
-to a channel instance or agent that doesn't exist, or with a key a route doesn't have, stops startup
-and names the route.
+Doozers imports `[[routes]]` like these, in order, the first time it starts after the upgrade. A
+route to a channel instance or agent that doesn't exist, or with a key a route doesn't have, stops
+startup and names the route.
 
-After the import, Giles never reads `[[routes]]` again, even if you delete every route in the web
-UI. It warns at every start while `giles.toml` still has them, so remove them from the file.
+After the import, Doozers never reads `[[routes]]` again, even if you delete every route in the web
+UI. It warns at every start while `doozers.toml` still has them, so remove them from the file.
 
 ## `agents/<agent>/agent.toml`
 
 Each directory under `agents/` is an agent, named by the directory, and must contain `agent.toml`.
-Giles ignores files in `agents/` and directories whose names start with `.`.
+Doozers ignores files in `agents/` and directories whose names start with `.`.
 
 Change these settings on the agent's form in [the web UI](web.md#agents). The table below is for
 editing `agent.toml` by hand instead. The form has every key except `[[jobs]]`.
@@ -571,9 +572,9 @@ summarizes the older messages. The model then sees the summary plus the most rec
 full transcript stays in the database.
 
 A cheaper model works well for compaction, if its own context window can hold a good part of the
-conversation. Giles takes a model's context window from the provider. For OpenAI-compatible servers,
-the `context_window` in [the provider's config](providers.md) applies too, also when the server
-doesn't list the model under that exact id. Without either, Giles assumes 128,000 tokens.
+conversation. Doozers takes a model's context window from the provider. For OpenAI-compatible
+servers, the `context_window` in [the provider's config](providers.md) applies too, also when the
+server doesn't list the model under that exact id. Without either, Doozers assumes 128,000 tokens.
 
 A call to a tool matching `ask` waits until you answer with one of the
 [approval commands](commands.md). The call is denied if nobody answers within `approval_timeout`, or
@@ -598,7 +599,7 @@ exactly `NO_REPLY`.
 | `ask_to`       |              | `"deliver_to"`: ask you to approve `ask` tools; otherwise they are denied |
 
 Exactly one of `prompt` and `prompt_file` is required. A `prompt_file` is a relative path inside the
-agent's directory, and must exist when Giles starts.
+agent's directory, and must exist when Doozers starts.
 
 Schedules and `active_hours` use the owner's time zone, else the agent's, else the system's.
 
@@ -606,7 +607,7 @@ Schedules and `active_hours` use the owner's time zone, else the agent's, else t
   your default identity, and is added to your DM with the agent there, so you can answer it.
 - A `"dm"` job runs as its own turn in that DM, after any turn already running there. Until you've
   messaged the agent on that identity, it runs like an `isolated` job.
-- Times missed while Giles was stopped are made up by one run when it starts. A time outside
+- Times missed while Doozers was stopped are made up by one run when it starts. A time outside
   `active_hours` is skipped.
 - With `ask_to`, approval prompts go to your default identity, and you answer them in your DM there.
   Before you have a DM with the agent, `ask` tools are denied.
@@ -630,7 +631,7 @@ also schedule, edit, disable, and delete jobs there, except the ones in `agent.t
 The agent also uses `github`, a remote toolset added in the [web UI](web.md#adding-a-remote-server).
 
 ```toml
-# ~/.giles/giles.toml
+# ~/.doozers/doozers.toml
 [core]
 http_listen = "127.0.0.1:8080"
 
@@ -668,13 +669,13 @@ parallel = true
 ```
 
 ```toml
-# ~/.giles/secrets.toml (mode 0600)
+# ~/.doozers/secrets.toml (mode 0600)
 anthropic = "sk-ant-api03-..."
 libera = "correct horse battery staple"
 ```
 
 ```toml
-# ~/.giles/agents/jeeves/agent.toml
+# ~/.doozers/agents/jeeves/agent.toml
 name = "Jeeves"
 models = ["anthropic/claude-sonnet-4-5"]
 compaction_model = "ollama/qwen3:8b"

@@ -223,7 +223,7 @@ impl Harness {
             std::fs::write(path, contents).unwrap();
         };
         write(
-            "giles.toml",
+            "doozers.toml",
             "[owner]\nidentities = [\"fake:owner\"]\ntimezone = \"America/Los_Angeles\"\n\
              [provider.anthropic]\n[provider.ollama]\ncomponent = \"openai\"\n[channel.fake]\n\
              [channel.other]\n\
@@ -240,7 +240,7 @@ impl Harness {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -259,7 +259,7 @@ impl Harness {
                 }),
             )
             .unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let clock = Arc::new(TestClock {
             start: Instant::now(),
         });

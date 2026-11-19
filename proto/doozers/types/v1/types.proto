@@ -2,12 +2,12 @@
 // Docs/technical/protocols.md for the mapping and the conventions used here.
 syntax = "proto3";
 
-package giles.types.v1;
+package doozers.types.v1;
 
 import "google/protobuf/timestamp.proto";
 
 // A reference to a blob: an attachment, image, or tool output. Bytes never travel inside
-// messages; they move with the blob RPCs of giles.plugin.v1 (PLAN section 8.3).
+// messages; they move with the blob RPCs of doozers.plugin.v1 (PLAN section 8.3).
 message BlobRef {
   // A plugin-local handle, or the core's SHA-256 id (64 lowercase hex digits).
   string id = 1;

@@ -59,7 +59,7 @@ pub(crate) fn tool_specs(tools: Vec<Tool>) -> Vec<ToolSpec> {
 /// ([`super::media::store_result`]).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Part {
-    /// Text, or text standing in for content Giles doesn't take.
+    /// Text, or text standing in for content Doozers doesn't take.
     Block(Block),
     /// Image, audio, or blob resource content.
     Media(IncomingMedia),

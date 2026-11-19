@@ -4,7 +4,7 @@ This page explains what an agent can do in an environment, how to let an agent u
 its workspace lasts.
 
 An environment is an isolated place where an agent runs commands and works with files, such as a
-container. An environment plugin provides it, and you configure the plugin in `giles.toml`. The
+container. An environment plugin provides it, and you configure the plugin in `doozers.toml`. The
 [Docker environment](docker-environment.md) is the first one. A workspace is one conversation's
 place in an environment. Each conversation has at most one workspace, and the agent decides when to
 create it.
@@ -24,7 +24,7 @@ environments = ["docker"]
 tools = ["environment_*", "bash", "read", "write", "edit", "find", "grep"]
 ```
 
-An agent with no `environments` is never offered these tools, whatever its `tools` say. Giles also
+An agent with no `environments` is never offered these tools, whatever its `tools` say. Doozers also
 checks every call, and refuses an environment the agent doesn't list.
 
 ## What the agent can do
@@ -44,7 +44,7 @@ checks every call, and refuses an environment the agent doesn't list.
 | `grep`                | Searches file contents with a regular expression                            |
 
 The agent has no workspace until it creates one. If it tries `bash` or another workspace tool first,
-the error lists the environments it may use and tells it to call `environment_create`. Giles never
+the error lists the environments it may use and tells it to call `environment_create`. Doozers never
 creates a workspace by itself. A conversation that already has one can't create a second.
 
 If the agent's workspace is deleted, for example by you or after a long time unused, the next
@@ -61,7 +61,7 @@ doesn't carry over to the next call, but files do. A command runs for 2 minutes 
 agent asks for more, up to 10 minutes, and then it is killed. When you send `/stop`, a running
 command is killed too.
 
-Giles keeps limits on what the agent sees, the same for every environment:
+Doozers keeps limits on what the agent sees, the same for every environment:
 
 - `bash` shows the first 10 KiB and the last 20 KiB of a command's output, and says how much it left
   out.
@@ -103,7 +103,7 @@ environment had to recreate the workspace, the agent is told what was lost. See
 
 The agent doesn't need your approval for `environment_reset` and `environment_delete`. Their
 descriptions tell it to go ahead when you clearly want the files gone, and to ask you first when it
-isn't sure. To make Giles ask you every time, add them to the agent's `ask` list. You can do the
+isn't sure. To make Doozers ask you every time, add them to the agent's `ask` list. You can do the
 same for `bash`:
 
 ```toml

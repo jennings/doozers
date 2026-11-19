@@ -1,10 +1,10 @@
 //! The command line of a plugin binary (`ChannelPlugin::run`, `EnvironmentPlugin::run`): the
-//! `socket` subcommand Giles launches plugins with, the `serve` subcommand an operator runs a
+//! `socket` subcommand Doozers launches plugins with, the `serve` subcommand an operator runs a
 //! remote plugin with (PLAN sections 7.4 and 7.6), and the settings `serve` reads from flags and a
 //! file.
 //!
 //! The settings here are the plugin's transport only. What a channel does (the Discord bot token,
-//! the IRC server) comes from the instance's `config` in the core's `giles.toml`, in both modes.
+//! the IRC server) comes from the instance's `config` in the core's `doozers.toml`, in both modes.
 //! An environment plugin run with `serve` is the exception: its settings are the `[config]` table
 //! of the `--config` file (PLAN section 7.6).
 
@@ -22,7 +22,7 @@ use crate::remote::RemoteAuth;
 /// What the command line asks for.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
-    /// `socket`: serve gRPC on the socket Giles inherits to the plugin.
+    /// `socket`: serve gRPC on the socket Doozers inherits to the plugin.
     Socket,
     /// `serve`: run as a remote plugin.
     Serve(ServeArgs),
@@ -243,7 +243,7 @@ impl ConfigFile {
         if kind != Kind::Environment && file.config.is_some() {
             return Err(config_error(format!(
                 "unknown field `config`: a {kind} plugin's settings come from \
-                 `[{kind}.<name>.config]` in giles.toml"
+                 `[{kind}.<name>.config]` in doozers.toml"
             )));
         }
         Ok(file)
@@ -290,7 +290,7 @@ pub(crate) fn binary_name(kind: Kind, name: &str) -> String {
 }
 
 /// The environment variable that holds the bearer token of the plugin called `name`, e.g.
-/// `GILES_CHANNEL_DISCORD_TOKEN`.
+/// `DOOZERS_CHANNEL_DISCORD_TOKEN`.
 pub(crate) fn token_env(kind: Kind, name: &str) -> String {
     let name: String = name
         .chars()
@@ -302,7 +302,10 @@ pub(crate) fn token_env(kind: Kind, name: &str) -> String {
             }
         })
         .collect();
-    format!("GILES_{}_{name}_TOKEN", kind.as_str().to_ascii_uppercase())
+    format!(
+        "DOOZERS_{}_{name}_TOKEN",
+        kind.as_str().to_ascii_uppercase()
+    )
 }
 
 impl ServeArgs {
@@ -473,13 +476,15 @@ pub(crate) fn usage(kind: Kind, plugin: &str) -> String {
         (
             "listen, data, tls_cert, tls_key, token_file, and a [config] table",
             "The plugin's own settings are the [config] table of the --config file; the\n\
-             instance's `config` in giles.toml must be unset."
+             instance's `config` in doozers.toml must be unset."
                 .to_owned(),
         )
     } else {
         (
             "listen, data, tls_cert, tls_key, token_file",
-            format!("The plugin's own settings come from `[{kind}.<name>.config]` in giles.toml."),
+            format!(
+                "The plugin's own settings come from `[{kind}.<name>.config]` in doozers.toml."
+            ),
         )
     };
     format!(
@@ -487,9 +492,9 @@ pub(crate) fn usage(kind: Kind, plugin: &str) -> String {
 Usage: {binary} <command>
 
 Commands:
-  serve [options]  Run as a remote plugin: listen on TCP for a Giles core that has
+  serve [options]  Run as a remote plugin: listen on TCP for a Doozers core that has
                    `address` set for this plugin's instance.
-  socket           How Giles launches the plugin itself. Not meant to be run by hand.
+  socket           How Doozers launches the plugin itself. Not meant to be run by hand.
 
 Options of serve (each is also a key of the --config file, in a TOML table; a flag wins):
   --config <file>      A TOML file with the options below as keys, without the dashes and with
@@ -498,11 +503,11 @@ Options of serve (each is also a key of the --config file, in a TOML table; a fl
   --data <dir>         The plugin's data directory. Required.
   --tls-cert <file>    The PEM certificate chain to serve TLS with. With --tls-key.
   --tls-key <file>     The PEM private key.
-  --token-file <file>  A file holding the bearer token Giles must send, readable only by you.
+  --token-file <file>  A file holding the bearer token Doozers must send, readable only by you.
   --no-auth            Accept any caller, with no token. For a plugin on a private network.
 
 The bearer token is {token_env}, or --token-file. It is the instance's
-`auth = {{ bearer = ... }}` in giles.toml. Without one, serve refuses to start unless --no-auth is
+`auth = {{ bearer = ... }}` in doozers.toml. Without one, serve refuses to start unless --no-auth is
 given. {settings}
 "
     )
@@ -717,13 +722,13 @@ mod tests {
             .resolve(
                 Kind::Channel,
                 "foo-bar",
-                &env_of(&[("GILES_CHANNEL_FOO_BAR_TOKEN", "abc")]),
+                &env_of(&[("DOOZERS_CHANNEL_FOO_BAR_TOKEN", "abc")]),
             )
             .unwrap();
         assert!(matches!(settings.auth, RemoteAuth::Bearer(t) if t == "abc"));
         assert_eq!(
-            resolve_err(&words, &[("GILES_CHANNEL_FOO_TOKEN", "abc")]),
-            "no bearer token: set GILES_CHANNEL_FOO_BAR_TOKEN, or `token_file` (--token-file), \
+            resolve_err(&words, &[("DOOZERS_CHANNEL_FOO_TOKEN", "abc")]),
+            "no bearer token: set DOOZERS_CHANNEL_FOO_BAR_TOKEN, or `token_file` (--token-file), \
              or pass --no-auth to accept any caller"
         );
     }
@@ -732,10 +737,10 @@ mod tests {
     fn a_token_must_be_a_usable_header_value() {
         let words = ["--listen", "x:1", "--data", "d"];
         for bad in ["", "two words", "tab\t", "caf\u{e9}", "line\nbreak"] {
-            let error = resolve_err(&words, &[("GILES_CHANNEL_FOO_BAR_TOKEN", bad)]);
+            let error = resolve_err(&words, &[("DOOZERS_CHANNEL_FOO_BAR_TOKEN", bad)]);
             assert_eq!(
                 error,
-                "the bearer token from GILES_CHANNEL_FOO_BAR_TOKEN must be one line of visible \
+                "the bearer token from DOOZERS_CHANNEL_FOO_BAR_TOKEN must be one line of visible \
                  ASCII, and not empty"
             );
             assert!(!error.contains(bad) || bad.is_empty());
@@ -747,10 +752,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = token_file(dir.path(), "abc", 0o600);
         let file = file.to_str().unwrap();
-        let var = [("GILES_CHANNEL_FOO_BAR_TOKEN", "abc")];
+        let var = [("DOOZERS_CHANNEL_FOO_BAR_TOKEN", "abc")];
         assert_eq!(
             resolve_err(&["--listen=x:1", "--data=d", "--token-file", file], &var),
-            "the token is set both in GILES_CHANNEL_FOO_BAR_TOKEN and by `token_file`: use one"
+            "the token is set both in DOOZERS_CHANNEL_FOO_BAR_TOKEN and by `token_file`: use one"
         );
         for env in [&var[..], &[]] {
             let mut words = vec!["--listen=x:1", "--data=d", "--no-auth"];
@@ -818,12 +823,12 @@ mod tests {
     fn usage_names_the_binary_and_the_token_variable() {
         let text = usage(Kind::Channel, "foo-bar");
         assert!(text.starts_with("Usage: doozers-channel-foo-bar <command>"));
-        assert!(text.contains("GILES_CHANNEL_FOO_BAR_TOKEN"));
+        assert!(text.contains("DOOZERS_CHANNEL_FOO_BAR_TOKEN"));
         assert!(text.contains("`[channel.<name>.config]`"));
 
         let text = usage(Kind::Environment, "foo-bar");
         assert!(text.starts_with("Usage: doozers-environment-foo-bar <command>"));
-        assert!(text.contains("GILES_ENVIRONMENT_FOO_BAR_TOKEN"));
+        assert!(text.contains("DOOZERS_ENVIRONMENT_FOO_BAR_TOKEN"));
         assert!(text.contains("[config] table of the --config file"));
     }
 
@@ -880,9 +885,9 @@ mod tests {
     fn the_token_variable_names_the_kind() {
         assert_eq!(
             token_env(Kind::Environment, "my-docker"),
-            "GILES_ENVIRONMENT_MY_DOCKER_TOKEN"
+            "DOOZERS_ENVIRONMENT_MY_DOCKER_TOKEN"
         );
-        assert_eq!(token_env(Kind::Channel, "irc"), "GILES_CHANNEL_IRC_TOKEN");
+        assert_eq!(token_env(Kind::Channel, "irc"), "DOOZERS_CHANNEL_IRC_TOKEN");
         assert_eq!(
             binary_name(Kind::Environment, "docker"),
             "doozers-environment-docker"

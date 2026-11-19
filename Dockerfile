@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# The Giles container image (PLAN section 14.2): `giles` and the first-party plugins on Debian
+# The Doozers container image (PLAN section 14.2): `doozers` and the first-party plugins on Debian
 # bookworm. Build it with `docker build .`; nothing is built on the host first. See
 # Docs/technical/container-image.md.
 
@@ -24,9 +24,9 @@ COPY . .
 # own architecture (the plugin reaches an engine on another machine as a remote plugin), so the
 # helper is built for it, as a musl binary that runs in any image, and installed next to the plugin
 # as `doozers-workspace-helper-<arch>`.
-RUN --mount=type=cache,id=giles-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=giles-cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=giles-target,target=/src/target,sharing=locked \
+RUN --mount=type=cache,id=doozers-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=doozers-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=doozers-target,target=/src/target,sharing=locked \
     set -eu; \
     bins="doozers doozers-channel-irc doozers-channel-email doozers-channel-whatsapp doozers-channel-discord doozers-environment-docker"; \
     arch="$(uname -m)"; \
@@ -39,37 +39,37 @@ RUN --mount=type=cache,id=giles-cargo-registry,target=/usr/local/cargo/registry,
 # Runtime stage.
 FROM debian:bookworm-slim
 
-# `tini` runs as PID 1: it forwards signals to `giles` and reaps orphaned plugin descendants, which
-# would otherwise stay zombies.
+# `tini` runs as PID 1: it forwards signals to `doozers` and reaps orphaned plugin descendants,
+# which would otherwise stay zombies.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata tini \
     && rm -rf /var/lib/apt/lists/*
 
 # A fixed, unprivileged uid and gid outside the range of system and login accounts, so a
 # bind-mounted data root can be given to it.
-RUN groupadd --gid 10001 giles \
+RUN groupadd --gid 10001 doozers \
     && useradd --uid 10001 --gid doozers --home-dir /data --no-create-home --shell /usr/sbin/nologin \
-        giles \
-    && install -d -m 0700 -o giles -g giles /data
+        doozers \
+    && install -d -m 0700 -o doozers -g doozers /data
 
 # Plugin discovery finds the plugins on `$PATH` (PLAN section 7.3), so the data root stays pure data.
 COPY --from=build /out/ /usr/local/bin/
 # The repository is MIT OR Apache-2.0, except plugins/doozers-channel-whatsapp, which is
 # AGPL-3.0-only (it links AGPL code): its license text and source offer ship with the binary.
-COPY LICENSE-MIT LICENSE-APACHE /usr/share/doc/giles/
+COPY LICENSE-MIT LICENSE-APACHE /usr/share/doc/doozers/
 COPY plugins/doozers-channel-whatsapp/LICENSE-AGPL-3.0 plugins/doozers-channel-whatsapp/THIRD-PARTY \
-    /usr/share/doc/giles/
+    /usr/share/doc/doozers/
 
-LABEL org.opencontainers.image.title="Giles" \
+LABEL org.opencontainers.image.title="Doozers" \
       org.opencontainers.image.description="A personal agent daemon with chat channel plugins." \
-      org.opencontainers.image.source="https://github.com/jennings/giles" \
+      org.opencontainers.image.source="https://github.com/jennings/doozers" \
       org.opencontainers.image.licenses="(MIT OR Apache-2.0) AND AGPL-3.0-only"
 
-ENV GILES_HOME=/data
+ENV DOOZERS_HOME=/data
 VOLUME ["/data"]
-USER giles
+USER doozers
 WORKDIR /data
-# `giles.toml` must set `http_listen = "0.0.0.0:8080"` for this port to be reachable.
+# `doozers.toml` must set `http_listen = "0.0.0.0:8080"` for this port to be reachable.
 EXPOSE 8080
 
 ENTRYPOINT ["/usr/bin/tini", "--", "doozers"]

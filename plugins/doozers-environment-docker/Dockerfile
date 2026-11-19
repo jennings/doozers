@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # The doozers-environment-docker container image: the Docker environment plugin in `serve` mode, for
-# running next to a container engine and pointing a Giles core at it. Build it from the repository
+# running next to a container engine and pointing a Doozers core at it. Build it from the repository
 # root with `docker build -f plugins/doozers-environment-docker/Dockerfile .`. See
 # Docs/technical/container-image.md.
 
@@ -19,8 +19,8 @@ COPY . .
 # the engine's architecture, which needn't be this image's (an amd64 image under emulation on an
 # arm64 engine), so both are built: musl binaries linked by rust-lld (.cargo/config.toml) cross-build
 # from either architecture.
-RUN --mount=type=cache,id=giles-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=giles-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+RUN --mount=type=cache,id=doozers-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=doozers-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=doozers-environment-docker-target,target=/src/target,sharing=locked \
     set -eu; \
     cargo build --release --locked -p doozers-environment-docker; \
@@ -45,8 +45,8 @@ COPY --from=build /out/ /usr/local/bin/
 COPY LICENSE-MIT LICENSE-APACHE /usr/share/doc/doozers-environment-docker/
 
 LABEL org.opencontainers.image.title="doozers-environment-docker" \
-      org.opencontainers.image.description="The Giles Docker environment plugin, served for a remote Giles core." \
-      org.opencontainers.image.source="https://github.com/jennings/giles" \
+      org.opencontainers.image.description="The Doozers Docker environment plugin, served for a remote Doozers core." \
+      org.opencontainers.image.source="https://github.com/jennings/doozers" \
       org.opencontainers.image.licenses="MIT OR Apache-2.0"
 
 # The plugin keeps no state of its own (workspaces are described by labels on the engine's
@@ -58,5 +58,5 @@ EXPOSE 7443
 # It runs as root: what it may do comes from the mounted engine socket, which a mounted socket's
 # owner and mode (root:docker on a Docker host, the user's own for rootless Podman) would otherwise
 # keep from an unprivileged uid. Arguments are added to these, e.g. `--config /config.toml`, and the
-# token comes from GILES_ENVIRONMENT_DOCKER_TOKEN or `token_file`.
+# token comes from DOOZERS_ENVIRONMENT_DOCKER_TOKEN or `token_file`.
 ENTRYPOINT ["/usr/bin/tini", "--", "doozers-environment-docker", "serve", "--listen", "0.0.0.0:7443", "--data", "/data"]

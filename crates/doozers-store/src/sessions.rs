@@ -325,7 +325,7 @@ pub(crate) mod tests {
 
     pub(crate) async fn store() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         (dir, store)
     }
 

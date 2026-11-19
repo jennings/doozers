@@ -16,7 +16,7 @@ No Rust IRC client library fits, so the client is written on `tokio`, with two l
   itself.
 - **`tokio-rustls` 0.26** (default features off) carries the connection over TLS with the client
   config built from `doozers_plugin_sdk::tls::root_store()` (bundled Mozilla roots) and the
-  `aws-lc-rs` provider, the same trust store and crypto as the rest of Giles. No native-tls or
+  `aws-lc-rs` provider, the same trust store and crypto as the rest of Doozers. No native-tls or
   OpenSSL.
 
 The full `irc` crate was rejected: its TLS is native-tls (on by default) or rustls with
@@ -93,7 +93,7 @@ deadline):
   registration try `nick_`, `nick__`, `nick___`; `432`, `464`, `465` end the session. Registration
   must finish within `register_timeout` (60 s).
 - **Keepalive**: any line resets the quiet clock; after `ping_after` (2 min) quiet the plugin sends
-  `PING :giles`, and after `ping_timeout` (1 min) more it gives up. Server `PING`s are answered at
+  `PING :doozers`, and after `ping_timeout` (1 min) more it gives up. Server `PING`s are answered at
   once.
 - **Framing**: lines end in LF (CR optional); invalid UTF-8 is decoded lossily (a stray Latin-1 byte
   in a channel mustn't drop the connection); a line over 8703 bytes (8191 of tags plus 512) is

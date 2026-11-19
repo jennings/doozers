@@ -8,7 +8,7 @@ use doozers_types::Error;
 /// - TLS is rustls trusting only the bundled Mozilla root certificates (`webpki-root-certs`),
 ///   never the OS trust store;
 /// - redirects aren't followed, so a credential header can't be forwarded to another host;
-/// - the user agent is `giles/<version>`.
+/// - the user agent is `doozers/<version>`.
 ///
 /// Callers add their own timeouts and build.
 pub fn tls_client_builder() -> Result<reqwest::ClientBuilder, Error> {
@@ -20,7 +20,7 @@ pub fn tls_client_builder() -> Result<reqwest::ClientBuilder, Error> {
     Ok(reqwest::Client::builder()
         .tls_certs_only(roots)
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("giles/", env!("CARGO_PKG_VERSION"))))
+        .user_agent(concat!("doozers/", env!("CARGO_PKG_VERSION"))))
 }
 
 #[cfg(test)]

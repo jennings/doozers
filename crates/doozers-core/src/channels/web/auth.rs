@@ -24,7 +24,7 @@ pub const CSRF_HEADER: &str = "x-csrf-token";
 pub const CSRF_FIELD: &str = "csrf";
 
 /// The session cookie.
-pub const SESSION_COOKIE: &str = "giles_session";
+pub const SESSION_COOKIE: &str = "doozers_session";
 
 /// How long a web session lasts (PLAN section 3.4).
 pub const WEB_SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
@@ -71,7 +71,7 @@ pub(super) struct TrustedProxy;
 /// (the cookie is `HttpOnly`), so it needs no storage and survives restarts.
 pub(super) fn cookie_csrf(token: &str) -> String {
     hex(&Sha256::new()
-        .chain_update(b"giles web csrf\0")
+        .chain_update(b"doozers web csrf\0")
         .chain_update(token.as_bytes())
         .finalize())
 }
@@ -202,13 +202,13 @@ mod tests {
     fn the_session_cookie_is_found_among_others() {
         let mut headers = HeaderMap::new();
         assert_eq!(cookie(&headers, SESSION_COOKIE), None);
-        headers.append("cookie", "a=1; giles_session=abc ; b=2".parse().unwrap());
+        headers.append("cookie", "a=1; doozers_session=abc ; b=2".parse().unwrap());
         assert_eq!(cookie(&headers, SESSION_COOKIE), Some("abc"));
         let mut headers = HeaderMap::new();
-        headers.append("cookie", "giles_session=".parse().unwrap());
-        headers.append("cookie", "x=y; giles_session=def".parse().unwrap());
+        headers.append("cookie", "doozers_session=".parse().unwrap());
+        headers.append("cookie", "x=y; doozers_session=def".parse().unwrap());
         assert_eq!(cookie(&headers, SESSION_COOKIE), Some("def"));
-        headers.insert("cookie", "giles_sessionx=1".parse().unwrap());
+        headers.insert("cookie", "doozers_sessionx=1".parse().unwrap());
         assert_eq!(cookie(&headers, SESSION_COOKIE), None);
     }
 
@@ -216,15 +216,15 @@ mod tests {
     fn session_cookies_are_http_only_lax_and_secure_over_https() {
         assert_eq!(
             session_cookie("t", false),
-            "giles_session=t; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax"
+            "doozers_session=t; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax"
         );
         assert_eq!(
             session_cookie("t", true),
-            "giles_session=t; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax; Secure"
+            "doozers_session=t; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax; Secure"
         );
         assert_eq!(
             clear_session_cookie(true),
-            "giles_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure"
+            "doozers_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure"
         );
     }
 

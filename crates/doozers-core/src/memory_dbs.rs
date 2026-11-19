@@ -1,7 +1,7 @@
 //! [`MemoryDbs`]: the open per-agent memory databases (`agents/<agent>/memory.db`).
 //!
 //! Each agent has its own [`MemoryStore`]. The registry opens one on first use, in the journal mode
-//! of `[core] journal_mode` (as for `giles.db`), and keeps it open: every [`get`](MemoryDbs::get)
+//! of `[core] journal_mode` (as for `doozers.db`), and keeps it open: every [`get`](MemoryDbs::get)
 //! of the same agent returns a handle to the same connections, and concurrent first calls open the
 //! file once. A database nothing asks for is never opened, so an agent that has never remembered
 //! anything has no `memory.db` until its first `get`.

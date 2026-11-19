@@ -1,9 +1,9 @@
 //! The secret store (PLAN section 7.7): named credentials the core injects into the components
-//! that use them, never shown to the model or through any Giles surface.
+//! that use them, never shown to the model or through any Doozers surface.
 //!
 //! A [`SecretProvider`] holds secrets by [`SecretPath`]. [`LocalSecrets`] is the built-in
-//! provider: values sealed with AES-256-GCM in `giles.db`, under a data key wrapped by the key in
-//! a [`KeyFile`]. Other providers (HashiCorp Vault, `giles-secret-*` plugins over gRPC) implement
+//! provider: values sealed with AES-256-GCM in `doozers.db`, under a data key wrapped by the key in
+//! a [`KeyFile`]. Other providers (HashiCorp Vault, `doozers-secret-*` plugins over gRPC) implement
 //! the same trait. Who may use or manage a secret is the core's check, made above the provider.
 //! The design is in `Docs/technical/secret-store.md`.
 
@@ -35,7 +35,7 @@ pub struct SecretMetadata {
     pub description: String,
     /// When the secret was created.
     pub created_at: Timestamp,
-    /// The user who created it, or `None` if no user did (the operator at the CLI, or Giles).
+    /// The user who created it, or `None` if no user did (the operator at the CLI, or Doozers).
     pub created_by: Option<UserId>,
     /// When its value or description last changed.
     pub updated_at: Timestamp,
@@ -118,7 +118,7 @@ pub enum KeyError {
     Io {
         /// The key file.
         path: PathBuf,
-        /// What Giles was doing: `inspect`, `read`, `create`, or `write`.
+        /// What Doozers was doing: `inspect`, `read`, `create`, or `write`.
         action: &'static str,
         /// Why.
         source: io::Error,
@@ -152,11 +152,11 @@ pub enum KeyError {
         /// The key file.
         path: PathBuf,
     },
-    /// The key file set by `core.secret_key_file` doesn't exist. Giles creates one only at the
+    /// The key file set by `core.secret_key_file` doesn't exist. Doozers creates one only at the
     /// default location.
     #[error(
         "the secret store's key file {}, set by `core.secret_key_file`, doesn't exist; create it \
-         with `openssl rand -hex 32 > {}` and make it readable only by Giles, or remove the setting \
+         with `openssl rand -hex 32 > {}` and make it readable only by Doozers, or remove the setting \
          to use the default",
         .path.display(),
         .path.display()
@@ -167,7 +167,7 @@ pub enum KeyError {
     },
     /// The key file is missing, and secrets sealed with its key are stored.
     #[error(
-        "the secret store's key file {} is missing, and giles.db holds {stored} secret(s) sealed \
+        "the secret store's key file {} is missing, and doozers.db holds {stored} secret(s) sealed \
          with its key; restore the file from where you keep it{}",
         .path.display(),
         if *.configured { ", or fix `core.secret_key_file` if it names the wrong file" } else { "" }
@@ -183,7 +183,7 @@ pub enum KeyError {
     /// The key file's key doesn't unlock the stored data key, and secrets sealed with it are
     /// stored.
     #[error(
-        "the secret store's key file {} doesn't unlock the secrets in giles.db ({stored} stored): \
+        "the secret store's key file {} doesn't unlock the secrets in doozers.db ({stored} stored): \
          {reason}; put back the key file they were stored with",
         .path.display()
     )]
@@ -196,6 +196,6 @@ pub enum KeyError {
         reason: String,
     },
     /// The database couldn't be read or written.
-    #[error("cannot open the secret store in giles.db: {0}")]
+    #[error("cannot open the secret store in doozers.db: {0}")]
     Store(#[from] doozers_store::Error),
 }

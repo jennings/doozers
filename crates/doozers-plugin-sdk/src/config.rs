@@ -1,5 +1,5 @@
 //! Durations (`"30s"`, `"10m"`, `"1h30m"`) and byte sizes (`52428800`, `"50 MiB"`), written the
-//! way `giles.toml` writes them, so a plugin's `config` table reads like the core's own.
+//! way `doozers.toml` writes them, so a plugin's `config` table reads like the core's own.
 //!
 //! ```
 //! use doozers_plugin_sdk::config::{ByteSize, HumanDuration};

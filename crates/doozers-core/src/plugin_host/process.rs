@@ -25,8 +25,8 @@ use crate::process_group::{exited_unreaped, signal_group, wait_exited};
 use crate::stderr_lines;
 
 /// The `tracing` target of a plugin's stderr lines, so an operator can filter them
-/// (`GILES_LOG=info,doozers_core::plugin_host::stderr=warn`). The level is the one the line itself
-/// carries if it is a log message, else `info`.
+/// (`DOOZERS_LOG=info,doozers_core::plugin_host::stderr=warn`). The level is the one the line
+/// itself carries if it is a log message, else `info`.
 pub const STDERR_TARGET: &str = "doozers_core::plugin_host::stderr";
 
 /// How many of the latest stderr lines a [`PluginProcess`] keeps for error messages.
@@ -228,7 +228,7 @@ impl PluginProcess {
         Ok(Some(status))
     }
 
-    /// Closes the plugin's stdin. A Giles plugin takes end-of-file as the core being gone and
+    /// Closes the plugin's stdin. A Doozers plugin takes end-of-file as the core being gone and
     /// exits (PLAN section 7.4).
     pub fn close_stdin(&mut self) {
         self.stdin = None;

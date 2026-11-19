@@ -3,14 +3,14 @@
 //! sees their own; a sign-in is that user's, and its tokens go to their own space of the secret
 //! store ([`ToolsetManager::begin_sign_in`]).
 //!
-//! Signing in leaves Giles: `/connections/{name}/sign-in` sends the browser to the server's
+//! Signing in leaves Doozers: `/connections/{name}/sign-in` sends the browser to the server's
 //! authorization page, which sends it back to `/connections/{name}/callback` with a code. Each
 //! toolset has its own callback, checked against the sign-in waiting, so a code another server's
 //! authorization server issued can't be finished as this one's. Both are
 //! `GET`s, as the redirects are: the page's `form-action 'self'` would stop a form that redirects
 //! elsewhere. The sign-in link carries the CSRF token as `?csrf=`, so another site can't start a
 //! sign-in (which, with a server that approves silently, would replace the user's tokens); pages
-//! send no `Referer`, so the token doesn't leave Giles with the redirect. The callback finishes
+//! send no `Referer`, so the token doesn't leave Doozers with the redirect. The callback finishes
 //! only a sign-in the same user started, by its `state`. Signing out is a CSRF-checked form post.
 
 use std::collections::HashMap;

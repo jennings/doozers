@@ -43,7 +43,7 @@ use serde_json::json;
 
 use self::mcp_server::TestServer;
 
-const CLIENT_ID: &str = "giles-client";
+const CLIENT_ID: &str = "doozers-client";
 const CLIENT_SECRET: &str = "client-secret-31";
 const WAIT: Duration = Duration::from_secs(20);
 
@@ -268,14 +268,14 @@ async fn token(
     .into_response()
 }
 
-struct Giles {
+struct Doozers {
     _dir: tempfile::TempDir,
     registry: Arc<Registry>,
     secrets: Arc<dyn SecretProvider>,
     manager: Arc<ToolsetManager>,
 }
 
-impl Giles {
+impl Doozers {
     async fn start() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
@@ -290,7 +290,7 @@ impl Giles {
             &LoadOptions {
                 builtins: Builtins::V1,
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
             },
         )
         .unwrap();
@@ -312,7 +312,7 @@ impl Giles {
             root.clone(),
             root.secret_key_file(),
             secrets.clone(),
-            "/nonexistent/giles".into(),
+            "/nonexistent/doozers".into(),
             Err("no sandbox in this test".to_owned()),
             blobs,
         );
@@ -428,25 +428,25 @@ impl Giles {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     let (origin, issuer) = serve().await;
-    let giles = Giles::start().await;
+    let doozers = Doozers::start().await;
     let owner = UserId::new("owner").unwrap();
     let token_path = "users/owner/toolsets/files/oauth-token";
 
-    giles.add_files(&origin).await;
+    doozers.add_files(&origin).await;
     assert_eq!(
-        giles
+        doozers
             .secret("toolsets/files/oauth-client-secret")
             .await
             .as_deref(),
         Some(CLIENT_SECRET)
     );
-    let views = giles.manager.sign_ins(&owner).await.unwrap();
+    let views = doozers.manager.sign_ins(&owner).await.unwrap();
     assert_eq!(views.len(), 1);
     assert_eq!(views[0].signed_in, None);
 
     // The sign-in starts with the authorization URL: PKCE, the client, the resource, the state.
     let callback = |name: &str| format!("http://127.0.0.1:1/connections/{name}/callback");
-    let url = giles
+    let url = doozers
         .manager
         .begin_sign_in("files", &owner, &callback)
         .await
@@ -468,14 +468,14 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     // Another user can't finish it, nor can a made-up state.
     let bob = UserId::new("bob").unwrap();
     assert!(
-        giles
+        doozers
             .manager
             .finish_sign_in("files", &bob, &state, &code(&bob), None)
             .await
             .is_err()
     );
     assert!(
-        giles
+        doozers
             .manager
             .finish_sign_in("files", &owner, "nope", &code(&owner), None)
             .await
@@ -483,22 +483,22 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     );
 
     // The browser comes back with the code: the tokens are stored, sealed, in the user's space.
-    let name = giles
+    let name = doozers
         .manager
         .finish_sign_in("files", &owner, &state, &code(&owner), None)
         .await
         .unwrap();
     assert_eq!(name, "files");
-    let stored = giles.secret(token_path).await.expect("tokens stored");
+    let stored = doozers.secret(token_path).await.expect("tokens stored");
     assert!(stored.contains("access-1"), "{stored}");
     assert!(
-        giles.manager.sign_ins(&owner).await.unwrap()[0]
+        doozers.manager.sign_ins(&owner).await.unwrap()[0]
             .signed_in
             .is_some()
     );
     // The state is spent.
     assert!(
-        giles
+        doozers
             .manager
             .finish_sign_in("files", &owner, &state, &code(&owner), None)
             .await
@@ -508,8 +508,8 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     // The toolset restarts over the owner's connection and offers the owner the server's tools.
     // The first access token was about to expire, so the connection refreshed it and stored the
     // new one.
-    giles.offered(&owner, "files__echo").await;
-    let echoed = giles.echo(Some("owner"), "hello").await.unwrap();
+    doozers.offered(&owner, "files__echo").await;
+    let echoed = doozers.echo(Some("owner"), "hello").await.unwrap();
     assert!(echoed.contains(r#""text":"hello""#), "{echoed}");
     {
         let issued = lock(&issuer);
@@ -517,18 +517,18 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
         assert!(issued.seen.iter().all(|token| token.starts_with("access-")));
         assert_eq!(issued.seen.last().map(String::as_str), Some("access-2"));
     }
-    let stored = giles.secret(token_path).await.unwrap();
+    let stored = doozers.secret(token_path).await.unwrap();
     assert!(stored.contains("access-2"), "{stored}");
 
     // No fallback to another user's sign-in, and none for a turn with no user.
-    let err = giles.echo(Some("bob"), "hi").await.unwrap_err();
+    let err = doozers.echo(Some("bob"), "hi").await.unwrap_err();
     assert!(err.contains("haven't signed in"), "{err}");
-    let err = giles.echo(None, "hi").await.unwrap_err();
+    let err = doozers.echo(None, "hi").await.unwrap_err();
     assert!(err.contains("no user"), "{err}");
 
     // Bob signs in. When the server then names another token endpoint, his tokens and the client
     // secret aren't sent there: his connection is refused.
-    let url = giles
+    let url = doozers
         .manager
         .begin_sign_in("files", &bob, &callback)
         .await
@@ -540,28 +540,28 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
         .unwrap()
         .1
         .into_owned();
-    giles
+    doozers
         .manager
         .finish_sign_in("files", &bob, &state, &code(&bob), None)
         .await
         .unwrap();
     lock(&issuer).moved = true;
-    let err = giles.echo(Some("bob"), "hi").await.unwrap_err();
+    let err = doozers.echo(Some("bob"), "hi").await.unwrap_err();
     assert!(err.contains("another sign-in server"), "{err}");
     assert_eq!(lock(&issuer).stolen, 0);
     assert!(
-        giles
+        doozers
             .secret("users/bob/toolsets/files/oauth-token")
             .await
             .is_some()
     );
-    giles.manager.sign_out("files", &bob).await.unwrap();
+    doozers.manager.sign_out("files", &bob).await.unwrap();
 
     // Signing out deletes the tokens; removing the toolset deletes its client secret.
-    giles.manager.sign_out("files", &owner).await.unwrap();
-    assert_eq!(giles.secret(token_path).await, None);
+    doozers.manager.sign_out("files", &owner).await.unwrap();
+    assert_eq!(doozers.secret(token_path).await, None);
     assert_eq!(
-        giles.manager.sign_ins(&owner).await.unwrap()[0].signed_in,
+        doozers.manager.sign_ins(&owner).await.unwrap()[0].signed_in,
         None
     );
     // A user's waiting sign-ins are capped, and never push out another user's.
@@ -576,7 +576,7 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
             .into_owned()
     };
     let bobs = state_of(
-        giles
+        doozers
             .manager
             .begin_sign_in("files", &bob, &callback)
             .await
@@ -584,14 +584,14 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     );
     let mut owners = Vec::new();
     for _ in 0..5 {
-        let url = giles
+        let url = doozers
             .manager
             .begin_sign_in("files", &owner, &callback)
             .await
             .unwrap();
         owners.push(state_of(url));
     }
-    let err = giles
+    let err = doozers
         .manager
         .finish_sign_in("files", &owner, &owners[0], &code(&owner), None)
         .await
@@ -600,34 +600,34 @@ async fn a_user_signs_in_and_their_tokens_are_used_refreshed_and_deleted() {
     // A code that comes back to another toolset's callback (an authorization server mix-up) is
     // refused, and the sign-in dropped.
     for (callback_of, reason) in [("notes", "came back to the callback"), ("files", "expired")] {
-        let err = giles
+        let err = doozers
             .manager
             .finish_sign_in(callback_of, &owner, &owners[1], &code(&owner), None)
             .await
             .unwrap_err();
         assert!(err.to_string().contains(reason), "{err}");
     }
-    assert_eq!(giles.secret(token_path).await, None);
-    giles
+    assert_eq!(doozers.secret(token_path).await, None);
+    doozers
         .manager
         .finish_sign_in("files", &bob, &bobs, &code(&bob), None)
         .await
         .unwrap();
-    giles.manager.sign_out("files", &bob).await.unwrap();
+    doozers.manager.sign_out("files", &bob).await.unwrap();
 
-    giles.manager.remove("files").await.unwrap();
-    assert!(giles.secrets.list(None).await.unwrap().is_empty());
+    doozers.manager.remove("files").await.unwrap();
+    assert!(doozers.secrets.list(None).await.unwrap().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn each_user_is_offered_the_tools_their_own_account_lists() {
     let (origin, _issuer) = serve().await;
-    let giles = Giles::start().await;
-    giles.add_files(&origin).await;
+    let doozers = Doozers::start().await;
+    doozers.add_files(&origin).await;
     let owner = UserId::new("owner").unwrap();
     let bob = UserId::new("bob").unwrap();
-    giles.sign_in(&owner).await;
-    giles.sign_in(&bob).await;
+    doozers.sign_in(&owner).await;
+    doozers.sign_in(&bob).await;
 
     let files = |tools: &ToolSnapshot| -> Vec<String> {
         tools
@@ -636,19 +636,19 @@ async fn each_user_is_offered_the_tools_their_own_account_lists() {
             .filter(|name| name.starts_with("files__account_"))
             .collect()
     };
-    let owners = giles.offered(&owner, "files__account_owner").await;
+    let owners = doozers.offered(&owner, "files__account_owner").await;
     assert_eq!(files(&owners), ["files__account_owner"]);
     assert!(owners.get("files__echo").is_some());
-    let bobs = giles.offered(&bob, "files__account_bob").await;
+    let bobs = doozers.offered(&bob, "files__account_bob").await;
     assert_eq!(files(&bobs), ["files__account_bob"]);
 
     // No one's tools are offered to everyone: not to a user who hasn't signed in, nor to a
     // session with no user.
     let carol = UserId::new("carol").unwrap();
     for tools in [
-        giles.registry.tools().snapshot(),
-        giles.registry.tools_for(None).await,
-        giles.registry.tools_for(Some(&carol)).await,
+        doozers.registry.tools().snapshot(),
+        doozers.registry.tools_for(None).await,
+        doozers.registry.tools_for(Some(&carol)).await,
     ] {
         assert!(
             tools.specs().all(|spec| !spec.name.starts_with("files__")),

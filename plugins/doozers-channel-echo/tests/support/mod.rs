@@ -25,7 +25,7 @@ pub const ECHO: &str = env!("CARGO_BIN_EXE_doozers-channel-echo");
 /// Upper bound for anything that must not hang.
 pub const WAIT: Duration = Duration::from_secs(10);
 
-/// A temporary data root whose `giles.toml` has the given channel tables.
+/// A temporary data root whose `doozers.toml` has the given channel tables.
 pub struct Home {
     _dir: tempfile::TempDir,
     /// The data root.
@@ -34,7 +34,7 @@ pub struct Home {
 }
 
 impl Home {
-    /// A data root with `channels` in `giles.toml` and `env` as the environment config references
+    /// A data root with `channels` in `doozers.toml` and `env` as the environment config references
     /// (`{ env = "NAME" }`) resolve against.
     pub fn new(channels: &str, env: &[(&str, &str)]) -> Self {
         Self::create(
@@ -44,7 +44,7 @@ impl Home {
     }
 
     /// A data root that routes every message from the owner, `echo:owner`, to agent `jeeves`,
-    /// with `channels` in `giles.toml`: what [`Home::start_core`] needs.
+    /// with `channels` in `doozers.toml`: what [`Home::start_core`] needs.
     pub fn serving(channels: &str) -> Self {
         let home = Self::create(
             &format!(
@@ -64,14 +64,14 @@ impl Home {
         home
     }
 
-    fn create(giles_toml: &str, env: &[(&str, &str)]) -> Self {
+    fn create(doozers_toml: &str, env: &[(&str, &str)]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         // Resolved, so the data directory isn't below a symbolic link the sandbox would see
         // differently (macOS `/var` is a link to `/private/var`).
         let base = dir.path().canonicalize().unwrap();
         let root = DataRoot::new(base.join("home"), Path::new("/tmp")).unwrap();
         root.create_layout().unwrap();
-        fs::write(root.config_file(), giles_toml).unwrap();
+        fs::write(root.config_file(), doozers_toml).unwrap();
         Self {
             _dir: dir,
             root,
@@ -92,7 +92,7 @@ impl Home {
         link
     }
 
-    /// Appends `channels` (TOML tables) to `giles.toml`, e.g. once a remote plugin's address is
+    /// Appends `channels` (TOML tables) to `doozers.toml`, e.g. once a remote plugin's address is
     /// known.
     pub fn add_channels(&self, channels: &str) {
         use std::io::Write as _;
@@ -122,7 +122,7 @@ impl Home {
             &LoadOptions {
                 builtins: Builtins::V1,
                 env: &env,
-                giles_exe: None,
+                doozers_exe: None,
             },
         )
         .unwrap()
@@ -163,10 +163,10 @@ impl Home {
         }
     }
 
-    /// The files in `giles-sdk/<dir>` of `instance`'s data directory.
+    /// The files in `doozers-sdk/<dir>` of `instance`'s data directory.
     pub fn sdk_files(&self, instance: &str, dir: &str) -> Vec<String> {
         let mut names: Vec<String> =
-            fs::read_dir(self.data_dir(instance).join("giles-sdk").join(dir))
+            fs::read_dir(self.data_dir(instance).join("doozers-sdk").join(dir))
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
                 .collect();
@@ -178,7 +178,7 @@ impl Home {
     /// each), and a plugin host that supervises every plugin channel (launched without a
     /// trampoline), returning after each one's first launch attempt.
     pub async fn start_core(&self) -> Core {
-        self.start_core_with(self.launcher(PathBuf::from("/nonexistent/giles")))
+        self.start_core_with(self.launcher(PathBuf::from("/nonexistent/doozers")))
             .await
     }
 

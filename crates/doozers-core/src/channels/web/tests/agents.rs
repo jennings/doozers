@@ -265,7 +265,7 @@ async fn an_agents_page_shows_its_files_escaped_and_refuses_links() {
     assert!(!html.contains("<code>MEMORY.md</code> <span"), "{html}");
     assert!(!html.contains("TOP SECRET"), "{html}");
     assert!(!html.contains(".hidden"), "{html}");
-    assert!(!html.contains("giles.toml"), "{html}");
+    assert!(!html.contains("doozers.toml"), "{html}");
     // The cut-off file shows exactly the cap.
     assert!(html.contains(&"x".repeat(MAX_FILE_BYTES as usize)));
     assert!(!html.contains(&"x".repeat(MAX_FILE_BYTES as usize + 1)));
@@ -358,7 +358,7 @@ async fn creating_an_agent_writes_files_that_load_and_makes_it_usable_at_once() 
         env.root(),
         &LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..LoadOptions::default()
         },
     )
@@ -799,7 +799,7 @@ async fn a_staging_directory_left_by_a_crash_breaks_nothing() {
         env.root(),
         &LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..LoadOptions::default()
         },
     )

@@ -116,7 +116,7 @@ pub enum SkillError {
     },
 }
 
-/// The front-matter fields Giles reads. Others (`license`, `metadata`, `allowed-tools`, ...) are
+/// The front-matter fields Doozers reads. Others (`license`, `metadata`, `allowed-tools`, ...) are
 /// ignored.
 #[derive(Debug, Default, Deserialize)]
 struct FrontMatter {

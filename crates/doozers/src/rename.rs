@@ -1,4 +1,4 @@
-//! The renames done with Giles stopped: `doozers channel rename`, `doozers environment rename`,
+//! The renames done with Doozers stopped: `doozers channel rename`, `doozers environment rename`,
 //! `doozers provider rename`, and `doozers toolset rename` (when no daemon runs). One driver serves
 //! them all; the command gives the kind. It renames an instance in the database, the data
 //! directories, and the configuration (PLAN section 7.2).
@@ -30,13 +30,13 @@ pub enum Core {
     Running(LockError),
 }
 
-/// Finds out whether a daemon runs on the data root (`--home`, `GILES_HOME`, or `~/.giles`) by
-/// taking its lock. A mistyped data root, with no `giles.toml`, is an error that creates nothing.
+/// Finds out whether a daemon runs on the data root (`--home`, `DOOZERS_HOME`, or `~/.doozers`) by
+/// taking its lock. A mistyped data root, with no `doozers.toml`, is an error that creates nothing.
 pub fn lock(home: Option<&Path>) -> anyhow::Result<Core> {
     let root = DataRoot::from_env(home)?;
     if !root.config_file().is_file() {
         bail!(
-            "no giles.toml in {}: is this the right data root? (set --home or GILES_HOME)",
+            "no doozers.toml in {}: is this the right data root? (set --home or DOOZERS_HOME)",
             root.root().display()
         );
     }
@@ -48,7 +48,7 @@ pub fn lock(home: Option<&Path>) -> anyhow::Result<Core> {
     }
 }
 
-/// Renames a `kind` instance with Giles stopped: refuses, with the lock's error, if a daemon
+/// Renames a `kind` instance with Doozers stopped: refuses, with the lock's error, if a daemon
 /// runs.
 pub fn run(home: Option<&Path>, kind: Kind, args: &RenameArgs) -> anyhow::Result<()> {
     match lock(home)? {
@@ -123,20 +123,20 @@ fn format_report(root: &DataRoot, old: &str, new: &str, report: &RenameReport) -
     } else if report.config_table {
         let _ = writeln!(
             text,
-            "  giles.toml: [{kind}.{old}] -> [{kind}.{new}]",
+            "  doozers.toml: [{kind}.{old}] -> [{kind}.{new}]",
             kind = report.kind
         );
     } else {
         let _ = writeln!(
             text,
-            "  giles.toml: [{}.{new}] was already renamed",
+            "  doozers.toml: [{}.{new}] was already renamed",
             report.kind
         );
     }
     if report.legacy_routes > 0 {
         let _ = writeln!(
             text,
-            "  giles.toml: {} [[routes]] rule(s) updated (Giles no longer reads them once they \
+            "  doozers.toml: {} [[routes]] rule(s) updated (Doozers no longer reads them once they \
              are imported)",
             report.legacy_routes
         );
@@ -155,7 +155,7 @@ fn format_report(root: &DataRoot, old: &str, new: &str, report: &RenameReport) -
     for (from, to) in &report.moved {
         let _ = writeln!(text, "  moved {} -> {}", relative(from), relative(to));
     }
-    text.push_str("Start giles again to use the new name.\n");
+    text.push_str("Start doozers again to use the new name.\n");
     text
 }
 
@@ -200,8 +200,8 @@ mod tests {
         let expected = [
             "Renamed channel instance \"libera\" to \"libera-chat\".",
             "  database: 3 sessions, 10 inbox rows, 0 outbox rows, 2 workspaces, 0 usage rows, 0 messages, 1 jobs, 4 routes",
-            "  giles.toml: [channel.libera] -> [channel.libera-chat]",
-            "  giles.toml: 2 [[routes]] rule(s) updated (Giles no longer reads them once they are imported)",
+            "  doozers.toml: [channel.libera] -> [channel.libera-chat]",
+            "  doozers.toml: 2 [[routes]] rule(s) updated (Doozers no longer reads them once they are imported)",
             "memory.db: 5 group memories moved to \"libera-chat\"",
         ];
         for line in expected {
@@ -214,7 +214,7 @@ mod tests {
             )),
             "{text}"
         );
-        assert!(text.ends_with("Start giles again to use the new name.\n"));
+        assert!(text.ends_with("Start doozers again to use the new name.\n"));
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
             text.contains("  database: the stored toolset \"notes\" is now \"memos\"\n"),
             "{text}"
         );
-        assert!(!text.contains("giles.toml"), "{text}");
+        assert!(!text.contains("doozers.toml"), "{text}");
         assert!(!text.contains("sessions"), "a toolset has no rows: {text}");
         assert!(
             text.contains("agent.toml: 2 reference(s) updated"),
@@ -272,14 +272,14 @@ mod tests {
             new: "b".into(),
         };
         let err = run(Some(&home), Kind::Channel, &args).unwrap_err();
-        assert!(err.to_string().contains("no giles.toml"), "{err}");
+        assert!(err.to_string().contains("no doozers.toml"), "{err}");
         assert!(!home.exists(), "a mistyped --home must not be created");
         let err = lock(Some(&home)).map(|_| ()).unwrap_err();
-        assert!(err.to_string().contains("no giles.toml"), "{err}");
+        assert!(err.to_string().contains("no doozers.toml"), "{err}");
         assert!(!home.exists(), "a mistyped --home must not be created");
     }
 
-    /// A data root with a `giles.toml`, a `run/` directory, and the lock of a running daemon.
+    /// A data root with a `doozers.toml`, a `run/` directory, and the lock of a running daemon.
     fn running_home() -> (tempfile::TempDir, InstanceLock) {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();

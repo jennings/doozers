@@ -54,8 +54,8 @@ where
         // A core from before the subcommands starts a plugin with no arguments.
         Err(cli::CliError::NoCommand) if env(MAGIC_COOKIE_ENV).is_some() => {
             eprintln!(
-                "{binary}: Giles launched it without the `socket` argument, so the Giles \
-                 that started it is older than this plugin; upgrade Giles"
+                "{binary}: Doozers launched it without the `socket` argument, so the Doozers \
+                 that started it is older than this plugin; upgrade Doozers"
             );
             ExitCode::from(1)
         }

@@ -31,7 +31,7 @@ struct Home {
 }
 
 impl Home {
-    fn new(giles_toml: &str) -> Self {
+    fn new(doozers_toml: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
         let home = Self {
@@ -39,7 +39,7 @@ impl Home {
             root,
             stored: Vec::new(),
         };
-        home.write("giles.toml", &format!("{MINIMAL}{giles_toml}"));
+        home.write("doozers.toml", &format!("{MINIMAL}{doozers_toml}"));
         home
     }
 
@@ -70,7 +70,7 @@ impl Home {
             &self.root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -313,7 +313,7 @@ fn a_rejected_provider_config_names_the_key_without_the_secret() {
     let err = home.build().unwrap_err();
     assert_config_error(
         &err,
-        &home.path("giles.toml"),
+        &home.path("doozers.toml"),
         (4, 1),
         "provider.anthropic.config",
         "`max_tokens`",
@@ -348,7 +348,7 @@ fn builds_the_openai_provider() {
     let err = home.build().unwrap_err();
     assert_config_error(
         &err,
-        &home.path("giles.toml"),
+        &home.path("doozers.toml"),
         (4, 1),
         "provider.openai.config",
         "dialect",
@@ -363,7 +363,7 @@ fn the_web_channel_needs_its_feature() {
     let err = home.build().unwrap_err();
     assert_config_error(
         &err,
-        &home.path("giles.toml"),
+        &home.path("doozers.toml"),
         // No `component` key: the position of the instance's table name.
         (3, 10),
         "channel.web.component",

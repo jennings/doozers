@@ -28,7 +28,7 @@ pub enum StartError {
     /// The database couldn't be opened or migrated.
     #[error("cannot open the database {}: {source}", .path.display())]
     Store {
-        /// `data/giles.db`.
+        /// `data/doozers.db`.
         path: PathBuf,
         /// Why.
         source: doozers_store::Error,
@@ -40,7 +40,7 @@ pub enum StartError {
         journal_mode_advice(*.mode)
     )]
     JournalMode {
-        /// `data/giles.db`.
+        /// `data/doozers.db`.
         path: PathBuf,
         /// `[core] journal_mode`.
         mode: JournalMode,
@@ -61,7 +61,7 @@ pub enum StartError {
     /// A configured component couldn't be built.
     #[error(transparent)]
     Registry(#[from] RegistryError),
-    /// The routes couldn't be imported from `giles.toml` or loaded.
+    /// The routes couldn't be imported from `doozers.toml` or loaded.
     #[error(transparent)]
     Routes(#[from] RoutesError),
     /// Startup recovery of the sessions failed (PLAN section 6.3).
@@ -79,13 +79,13 @@ pub enum StartError {
 fn journal_mode_advice(mode: JournalMode) -> String {
     if mode == JournalMode::Wal {
         "WAL needs shared memory, which network file systems and some container mounts lack. Set \
-         `journal_mode = \"delete\"` in the `[core]` table of giles.toml, which works everywhere \
+         `journal_mode = \"delete\"` in the `[core]` table of doozers.toml, which works everywhere \
          (and move the database to a local disk if you can)."
             .to_owned()
     } else {
         format!(
             "Stop other programs that have the database open and start again, or change \
-             `journal_mode` (currently \"{mode}\") in the `[core]` table of giles.toml."
+             `journal_mode` (currently \"{mode}\") in the `[core]` table of doozers.toml."
         )
     }
 }
@@ -95,14 +95,14 @@ fn journal_mode_advice(mode: JournalMode) -> String {
 pub struct Runtime {
     /// The data root.
     pub root: DataRoot,
-    /// The database, `data/giles.db`.
+    /// The database, `data/doozers.db`.
     pub store: Store,
     /// The agents' memory databases, `agents/<agent>/memory.db`, opened on first use in the
-    /// journal mode of `giles.db`.
+    /// journal mode of `doozers.db`.
     pub memory_dbs: MemoryDbs,
     /// The blob store, `data/blobs`.
     pub blobs: BlobStore,
-    /// The secret store: the local store in `giles.db`, unlocked by `secret.key`.
+    /// The secret store: the local store in `doozers.db`, unlocked by `secret.key`.
     pub secrets: Arc<dyn SecretProvider>,
     /// Configured instances and their objects, the tool index, the skill index, and the running
     /// configuration ([`Registry::config`]).
@@ -124,9 +124,9 @@ impl Runtime {
     /// Opens (and migrates) the database, unlocks the local secret store
     /// ([`LocalSecrets::open`]), opens the blob store under `root`, builds the registry
     /// from `config` with built-in providers reading attachments from the blob store, imports
-    /// `giles.toml`'s `[[routes]]` if that never happened and loads the routes ([`Routes::open`]),
-    /// and registers the core tools. The data root's layout must exist. `serve` logs the registry's
-    /// summary ([`Registry::log_summary`]) once it has registered the toolsets.
+    /// `doozers.toml`'s `[[routes]]` if that never happened and loads the routes
+    /// ([`Routes::open`]), and registers the core tools. The data root's layout must exist. `serve`
+    /// logs the registry's summary ([`Registry::log_summary`]) once it has registered the toolsets.
     ///
     /// # Errors
     ///
@@ -291,7 +291,7 @@ mod tests {
 
     use super::*;
 
-    /// A data root whose `giles.toml` has `[core]` set to `core` and the minimal owner.
+    /// A data root whose `doozers.toml` has `[core]` set to `core` and the minimal owner.
     fn data_root(core: &str) -> (tempfile::TempDir, DataRoot) {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
@@ -389,7 +389,7 @@ mod tests {
         if let Some(err) = refused("journal_mode = \"delete\"", "").await {
             assert!(matches!(err, StartError::JournalMode { .. }), "{err}");
             let message = err.to_string();
-            assert!(message.contains("giles.db"), "{message}");
+            assert!(message.contains("doozers.db"), "{message}");
             assert!(message.contains("journal mode to wal"), "{message}");
             assert!(message.contains("[core]"), "{message}");
             assert!(message.contains("journal_mode = \"delete\""), "{message}");

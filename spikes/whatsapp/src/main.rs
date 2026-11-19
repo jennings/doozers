@@ -101,7 +101,7 @@ async fn run(cli: Cli, pair_phone: Option<String>, send_to: Option<String>) -> R
         .await
         .with_context(|| format!("opening session store {}", db.display()))?;
 
-    // Giles never imports chat history, so neither does the spike.
+    // Doozers never imports chat history, so neither does the spike.
     let mut builder = Bot::builder().with_backend(store).skip_history_sync();
     if let Some(phone) = pair_phone.clone() {
         builder = builder.with_pair_code(PairCodeOptions {
@@ -272,7 +272,7 @@ async fn listen(client: &Arc<Client>, events: &Receiver<Arc<Event>>, data: &Data
     }
 }
 
-/// One line per received message: everything the Giles plugin would map into `InboundMessage`.
+/// One line per received message: everything the Doozers plugin would map into `InboundMessage`.
 async fn describe(client: &Client, message: &InboundMessage, sent: &SentLog) -> String {
     let info = &message.info;
     let source = &info.source;

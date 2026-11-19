@@ -293,7 +293,7 @@ fn unavailable(agent: &AgentConfig, err: &StoreError) -> Response {
     error_page(
         StatusCode::INTERNAL_SERVER_ERROR,
         "Memory unavailable",
-        "Giles couldn't read or change the agent's memories. The error is in its log.",
+        "Doozers couldn't read or change the agent's memories. The error is in its log.",
     )
 }
 

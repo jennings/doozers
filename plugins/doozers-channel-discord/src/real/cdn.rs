@@ -118,7 +118,7 @@ impl Cdn {
             .read_timeout(policy.read_timeout)
             .timeout(policy.total_timeout)
             .user_agent(concat!(
-                "DiscordBot (https://github.com/jennings/giles, ",
+                "DiscordBot (https://github.com/jennings/doozers, ",
                 env!("CARGO_PKG_VERSION"),
                 ")"
             ))

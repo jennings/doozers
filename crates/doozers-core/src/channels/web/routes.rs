@@ -76,7 +76,7 @@ struct RoutesPage<'a> {
     shell: Shell,
     csrf: &'a str,
     routes: Vec<RouteRow>,
-    /// How many `[[routes]]` `giles.toml` still has.
+    /// How many `[[routes]]` `doozers.toml` still has.
     legacy: usize,
 }
 
@@ -116,7 +116,7 @@ fn failed(err: &RouteError, title: &str) -> Response {
             error_page(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Something went wrong",
-                "Giles couldn't use its routes. The error is in its log.",
+                "Doozers couldn't use its routes. The error is in its log.",
             )
         }
     }

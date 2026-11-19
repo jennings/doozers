@@ -122,8 +122,8 @@ pub fn media_type_for(name: &str, bytes: &[u8]) -> &'static str {
     }
 }
 
-/// The usual file extension for `media_type` (lowercase, without the dot), if Giles knows one: the
-/// first of [`media_type_for`]'s extensions for it.
+/// The usual file extension for `media_type` (lowercase, without the dot), if Doozers knows one:
+/// the first of [`media_type_for`]'s extensions for it.
 pub fn extension_for(media_type: &str) -> Option<&'static str> {
     let media_type = media_type.trim().to_ascii_lowercase();
     MEDIA_TYPES_BY_EXTENSION

@@ -150,21 +150,21 @@ per core, `Runtime::routes`) owns them:
   covering group conversations), `Duplicate` if one matches exactly the same, `Hides` if the change
   would leave a later route unusable (naming the other earlier route when the changed one hides it
   together with another). Hiding is judged against the list before the change, so a route that was
-  already unreachable (one imported from `giles.toml`, which never checked this) doesn't block
+  already unreachable (one imported from `doozers.toml`, which never checked this) doesn't block
   unrelated changes; `view()` flags it, as it flags a route whose channel instance or agent is no
   longer configured, and `Routes::open` logs both at startup. Refusing is a deliberate choice over a
   warning: a route that can't match is almost always a mistake, and reordering keeps every step
   valid.
-- **Import.** `giles.toml`'s `[[routes]]` stay in `Config::legacy_routes`, as written and
+- **Import.** `doozers.toml`'s `[[routes]]` stay in `Config::legacy_routes`, as written and
   unvalidated. `Routes::open` runs at `Runtime::start`: if the database hasn't recorded the import
   (`routes_imported`), it validates each rule like a route made in the web UI (shadowed routes are
   kept as written, but an empty or blank `channel`, `kind`, or `conversation` is an error, as it was
   in config), stores them in file order, and records the import, all or nothing; an invalid rule
-  fails startup with `giles.toml: routes[<i>].<key>: <reason>`. A config with no `[[routes]]` still
-  records the import, and so does an import that finds routes stored already. After that the rules
-  are never read: not when the file changes, not when the owner has deleted every route (the record,
-  not an empty table, says it ran), not when they have become invalid. While the file still has
-  `[[routes]]`, startup logs `info` on the importing start and `warn` on every later one, saying
+  fails startup with `doozers.toml: routes[<i>].<key>: <reason>`. A config with no `[[routes]]`
+  still records the import, and so does an import that finds routes stored already. After that the
+  rules are never read: not when the file changes, not when the owner has deleted every route (the
+  record, not an empty table, says it ran), not when they have become invalid. While the file still
+  has `[[routes]]`, startup logs `info` on the importing start and `warn` on every later one, saying
   they're ignored and to remove them. `doozers status` doesn't report it: its response has no field
   for a warning (`config_error` is for reload errors), and a new proto field wasn't worth it for a
   line already in the log and on the routes page.
@@ -192,7 +192,7 @@ trimming whitespace, with words compared ASCII case-insensitively (phones capita
 | `yes`, `yes!`, `no`                        | `Approval { answer: Yes/YesForSession/No, code: None }`, if any approval is pending |
 | `yes 4821`, `yes! 4821`, `no 4821`         | `Approval { code: Some("4821") }`, if that code is pending |
 
-Anything else is ordinary text, including `/new please`, `/new@giles`, `/env`, `/env reset now`,
+Anything else is ordinary text, including `/new please`, `/new@doozers`, `/env`, `/env reset now`,
 `/link` (no self-linking in v1), unknown `/words`, `yes please`, and a `yes`/`no` the lookup doesn't
 claim. Codes are a single token of ASCII letters and digits, passed to the lookup as typed. A
 message with attachments is never a command, so an attachment can't be silently lost.

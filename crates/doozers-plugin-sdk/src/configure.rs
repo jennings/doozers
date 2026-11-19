@@ -37,7 +37,7 @@ impl Configure {
         &self.instance
     }
 
-    /// The instance's `config` table from `giles.toml`, as JSON, with secrets resolved.
+    /// The instance's `config` table from `doozers.toml`, as JSON, with secrets resolved.
     ///
     /// A remote environment plugin (`serve --config FILE`) is the exception: its settings are the
     /// `[config]` table of its own file (`{}` if the file has none), and the core sends none.
@@ -62,8 +62,8 @@ impl Configure {
     }
 
     /// The instance's data directory: the plugin's only writable directory, kept across restarts
-    /// and upgrades (`GILES_PLUGIN_DATA` for a launched plugin, the [`RemoteServer`]'s for a
-    /// remote one). The SDK's own state is in its `giles-sdk/` subdirectory; leave that alone.
+    /// and upgrades (`DOOZERS_PLUGIN_DATA` for a launched plugin, the [`RemoteServer`]'s for a
+    /// remote one). The SDK's own state is in its `doozers-sdk/` subdirectory; leave that alone.
     ///
     /// [`RemoteServer`]: crate::RemoteServer
     pub fn data_dir(&self) -> &Path {

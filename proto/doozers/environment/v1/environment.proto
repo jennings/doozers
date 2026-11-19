@@ -1,7 +1,7 @@
 // Environment plugins: isolated workspaces the core's workspace tools run in (PLAN section 8.8).
 syntax = "proto3";
 
-package giles.environment.v1;
+package doozers.environment.v1;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";

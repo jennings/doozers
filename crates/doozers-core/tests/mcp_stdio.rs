@@ -1,6 +1,6 @@
 //! The MCP client against the test server as a real stdio child process.
 //!
-//! The child is this test binary itself: with `GILES_MCP_TEST_SERVER` set, `main` serves MCP on
+//! The child is this test binary itself: with `DOOZERS_MCP_TEST_SERVER` set, `main` serves MCP on
 //! stdin/stdout instead of running the tests. That needs `harness = false` (libtest would print to
 //! stdout), so `main` runs the tests in order and panics on the first failure. It also installs a
 //! global `tracing` subscriber that records the log, to check that the child's stderr is logged.
@@ -25,9 +25,9 @@ use serde_json::{Value, json};
 
 use self::mcp_server::{TOOLS, TestServer, no_input};
 
-const SERVER_ENV: &str = "GILES_MCP_TEST_SERVER";
+const SERVER_ENV: &str = "DOOZERS_MCP_TEST_SERVER";
 /// An env secret the child prints to stderr, which must reach the log redacted.
-const SECRET_ENV: &str = "GILES_MCP_TEST_SECRET";
+const SECRET_ENV: &str = "DOOZERS_MCP_TEST_SECRET";
 const SECRET: &str = "test-secret-0123456789";
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -58,7 +58,7 @@ fn main() {
         .unwrap();
     let blobs_dir = tempfile::tempdir().unwrap();
     let blobs = runtime.block_on(async {
-        let db = Store::open(blobs_dir.path().join("giles.db"))
+        let db = Store::open(blobs_dir.path().join("doozers.db"))
             .await
             .unwrap();
         BlobStore::open(blobs_dir.path().join("blobs"), db)
@@ -89,9 +89,9 @@ fn main() {
 }
 
 /// The child: the test server on stdio. It prints its secret to stderr first. With
-/// `GILES_MCP_TEST_SERVER=linger` it doesn't exit when stdin closes, so only a kill stops it; with
-/// `exit<N>` it exits with status N at once (`exit125`: like a failing sandbox trampoline); with
-/// `with-sleeper` it
+/// `DOOZERS_MCP_TEST_SERVER=linger` it doesn't exit when stdin closes, so only a kill stops it;
+/// with `exit<N>` it exits with status N at once (`exit125`: like a failing sandbox trampoline);
+/// with `with-sleeper` it
 /// starts a `sleep` child first (in its process group) and prints `sleeper pid <pid>`.
 // The sleeper is meant to outlive any wait: only its process group's death ends it.
 #[allow(clippy::zombie_processes)]
@@ -353,7 +353,7 @@ async fn a_crashed_server_takes_its_process_group(log: &Log) {
 }
 
 async fn a_missing_command_is_unavailable(_log: &Log) {
-    let server = DirectCommand::new("/nonexistent/giles-mcp-server");
+    let server = DirectCommand::new("/nonexistent/doozers-mcp-server");
     let command = server.command();
     match McpToolset::connect_stdio("missing", command, server.secrets(), false, media()).await {
         Err(Error::Unavailable { message, .. }) => {

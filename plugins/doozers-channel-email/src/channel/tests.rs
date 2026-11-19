@@ -287,7 +287,7 @@ async fn automated_and_own_mail_is_skipped() {
         "Hi all",
     ));
     setup.imap.append(
-        b"From: Giles <giles@example.net>\r\nMessage-ID: <giles.abc@example.net>\r\n\r\nours\r\n",
+        b"From: Giles <giles@example.net>\r\nMessage-ID: <doozers.abc@example.net>\r\n\r\nours\r\n",
     );
     setup
         .imap
@@ -415,7 +415,7 @@ async fn replies_thread_under_the_conversation() {
     assert_eq!(received.from, "giles@example.net");
     assert_eq!(received.to, ["me@example.com"]);
     assert_eq!(mail.message_id(), Some(first.as_str()));
-    assert!(first.as_str().starts_with("giles.") && first.as_str().ends_with("@example.net"));
+    assert!(first.as_str().starts_with("doozers.") && first.as_str().ends_with("@example.net"));
     assert_eq!(mail.subject(), Some("Re: Groceries"));
     assert_eq!(
         mail.in_reply_to(),

@@ -151,7 +151,7 @@ impl ServerHandler for TestServer {
                 .build()
         };
         ServerConfig::new(capabilities)
-            .with_server_info(Implementation::new("giles-test-server", "0.0.0"))
+            .with_server_info(Implementation::new("doozers-test-server", "0.0.0"))
     }
 
     async fn list_tools(
@@ -271,7 +271,7 @@ pub fn no_input() -> Value {
 /// A blob store in a fresh temporary directory, which must outlive it.
 pub async fn blob_store() -> (tempfile::TempDir, doozers_store::BlobStore) {
     let dir = tempfile::tempdir().unwrap();
-    let db = doozers_store::Store::open(dir.path().join("giles.db"))
+    let db = doozers_store::Store::open(dir.path().join("doozers.db"))
         .await
         .unwrap();
     let blobs = doozers_store::BlobStore::open(dir.path().join("blobs"), db)

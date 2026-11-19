@@ -10,12 +10,12 @@ use std::path::PathBuf;
 
 /// Every package, one file each. The generated module tree in `src/lib.rs` mirrors this list.
 const PROTOS: [&str; 6] = [
-    "proto/giles/types/v1/types.proto",
-    "proto/giles/plugin/v1/plugin.proto",
-    "proto/giles/provider/v1/provider.proto",
-    "proto/giles/channel/v1/channel.proto",
-    "proto/giles/environment/v1/environment.proto",
-    "proto/giles/admin/v1/admin.proto",
+    "proto/doozers/types/v1/types.proto",
+    "proto/doozers/plugin/v1/plugin.proto",
+    "proto/doozers/provider/v1/provider.proto",
+    "proto/doozers/channel/v1/channel.proto",
+    "proto/doozers/environment/v1/environment.proto",
+    "proto/doozers/admin/v1/admin.proto",
 ];
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // directory, which works with any `protoc`.
     let includes = [PathBuf::from("proto"), protoc_bin_vendored::include_path()?];
     tonic_prost_build::configure()
-        .file_descriptor_set_path(out_dir.join("giles_descriptor.bin"))
+        .file_descriptor_set_path(out_dir.join("doozers_descriptor.bin"))
         .compile_with_config(config, &protos, &includes)?;
     Ok(())
 }

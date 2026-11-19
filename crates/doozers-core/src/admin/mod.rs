@@ -1,7 +1,7 @@
-//! The admin service (PLAN section 8.7): `giles.admin.v1.AdminService` on `run/admin.sock`, for
+//! The admin service (PLAN section 8.7): `doozers.admin.v1.AdminService` on `run/admin.sock`, for
 //! the `doozers` CLI and the web admin pages.
 //!
-//! - [`InstanceLock`]: `doozers serve` takes an exclusive `flock` on `run/giles.lock` before
+//! - [`InstanceLock`]: `doozers serve` takes an exclusive `flock` on `run/doozers.lock` before
 //!   anything else, so one core at a time uses a data root (and only then is an `admin.sock` left
 //!   behind by a crash stale).
 //! - [`AdminListener`] writes a fresh 256-bit token to `run/admin.token` (mode 0600), binds the

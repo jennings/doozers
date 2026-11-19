@@ -127,7 +127,7 @@ impl LoginLinks for FakeLinks {
 }
 
 /// A toolset manager over a map, with the answers of the real one that the RPCs depend on:
-/// names match ignoring case, a `giles.toml` toolset can't be changed, an update is refused as
+/// names match ignoring case, a `doozers.toml` toolset can't be changed, an update is refused as
 /// stale when it expects another `updated_at`, and a spec without `url` is refused.
 #[derive(Default)]
 struct FakeToolsets {
@@ -138,7 +138,7 @@ struct FakeToolsets {
 struct FakeToolsetState {
     /// By name: the spec and when it changed, in seconds after [`at`]`(0)`.
     stored: BTreeMap<String, (ToolsetSpec, i64)>,
-    /// The toolsets of `giles.toml`.
+    /// The toolsets of `doozers.toml`.
     file: Vec<String>,
     /// The seconds of the last change.
     clock: i64,
@@ -277,11 +277,11 @@ impl ToolsetAdmin for FakeToolsets {
             if state.racing || state.stored_name(name).is_some() {
                 return Err(ToolsetManagerError::Exists);
             }
-            // A name that a toolset of giles.toml has.
+            // A name that a toolset of doozers.toml has.
             if name == "taken" {
                 return Err(ToolsetManagerError::Invalid {
                     key: KeyPath::root(),
-                    reason: "the name is taken by `[toolset.taken]` in giles.toml".to_owned(),
+                    reason: "the name is taken by `[toolset.taken]` in doozers.toml".to_owned(),
                 });
             }
             FakeToolsetState::refuse_stdio(spec)?;
@@ -332,7 +332,7 @@ impl ToolsetAdmin for FakeToolsets {
     }
 
     /// The checks of the real one that the RPC maps, by name: `taken` is the name of a toolset of
-    /// giles.toml, `globby` is refused for an agent's glob, `stuck` fails a step that can't be
+    /// doozers.toml, `globby` is refused for an agent's glob, `stuck` fails a step that can't be
     /// undone. Renaming `files` rewrites two globs of the agent `main`.
     async fn rename(&self, old: &str, new: &str) -> Result<ToolsetRenamed, ToolsetManagerError> {
         self.with(|state| {
@@ -356,7 +356,7 @@ impl ToolsetAdmin for FakeToolsets {
             }
             if new == "taken" {
                 return Err(invalid(
-                    "the name is taken by `[toolset.taken]` in giles.toml",
+                    "the name is taken by `[toolset.taken]` in doozers.toml",
                 ));
             }
             if state.stored_name(new).is_some_and(|other| other != own) {
@@ -432,7 +432,7 @@ impl Harness {
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
@@ -685,7 +685,7 @@ async fn status_reports_the_sandbox_channels_and_plugins() {
         plugins: vec![PluginRuntime {
             kind: Kind::Channel,
             instance: InstanceName::new("libera").unwrap(),
-            binary: Some("/opt/giles/plugins/doozers-channel-irc".into()),
+            binary: Some("/opt/doozers/plugins/doozers-channel-irc".into()),
             state: PluginRunState::Running {
                 pid: Some(4242),
                 since: at(3),
@@ -769,7 +769,7 @@ async fn status_reports_the_sandbox_channels_and_plugins() {
     );
     let libera = &status.plugins[0];
     assert_eq!(libera.state(), pb::PluginState::Running);
-    assert_eq!(libera.location, "/opt/giles/plugins/doozers-channel-irc");
+    assert_eq!(libera.location, "/opt/doozers/plugins/doozers-channel-irc");
     assert_eq!(libera.pid, Some(4242));
     assert_eq!(libera.started_at.unwrap().seconds, at(3).as_second());
     assert_eq!(libera.restarts, 2);
@@ -1203,7 +1203,7 @@ async fn a_stored_toolset_that_lost_its_name_does_not_replace_the_instance_that_
     let manager = Arc::new(FakeControl {
         plugins: vec![runtime(
             PluginRunState::Failed,
-            "the name is taken by `[toolset.files]` in giles.toml",
+            "the name is taken by `[toolset.files]` in doozers.toml",
             Some(0),
         )],
         ..FakeControl::default()
@@ -1237,7 +1237,7 @@ async fn a_stored_toolset_that_lost_its_name_does_not_replace_the_instance_that_
     assert_eq!(files[1].state(), pb::PluginState::Failed);
     assert_eq!(
         files[1].last_error.as_deref(),
-        Some("the name is taken by `[toolset.files]` in giles.toml")
+        Some("the name is taken by `[toolset.files]` in doozers.toml")
     );
     // A restart goes to the first control that has the name.
     assert_eq!(
@@ -1482,8 +1482,8 @@ async fn backup_writes_a_snapshot_to_the_directory() {
         .into_inner()
         .paths;
     // The service's clock names it: `FixedClock` is 1000 s after 2027-01-15 08:00 UTC.
-    let database = out.path().join("giles-20270115T081640Z.db");
-    let archive = out.path().join("giles-20270115T081640Z.tar");
+    let database = out.path().join("doozers-20270115T081640Z.db");
+    let archive = out.path().join("doozers-20270115T081640Z.tar");
     assert_eq!(
         paths,
         [database.to_str().unwrap(), archive.to_str().unwrap()]
@@ -1514,7 +1514,7 @@ async fn backup_writes_a_snapshot_to_the_directory() {
     assert_eq!(
         names,
         [
-            "giles.toml",
+            "doozers.toml",
             "agents",
             "users",
             "skills",
@@ -1632,9 +1632,9 @@ async fn toolsets_are_listed_and_shown_as_toml_with_references_as_written() {
     // A stored toolset that isn't running says why.
     assert_eq!(listed[0].failure.as_deref(), Some("no secret \"broken\""));
 
-    // A toolset of giles.toml has a source and nothing else.
+    // A toolset of doozers.toml has a source and nothing else.
     let github = &listed[2];
-    assert_eq!(github.source(), pb::ToolsetSource::GilesToml);
+    assert_eq!(github.source(), pb::ToolsetSource::DoozersToml);
     assert_eq!((&github.spec_toml, &github.updated_at), (&None, &None));
 
     // `GetToolset` finds it ignoring case, under the name it has.
@@ -1658,7 +1658,7 @@ async fn toolsets_are_listed_and_shown_as_toml_with_references_as_written() {
         .toolset
         .unwrap();
     assert_eq!(github.name, "Github");
-    assert_eq!(github.source(), pb::ToolsetSource::GilesToml);
+    assert_eq!(github.source(), pb::ToolsetSource::DoozersToml);
     let err = client
         .get_toolset(pb::GetToolsetRequest {
             name: "ghost".into(),
@@ -1730,13 +1730,13 @@ async fn set_toolset_refuses_a_change_made_since_it_was_read() {
     assert_eq!(err.code(), Code::NotFound);
     assert_eq!(toolsets.stored("ghost"), None);
 
-    // A toolset of giles.toml can't be changed, with or without the time.
+    // A toolset of doozers.toml can't be changed, with or without the time.
     for expected in [None, Some(1)] {
         let err = set_toolset(&mut client, set_request("github", FILES_SPEC, expected))
             .await
             .unwrap_err();
         assert_eq!(err.code(), Code::FailedPrecondition, "{expected:?}");
-        assert!(err.message().contains("giles.toml"), "{}", err.message());
+        assert!(err.message().contains("doozers.toml"), "{}", err.message());
     }
 
     // An `expected_updated_at` that isn't a time.
@@ -1781,7 +1781,7 @@ async fn set_toolset_names_the_key_of_a_spec_that_is_refused() {
             "a taken name",
             "taken",
             "url = \"https://taken.example.com/mcp\"\n",
-            "the name is taken by `[toolset.taken]` in giles.toml",
+            "the name is taken by `[toolset.taken]` in doozers.toml",
         ),
         // The text isn't a spec.
         (
@@ -1911,7 +1911,7 @@ async fn remove_toolset_removes_a_stored_toolset() {
     assert!(err.message().contains("`files`"), "{}", err.message());
     let err = client.remove_toolset(remove("github")).await.unwrap_err();
     assert_eq!(err.code(), Code::FailedPrecondition);
-    assert!(err.message().contains("giles.toml"), "{}", err.message());
+    assert!(err.message().contains("doozers.toml"), "{}", err.message());
     h.stop().await;
 }
 
@@ -2024,7 +2024,7 @@ async fn rename_toolset_answers_each_refusal_with_its_status() {
 
     let err = rename("github", "code").await;
     assert_eq!(err.code(), Code::FailedPrecondition);
-    assert!(err.message().contains("giles.toml"), "{}", err.message());
+    assert!(err.message().contains("doozers.toml"), "{}", err.message());
 
     // A failed step says which, why, and what could not be undone.
     let err = rename("files", "stuck").await;

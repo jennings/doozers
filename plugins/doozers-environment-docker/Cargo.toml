@@ -1,6 +1,6 @@
 [package]
 name = "doozers-environment-docker"
-description = "The Giles Docker environment plugin: isolated workspaces in containers, through the Docker Engine API."
+description = "The Doozers Docker environment plugin: isolated workspaces in containers, through the Docker Engine API."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

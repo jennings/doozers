@@ -133,7 +133,7 @@ pub enum SandboxError {
          with `unsandboxed = true`)"
     )]
     Host(#[source] HostError),
-    /// The kernel's Landlock ABI (capped at the newest Giles knows) is below the spec's
+    /// The kernel's Landlock ABI (capped at the newest Doozers knows) is below the spec's
     /// `min_abi`.
     #[error(
         "the spec requires Landlock ABI {required} (`min_abi`), but this kernel provides ABI \

@@ -46,7 +46,7 @@ pub struct Config {
     /// The user name (ident). Default: the nick.
     #[serde(default)]
     pub username: Option<String>,
-    /// The real name (gecos). Default `Giles`.
+    /// The real name (gecos). Default `Doozers`.
     #[serde(default)]
     pub realname: Option<String>,
     /// The server password (`PASS`), e.g. for a bouncer. A secret.
@@ -258,7 +258,7 @@ impl Settings {
                 "must be 1-64 characters without spaces or `@`",
             ));
         }
-        let realname = config.realname.unwrap_or_else(|| "Giles".to_owned());
+        let realname = config.realname.unwrap_or_else(|| "Doozers".to_owned());
         if realname.is_empty() || realname.chars().any(char::is_control) {
             return Err(invalid(
                 "realname",

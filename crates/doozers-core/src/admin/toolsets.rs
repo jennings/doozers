@@ -99,7 +99,7 @@ pub(super) fn manager_status(rpc: &'static str, name: &str, err: ToolsetManagerE
             "toolset `{name}` was changed since it was read: read it again and redo the change"
         )),
         ToolsetManagerError::Unsupported => Status::failed_precondition(format!(
-            "toolset `{name}` is configured in giles.toml, so it can only be changed there"
+            "toolset `{name}` is configured in doozers.toml, so it can only be changed there"
         )),
         err => {
             error!(rpc, toolset = name, error = %err, "admin call failed");
@@ -109,12 +109,12 @@ pub(super) fn manager_status(rpc: &'static str, name: &str, err: ToolsetManagerE
 }
 
 /// The caller's status for a failed `RenameToolset`: [`manager_status`], about `new` when another
-/// stored toolset has that name and about `old` for every other failure. A toolset of `giles.toml`
-/// is renamed with Giles stopped, so the refusal says so.
+/// stored toolset has that name and about `old` for every other failure. A toolset of
+/// `doozers.toml` is renamed with Doozers stopped, so the refusal says so.
 pub(super) fn rename_status(old: &str, new: &str, err: ToolsetManagerError) -> Status {
     if matches!(err, ToolsetManagerError::Unsupported) {
         return Status::failed_precondition(format!(
-            "toolset `{old}` is configured in giles.toml: stop Giles first, then run \
+            "toolset `{old}` is configured in doozers.toml: stop Doozers first, then run \
              `doozers toolset rename {old} {new}` to rename it"
         ));
     }
@@ -167,7 +167,7 @@ pub(super) fn toolset_to_proto(view: ToolsetView) -> pb::Toolset {
             pb::ToolsetSource::Stored,
             Some(timestamp_to_proto(updated_at)),
         ),
-        ToolsetSource::File => (pb::ToolsetSource::GilesToml, None),
+        ToolsetSource::File => (pb::ToolsetSource::DoozersToml, None),
     };
     pb::Toolset {
         name: view.name,

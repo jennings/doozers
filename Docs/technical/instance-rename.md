@@ -3,9 +3,9 @@
 Instance names are permanent ids (PLAN section 7.2). `doozers_core::rename` renames one,
 `rename_instance`, which `doozers channel rename <old> <new>`,
 `doozers environment rename <old> <new>`, `doozers provider rename <old> <new>`, and
-`doozers toolset rename <old> <new>` (with Giles stopped) call, each for its own kind.
-`ToolsetManager::rename` renames a toolset stored in the database while Giles runs. This page covers
-what a name keys, the order of the steps, and what a failure leaves behind.
+`doozers toolset rename <old> <new>` (with Doozers stopped) call, each for its own kind.
+`ToolsetManager::rename` renames a toolset stored in the database while Doozers runs. This page
+covers what a name keys, the order of the steps, and what a failure leaves behind.
 
 ## What a name keys
 
@@ -14,10 +14,10 @@ rename must move each of them.
 
 | Where                                        | What it is                                     | Rename does                    |
 | -------------------------------------------- | ---------------------------------------------- | ------------------------------ |
-| `giles.toml` `[<kind>.<name>]`               | The instance table and its sub-tables          | Renames the table in place     |
+| `doozers.toml` `[<kind>.<name>]`             | The instance table and its sub-tables          | Renames the table in place     |
 | `toolsets.name`                              | A toolset stored in the database (web UI)      | Renames the row (stored toolsets) |
 | `routes.channel`                             | A stored route's channel instance              | Updates in the transaction (channels) |
-| `giles.toml` `[[routes]]` `channel`          | A route of the old layout (imported once, then ignored) | Rewrites it (channels) |
+| `doozers.toml` `[[routes]]` `channel`        | A route of the old layout (imported once, then ignored) | Rewrites it (channels) |
 | `agent.toml` `models`, `compaction_model`, `[[jobs]]` `model` | `<provider instance>/<model id>` | Rewrites the prefix (providers) |
 | `agent.toml` `tools`, `ask`                  | Globs over `<toolset instance>__<tool>`        | Rewrites a leading `<name>__` (toolsets) |
 | `agent.toml` `environments`                  | The environment instances an agent may use     | Rewrites each name equal to `<old>` (environments) |
@@ -51,7 +51,7 @@ the order; `RenamedRows::routes` counts them), and a name that only routes use s
 existing for `old`, so a table renamed by hand can be finished. But `instance_rows` leaves routes
 out, and a route to `new` isn't a conflict: a route to a removed instance is kept (the routes page
 flags it), and it must not keep another instance from taking the name. The `[[routes]]` of
-`giles.toml` are rewritten too, because Giles reads them exactly once: a rename before the first
+`doozers.toml` are rewritten too, because Doozers reads them exactly once: a rename before the first
 start with routes in the database would otherwise import the old name, and the rewrite keeps a
 leftover block consistent after that (`RenameReport::legacy_routes`).
 
@@ -93,7 +93,7 @@ A `[toolset.<name>]` table with `url` is ignored by config loading
 same way: it configures no instance, takes no part in the checks of the steps below, and is never
 renamed. If the file already has a `[<kind>.<new>]` table when the renamed table would take that key
 (only an ignored `[toolset.<new>]` can be there), the rename is refused rather than overwriting it:
-`giles.toml already has a [toolset.<new>] table: remove it, then run the command again`.
+`doozers.toml already has a [toolset.<new>] table: remove it, then run the command again`.
 
 A provider or channel with no `component` key runs the component named like the instance
 (`[channel.web]` is the built-in web channel), so a plain rename would change what runs, and for a
@@ -114,14 +114,14 @@ comes from the command (`doozers channel rename`, `doozers environment rename`,
 
 1. **Validate, read-only.** Both names must be `[a-zA-Z0-9-]+`, and different ignoring case unless
    `old` is a stored toolset (see [Stored toolsets](#stored-toolsets)). `new` must not differ only
-   in case from another configured instance of the kind. When the kind is toolset and `giles.toml`
+   in case from another configured instance of the kind. When the kind is toolset and `doozers.toml`
    doesn't configure `new` yet, it must not be the name of a toolset stored in the database,
-   ignoring case (`RenameError::StoredToolset`): `giles.toml` would take the name at the next start.
-   A stored toolset's name doesn't matter to a channel or a provider. When the kind is toolset and
-   `giles.toml` doesn't configure `old`, a stored toolset with that name, ignoring case, is the
-   instance to rename: its row is renamed instead of a table. `giles.toml` and every `agent.toml`
-   are read and parsed, the database's names for the kind are listed (`instance_rows(kind)`), and
-   the data directories are scanned.
+   ignoring case (`RenameError::StoredToolset`): `doozers.toml` would take the name at the next
+   start. A stored toolset's name doesn't matter to a channel or a provider. When the kind is
+   toolset and `doozers.toml` doesn't configure `old`, a stored toolset with that name, ignoring
+   case, is the instance to rename: its row is renamed instead of a table. `doozers.toml` and every
+   `agent.toml` are read and parsed, the database's names for the kind are listed
+   (`instance_rows(kind)`), and the data directories are scanned.
    - If both names are configured as the kind, the rename is refused
      (`RenameError::BothConfigured`): instances are never merged.
    - If only `old` is configured, that table is renamed.
@@ -131,19 +131,19 @@ comes from the command (`doozers channel rename`, `doozers environment rename`,
    - If neither is configured as the kind, it is refused: with no data of that kind it is an unknown
      instance (`RenameError::UnknownInstance`), whatever other kinds have the name, and with data
      the message says to configure `new` first (`RenameError::NotConfigured`). The unknown-instance
-     message says that `giles.toml` has no `[<kind>.<old>]` table and that the kind has no data
-     under the name. When `giles.toml` configures the name as another kind, it adds a hint that
+     message says that `doozers.toml` has no `[<kind>.<old>]` table and that the kind has no data
+     under the name. When `doozers.toml` configures the name as another kind, it adds a hint that
      names that table and that kind's rename command.
    - `new` must have no data of the command's kind: no database rows, no `data/<kind>/<new>`, and,
      for a channel, no `groups/<new>` (routes that name `new` don't count; a group directory is a
      channel's, so it doesn't keep a provider or toolset from taking the name). The memory databases
      aren't checked: nothing in their schema is unique over the owner, and an interrupted run
      (below) legitimately leaves some of them already renamed. The exception is an interrupted
-     rename run again (below): `giles.toml` already names `new`, so `old` is no longer configured,
+     rename run again (below): `doozers.toml` already names `new`, so `old` is no longer configured,
      and rows still exist under `old`. While `old` is still configured, a directory called `new`
      belongs to something else and is refused.
 2. **Stage.** Every file's new text is computed in memory: the `agent.toml` files that name the
-   instance, then `giles.toml`; and the list of directory and file moves is computed. The memory
+   instance, then `doozers.toml`; and the list of directory and file moves is computed. The memory
    databases to update are listed, for a channel: every `agents/<agent>/memory.db` that exists (a
    provider or toolset rename lists none). An agent without one is skipped (the rename never creates
    a database), and a removed agent's database is in `trash/agents/`, outside `agents/`, so it is
@@ -155,7 +155,7 @@ comes from the command (`doozers channel rename`, `doozers environment rename`,
    a journal:
    1. rewrite the `agent.toml` files (a temporary file in the same directory renamed over the
       original, with the original's permissions),
-   2. rewrite `giles.toml` the same way,
+   2. rewrite `doozers.toml` the same way,
    3. move the directories, then the disposable files, with `rename(2)`,
    4. for a channel, in each agent's memory database, in agent-name order, run
       `MemoryStore::rename_instance(old, new)`:
@@ -173,23 +173,23 @@ comes from the command (`doozers channel rename`, `doozers environment rename`,
 
 Why this order. The database transaction is the only step that can't be undone by hand-editing, so
 it is the one that is held open until everything else worked: every failure the code can observe
-leaves the data root exactly as it was. `giles.toml` is rewritten before the directories, so a crash
-between them leaves the configuration renamed and the data not, which running the command again
-finishes, and not the reverse. The memory databases come last, after `giles.toml`, for the same
-reason and one more: each of them commits on its own, so a step after them would have to rename them
-back with another write. Renaming the owners is also idempotent (rows already under `new` don't
+leaves the data root exactly as it was. `doozers.toml` is rewritten before the directories, so a
+crash between them leaves the configuration renamed and the data not, which running the command
+again finishes, and not the reverse. The memory databases come last, after `doozers.toml`, for the
+same reason and one more: each of them commits on its own, so a step after them would have to rename
+them back with another write. Renaming the owners is also idempotent (rows already under `new` don't
 match), which makes it safe to repeat after a crash.
 
 ## Stored toolsets
 
 A toolset made in the web UI or with `doozers toolset` is a remote MCP server with a row in
-`giles.db` and no table in `giles.toml`. `rename_instance` renames it when `kind` is
-`Kind::Toolset`, `giles.toml` doesn't configure `old` as a toolset, and the database has a toolset
+`doozers.db` and no table in `doozers.toml`. `rename_instance` renames it when `kind` is
+`Kind::Toolset`, `doozers.toml` doesn't configure `old` as a toolset, and the database has a toolset
 with that name, ignoring case. The name as stored is the old name from then on. What differs from an
-instance of `giles.toml`:
+instance of `doozers.toml`:
 
-- `giles.toml` isn't edited. `new` must not be configured there (`RenameError::NewIsConfigured`, or
-  `RenameError::CaseCollision` when only the case differs) and must not be another stored toolset
+- `doozers.toml` isn't edited. `new` must not be configured there (`RenameError::NewIsConfigured`,
+  or `RenameError::CaseCollision` when only the case differs) and must not be another stored toolset
   (`RenameError::StoredToolset`). The report has `stored_toolset` set and `config_table` clear.
 - An ignored `[toolset.*]` table (with `url`) doesn't configure its name. A stored toolset whose
   name such a table also has is renamed as the row, and the table stays as it is; a stored toolset,
@@ -217,15 +217,15 @@ instance of `giles.toml`:
   can't be told from a finished one, so it isn't resumed this way.
 - A new name must be one that a stored toolset can have anywhere: not `new` in any case, which is
   the address of the web form for a new toolset (`RenameError::StoredToolsetName`). A table of
-  `giles.toml` can have it.
+  `doozers.toml` can have it.
 
-## Renaming while Giles runs
+## Renaming while Doozers runs
 
 `doozers toolset rename` chooses its path by the data root's lock. If it can take the lock, no core
-runs, and it does the offline rename above for any toolset, whether `giles.toml` or the database has
-it. If a core holds the lock, it calls the admin service's `RenameToolset`, which renames a stored
-toolset as described here and refuses a toolset of `giles.toml` (`ToolsetManagerError::Unsupported`)
-with a message that says to stop Giles first.
+runs, and it does the offline rename above for any toolset, whether `doozers.toml` or the database
+has it. If a core holds the lock, it calls the admin service's `RenameToolset`, which renames a
+stored toolset as described here and refuses a toolset of `doozers.toml`
+(`ToolsetManagerError::Unsupported`) with a message that says to stop Doozers first.
 
 `ToolsetManager::rename` renames a stored toolset in the running core, for the web UI and the admin
 socket ([Toolsets](toolsets.md#renaming)). It is the same rename as the offline one, with the
@@ -233,7 +233,7 @@ difference that the core is running, so the toolset is stopped and started again
 in one database transaction:
 
 1. The checks, with nothing changed. The new name must be valid and free among the toolsets (another
-   stored toolset is `ToolsetManagerError::Exists`, a toolset of `giles.toml` is `Invalid` at the
+   stored toolset is `ToolsetManagerError::Exists`, a toolset of `doozers.toml` is `Invalid` at the
    root key), as for a new toolset. The old name is exempt, so the case of a name can change. Data
    under `data/toolset/<new>/`, left by an earlier instance, doesn't refuse the name, as it doesn't
    refuse a new stored toolset: a stored toolset is remote and has no data to merge with it. Then
@@ -260,8 +260,8 @@ exactly, and the toolset is started again under its old name. The error
 
 A stored toolset that failed to start is renamed too: it has no connection, so only the name checks
 apply, and afterwards it is validated again and started if it now passes. One whose name a toolset
-of `giles.toml` took is not that toolset, so the agents' globs are left to the toolset, and only the
-row changes.
+of `doozers.toml` took is not that toolset, so the agents' globs are left to the toolset, and only
+the row changes.
 
 The rewrite of the agents' files takes the agent manager's lock (`AgentManager`'s `lock`, built once
 in `serve` and given to both managers as `agent_lock`), right after the manager's own lock. An edit,
@@ -279,23 +279,23 @@ left as they are.
 
 A failure the process can see is undone. If the process is killed (power loss, `kill -9`) during
 step 3, some files or directories may have changed, and some memory databases may already name
-`new`, while `giles.db` has not committed. The journals exist only in memory, so recovery is to run
-the same command again:
+`new`, while `doozers.db` has not committed. The journals exist only in memory, so recovery is to
+run the same command again:
 
 - The database still has rows under `old`, so a directory that is already at its new path (and no
   longer at the old one) is treated as moved. A directory at both paths is a conflict, and the
   command refuses and says which.
-- `giles.toml` already naming `new` is the "only `new` is configured" case above.
+- `doozers.toml` already naming `new` is the "only `new` is configured" case above.
 - Rewriting an `agent.toml` is idempotent: only references to `old` are changed.
 - A memory database that was already updated has no group owner under `old` any more, so the rerun
   changes nothing in it and lists only the databases it did update (`RenameReport::memory_dbs`); the
   others are finished. In a database whose commit never happened nothing changed, since a database
   is one transaction.
 
-The window is the few system calls of step 3. Giles doesn't notice an unfinished rename, so run the
-command again before the next start. If the daemon is started in between (`giles.toml` renamed, rows
-still under `old`), it starts a new, empty instance under the new name and leaves the old name's
-sessions, inbox, and directories where they are. Launching a plugin instance creates
+The window is the few system calls of step 3. Doozers doesn't notice an unfinished rename, so run
+the command again before the next start. If the daemon is started in between (`doozers.toml`
+renamed, rows still under `old`), it starts a new, empty instance under the new name and leaves the
+old name's sessions, inbox, and directories where they are. Launching a plugin instance creates
 `data/<kind>/<new>/`, and once the daemon has done that, or written rows under the new name, the
 command refuses (the new name has data). If nothing else exists under the new name, removing
 `data/<kind>/<new>` lets the command run; otherwise merging by hand is the only way back.

@@ -94,7 +94,7 @@ impl Setup {
         write(dir.path().join("secret.txt"), b"the secret");
         std::os::unix::fs::symlink(dir.path().join("secret.txt"), skill.join("escape.txt"))
             .unwrap();
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let blobs = BlobStore::open(dir.path().join("blobs"), store)
             .await
             .unwrap();

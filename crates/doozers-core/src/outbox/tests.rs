@@ -23,7 +23,7 @@ const OWNER_DEFAULT: &str = "whatsapp:+15551234567";
 /// Long enough that only a hang reaches it (paused time jumps straight there).
 const WAIT: Duration = Duration::from_secs(48 * 60 * 60);
 
-const GILES_TOML: &str = r#"
+const DOOZERS_TOML: &str = r#"
 [owner]
 identities = ["whatsapp:+15551234567"]
 
@@ -151,19 +151,19 @@ impl Harness {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
-        std::fs::write(root.config_file(), GILES_TOML).unwrap();
+        std::fs::write(root.config_file(), DOOZERS_TOML).unwrap();
         let config = Arc::new(
             Config::load_with(
                 &root,
                 &LoadOptions {
                     env: &|_| None,
-                    giles_exe: None,
+                    doozers_exe: None,
                     ..LoadOptions::default()
                 },
             )
             .unwrap_or_else(|e| panic!("{e}")),
         );
-        let db = dir.path().join("giles.db");
+        let db = dir.path().join("doozers.db");
         let store = Store::open(db.clone()).await.unwrap();
         let registry = Arc::new(Registry::new(root, config.clone()));
         let start = Instant::now();

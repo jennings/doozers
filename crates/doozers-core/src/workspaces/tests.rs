@@ -48,18 +48,18 @@ impl Harness {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
-        std::fs::write(dir.path().join("giles.toml"), CONFIG).unwrap();
+        std::fs::write(dir.path().join("doozers.toml"), CONFIG).unwrap();
         let config = Config::load_with(
             &root,
             &LoadOptions {
                 env: &|_| None,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )
         .unwrap_or_else(|e| panic!("{e}"));
         let registry = Arc::new(Registry::new(root, Arc::new(config)));
-        let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let clock = TestClock::new();
         let fake = Fake::new(clock.clone());
         let workspaces = Workspaces::new(store.clone(), registry.clone(), clock.clone());

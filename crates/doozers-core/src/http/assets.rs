@@ -48,12 +48,12 @@ pub const HTMX_SSE: Asset = Asset {
     body: include_bytes!("../../assets/vendor/htmx-ext-sse-2.2.4/sse.min.js"),
 };
 
-const STYLESHEET_BODY: &[u8] = include_bytes!("../../assets/giles.css");
+const STYLESHEET_BODY: &[u8] = include_bytes!("../../assets/doozers.css");
 
 static STYLESHEET_PATH: LazyLock<String> =
-    LazyLock::new(|| hashed_path("giles", STYLESHEET_BODY, "css"));
+    LazyLock::new(|| hashed_path("doozers", STYLESHEET_BODY, "css"));
 
-/// The URL path of the stylesheet: `/static/giles-<hash>.css`.
+/// The URL path of the stylesheet: `/static/doozers-<hash>.css`.
 pub fn stylesheet_path() -> &'static str {
     STYLESHEET_PATH.as_str()
 }
@@ -150,11 +150,11 @@ mod tests {
 
     #[test]
     fn hashed_path_changes_with_the_content_only() {
-        let a = hashed_path("giles", b"body { color: red }", "css");
-        assert_eq!(a, hashed_path("giles", b"body { color: red }", "css"));
-        assert_ne!(a, hashed_path("giles", b"body { color: blue }", "css"));
+        let a = hashed_path("doozers", b"body { color: red }", "css");
+        assert_eq!(a, hashed_path("doozers", b"body { color: red }", "css"));
+        assert_ne!(a, hashed_path("doozers", b"body { color: blue }", "css"));
         let hash = a
-            .strip_prefix("/static/giles-")
+            .strip_prefix("/static/doozers-")
             .and_then(|rest| rest.strip_suffix(".css"))
             .unwrap();
         assert_eq!(hash.len(), 16);

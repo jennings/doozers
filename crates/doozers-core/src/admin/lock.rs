@@ -1,4 +1,4 @@
-//! One core per data root: an exclusive `flock` on `run/giles.lock`.
+//! One core per data root: an exclusive `flock` on `run/doozers.lock`.
 
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Write as _};
@@ -21,7 +21,7 @@ pub struct InstanceLock {
 pub enum LockError {
     /// Another core holds it.
     #[error(
-        "giles is already running with the data root {}{} (it holds {}); stop it first",
+        "doozers is already running with the data root {}{} (it holds {}); stop it first",
         .root.display(),
         .pid.map(|pid| format!(" as pid {pid}")).unwrap_or_default(),
         .path.display(),

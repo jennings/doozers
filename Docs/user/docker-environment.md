@@ -12,15 +12,15 @@ its own workspace.
 
 **Use rootless Podman.** The plugin can start any container the engine allows, so access to its
 socket is as powerful as the engine.
-**Do not give the plugin the socket of a rootful Docker engine on the machine that runs Giles.**
+**Do not give the plugin the socket of a rootful Docker engine on the machine that runs Doozers.**
 That socket is root on that machine.
 
-If Giles runs in [its container image](container.md), don't mount an engine socket into it.
+If Doozers runs in [its container image](container.md), don't mount an engine socket into it.
 [Run the plugin in its own container](#run-the-plugin-in-its-own-container) instead.
 
-## Set up the plugin on the Giles machine
+## Set up the plugin on the Doozers machine
 
-Add an environment instance to `giles.toml`. The sandbox grant lets the plugin reach the engine's
+Add an environment instance to `doozers.toml`. The sandbox grant lets the plugin reach the engine's
 socket, and the plugin reads its helper files from the directory of its own binary:
 
 ```toml
@@ -48,13 +48,13 @@ pids = 512
   the workspace has not been used for this long. It can take a few minutes longer.
 - `socket` is the engine's socket, and `unix` grants the same path. For rootless Podman that is
   `/run/user/<uid>/podman/podman.sock`.
-- `read` is the directory with the plugin and its helper files. It must be outside the Giles data
+- `read` is the directory with the plugin and its helper files. It must be outside the Doozers data
   directory, so install the plugin in a system directory such as `/usr/local/bin`.
 
 The instance name is `docker`, so the plugin is the component `docker`. Name the instance something
 else, such as `[environment.builder]`, and add `component = "docker"` to it.
 
-Without `socket`, a plugin Giles launches uses `/var/run/docker.sock`. A plugin you run on another
+Without `socket`, a plugin Doozers launches uses `/var/run/docker.sock`. A plugin you run on another
 machine uses the `unix://` address in `DOCKER_HOST` first.
 
 ## Let an agent use it
@@ -79,13 +79,13 @@ and limits, and stops or deletes them.
 
 ## Run the plugin in its own container
 
-The `doozers-environment-docker` image runs the plugin for Giles to connect to. It keeps the
-engine's socket away from Giles, and it is the setup to use when Giles runs in its container image.
-To run both containers with Docker Compose, follow
-[Run Giles with Docker Compose](container.md#run-giles-with-docker-compose) instead of the steps
+The `doozers-environment-docker` image runs the plugin for Doozers to connect to. It keeps the
+engine's socket away from Doozers, and it is the setup to use when Doozers runs in its container
+image. To run both containers with Docker Compose, follow
+[Run Doozers with Docker Compose](container.md#run-doozers-with-docker-compose) instead of the steps
 below.
 
-Make a token for Giles to authenticate with, and keep it for `giles.toml`:
+Make a token for Doozers to authenticate with, and keep it for `doozers.toml`:
 
 ```sh
 openssl rand -hex 32
@@ -95,19 +95,19 @@ Create a network for the two containers, and start the plugin on it with the eng
 `/var/run/docker.sock`:
 
 ```sh
-docker network create giles
+docker network create doozers
 docker run --detach --name doozers-environment-docker --restart unless-stopped \
-  --network giles \
+  --network doozers \
   --volume /run/user/1000/podman/podman.sock:/var/run/docker.sock \
-  --env GILES_ENVIRONMENT_DOCKER_TOKEN="<token>" \
+  --env DOOZERS_ENVIRONMENT_DOCKER_TOKEN="<token>" \
   ghcr.io/jennings/doozers-environment-docker:latest
 ```
 
 For rootless Podman, run it with `podman run` as the user that owns the socket. On a host with
 SELinux, such as Fedora, also pass `--security-opt label=disable`, or the plugin can't open the
-socket. Add `--network giles` to the command that starts Giles too.
+socket. Add `--network doozers` to the command that starts Doozers too.
 
-In `giles.toml`, the instance has the plugin's address and the token, stored as the secret
+In `doozers.toml`, the instance has the plugin's address and the token, stored as the secret
 `docker-remote` ([Secrets](configuration.md#secrets)):
 
 ```toml
@@ -118,13 +118,13 @@ insecure = true
 auth = { bearer = { secret = "docker-remote" } }
 ```
 
-`insecure = true` allows plain HTTP, which stays on the `giles` network. The plugin's messages are
+`insecure = true` allows plain HTTP, which stays on the `doozers` network. The plugin's messages are
 in `docker logs doozers-environment-docker`.
 
 ### Change the plugin's settings
 
 The plugin's settings go in the `[config]` table of a file that you mount and pass with `--config`.
-Giles refuses an instance that has both `address` and `config`, because the plugin's settings live
+Doozers refuses an instance that has both `address` and `config`, because the plugin's settings live
 with the plugin:
 
 ```toml
@@ -135,10 +135,10 @@ memory = "2g"
 
 ```sh
 docker run --detach --name doozers-environment-docker --restart unless-stopped \
-  --network giles \
+  --network doozers \
   --volume /run/user/1000/podman/podman.sock:/var/run/docker.sock \
   --volume "$PWD/doozers-environment-docker.toml:/etc/doozers-environment-docker.toml:ro" \
-  --env GILES_ENVIRONMENT_DOCKER_TOKEN="<token>" \
+  --env DOOZERS_ENVIRONMENT_DOCKER_TOKEN="<token>" \
   ghcr.io/jennings/doozers-environment-docker:latest --config /etc/doozers-environment-docker.toml
 ```
 
@@ -146,7 +146,7 @@ Registry logins and environment variables go in this file too. Leave `socket` un
 
 ### Reach the plugin from another machine
 
-**Use TLS when Giles reaches the plugin over a network.** Publish the port with
+**Use TLS when Doozers reaches the plugin over a network.** Publish the port with
 `--publish 7443:7443`, and add the certificate to the file with `tls_cert` and `tls_key`, mounted
 into the container. Then use an `https://` address and drop `insecure`:
 
@@ -166,9 +166,9 @@ Install `doozers-environment-docker` and the `doozers-workspace-helper-*` files 
 ```toml
 listen = "0.0.0.0:7443"
 data = "/var/lib/doozers-environment-docker"
-tls_cert = "/etc/giles/fullchain.pem"
-tls_key = "/etc/giles/key.pem"
-token_file = "/etc/giles/docker.token"
+tls_cert = "/etc/doozers/fullchain.pem"
+tls_key = "/etc/doozers/key.pem"
+token_file = "/etc/doozers/docker.token"
 
 [config]
 socket = "/run/user/1000/podman/podman.sock"
@@ -214,8 +214,9 @@ password = { secret = "dockerhub" }
 ```
 
 Add another entry for each registry that needs a login, such as `ghcr.io`. Write the password in
-[secrets](configuration.md#secrets) when the plugin runs on the Giles machine. In the settings file
-of a plugin on another machine, write it in the file and keep the file readable only by its owner.
+[secrets](configuration.md#secrets) when the plugin runs on the Doozers machine. In the settings
+file of a plugin on another machine, write it in the file and keep the file readable only by its
+owner.
 
 ## Limit resources and network
 
@@ -239,7 +240,7 @@ The model can't change them.
   access, so `git clone` and package installs work. `"none"` gives them no network, and a network
   name joins a network you created.
 
-**With the default network, a workspace can reach services on the engine's host, including Giles's
+**With the default network, a workspace can reach services on the engine's host, including Doozers'
 HTTP port.** If the model shouldn't reach them, set `network = "none"`, or create a network that
 your firewall restricts and name it. A workspace without a network can't install packages or clone
 repositories.
@@ -292,7 +293,7 @@ file. An unknown key or invalid value stops the instance from starting, and the 
 | `pids`           | none                         | The process limit of a container                             |
 | `network`        | `"bridge"`                   | The [network](#limit-resources-and-network) containers join  |
 | `env`            | none                         | [Variables](#set-environment-variables) set in every container |
-| `helper_dir`     | the plugin's own directory   | The directory with the `doozers-workspace-helper-*` files      |
+| `helper_dir`     | the plugin's own directory   | The directory with the `doozers-workspace-helper-*` files    |
 
 ## Check that it works
 

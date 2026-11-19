@@ -1,9 +1,9 @@
 # Web chat
 
 The built-in web channel lets you talk to your agents in a browser. It runs on
-[the same web server](running.md#the-web-interface) as the rest of Giles.
+[the same web server](running.md#the-web-interface) as the rest of Doozers.
 
-To turn it on, add a `[channel.web]` table to `giles.toml`. `[owner] identities` must list
+To turn it on, add a `[channel.web]` table to `doozers.toml`. `[owner] identities` must list
 `web:owner`, which is the identity you use in the browser.
 
 ```toml
@@ -31,33 +31,33 @@ doozers admin login-link --user owner
 Open the link and press **Log in** to log that browser in for 30 days. The link works once, and only
 for 10 minutes. **Log out** at the bottom of the sidebar ends the login. See [Command line](cli.md).
 
-The link starts with the address Giles listens on. If you reach Giles at another address, such as
-through a reverse proxy, set `public_url`:
+The link starts with the address Doozers listens on. If you reach Doozers at another address, such
+as through a reverse proxy, set `public_url`:
 
 ```toml
 [channel.web.config]
-public_url = "https://giles.example.com"
+public_url = "https://doozers.example.com"
 ```
 
-Give only the scheme, host, and optional port. Giles is always served at the root of that address.
+Give only the scheme, host, and optional port. Doozers is always served at the root of that address.
 
 ### A trusted reverse proxy
 
 If a reverse proxy already authenticates people, such as Tailscale Serve, oauth2-proxy, or Authelia,
-Giles can take your identity from a header the proxy sets:
+Doozers can take your identity from a header the proxy sets:
 
 ```toml
 [channel.web.config.proxy]
 identity_header = "Tailscale-User-Login"
 ```
 
-Giles reads that header only on a separate listener for the proxy. It ignores the header on
+Doozers reads that header only on a separate listener for the proxy. It ignores the header on
 `core.http_listen`, because any program on the machine can connect there, plugins included.
 
 By default the proxy listener is the Unix socket `run/proxy.sock` in the data root. Only the user
-Giles runs as can connect to it, so run the proxy as that user and point it at the socket. If the
-data root's path is too long for a socket, Giles puts it under `$TMPDIR` instead and logs where, in
-the line `trusted-proxy listener open`.
+Doozers runs as can connect to it, so run the proxy as that user and point it at the socket. If the
+data root's path is too long for a socket, Doozers puts it under `$TMPDIR` instead and logs where,
+in the line `trusted-proxy listener open`.
 
 The header's value is your identity in the `web` namespace. List it in `[owner] identities`, such as
 `"web:alice@example.com"`.
@@ -70,7 +70,7 @@ must send the secret in a header with every request:
 identity_header = "X-Forwarded-User"
 listen = "127.0.0.1:8081"
 secret = "a long random string"    # at least 16 bytes
-secret_header = "X-Giles-Proxy-Secret"  # the default
+secret_header = "X-Doozers-Proxy-Secret"  # the default
 ```
 
 There's no logout for a proxy login. The proxy decides who you are on every request.
@@ -113,7 +113,7 @@ Delete a chat to remove it for good. Open the chat, press **Delete**, and confir
   [workspace](environments.md) for the chat, with its files.
 - What the agent saved to [memory](#memory) from the chat stays.
 - Jobs scheduled in the chat keep running, and their next reply starts the chat again.
-- While the agent is working in the chat, Giles refuses to delete it. Wait for the reply, or send
+- While the agent is working in the chat, Doozers refuses to delete it. Wait for the reply, or send
   `/stop` in the chat, then try again.
 
 ## Approvals
@@ -148,8 +148,8 @@ Times are in the time zone the job runs in. The next run skips times outside the
 - **Prompt**: what the agent does when the job runs. Its reply is sent to your default identity.
 - **Runs in**: its own session, or your DM with the agent on your default identity.
 
-You can have up to 20 jobs with each agent. Giles refuses a job that would never run, such as one at
-a time that has passed.
+You can have up to 20 jobs with each agent. Doozers refuses a job that would never run, such as one
+at a time that has passed.
 
 ### Changing a job
 
@@ -202,7 +202,7 @@ text.
   you type, and you can edit it. You can't change it once the agent exists.
 - **Models**: `<provider>/<model>`, several separated by commas.
 - **Environments**: tick the [environments](environments.md) the agent may use for a workspace. The
-  form lists the environments in `giles.toml` with their descriptions, and hides this field when
+  form lists the environments in `doozers.toml` with their descriptions, and hides this field when
   there are none. The agent has the environment tools only if you tick an environment and also tick
   the tools below. If you tick one without the other, the form says so under the field. It still
   saves.
@@ -230,11 +230,11 @@ text.
 
 The [`agent.toml` reference](configuration.md#agentsagentagenttoml) lists each setting's default.
 
-Giles checks the agent as it checks a hand-written `agent.toml`. If something is wrong, such as a
+Doozers checks the agent as it checks a hand-written `agent.toml`. If something is wrong, such as a
 model naming a provider you haven't configured, the form shows the problem and nothing is written.
 
-Otherwise Giles writes `agents/<id>/agent.toml` and `SOUL.md`. You can chat with the agent at once,
-without a restart.
+Otherwise Doozers writes `agents/<id>/agent.toml` and `SOUL.md`. You can chat with the agent at
+once, without a restart.
 
 The form has every agent setting except [`[[jobs]]`](configuration.md#jobs). To change those, edit
 `agent.toml` by hand. Like any other configuration change, that takes effect at the next restart.
@@ -248,14 +248,14 @@ Saving takes effect without a restart:
 
 - New chats and the next run of the agent's [jobs](configuration.md#jobs) use the new settings. A
   chat already going keeps the settings it started with. Use `/new` to start a fresh one.
-- Giles changes only what the form has. A field you empty removes its setting from `agent.toml`, so
-  the default applies. The rest of the file, comments and `[[jobs]]` included, stays as you wrote
+- Doozers changes only what the form has. A field you empty removes its setting from `agent.toml`,
+  so the default applies. The rest of the file, comments and `[[jobs]]` included, stays as you wrote
   it.
 - If you edit `agent.toml` or `SOUL.md` by hand while the form is open, saving is refused with
   "changed on disk". Use the form's link to reload the current values.
 
-An environment that `agent.toml` names but `giles.toml` doesn't configure stays ticked on the form,
-marked as not configured. Saving is refused until you untick it.
+An environment that `agent.toml` names but `doozers.toml` doesn't configure stays ticked on the
+form, marked as not configured. Saving is refused until you untick it.
 
 Changes you make to `agent.toml` by hand, such as to `[[jobs]]`, take effect at the next restart, or
 when you next save this form.
@@ -274,13 +274,13 @@ Removing an agent:
 - Stops its `[[jobs]]`, and deletes the jobs it scheduled itself with the `schedule` tool.
 - Keeps its chats, messages, and usage in the database, out of sight.
 
-To bring the agent back, move its directory back to `agents/<id>/` and restart Giles. Giles never
-empties or backs up `trash/`, so delete what you don't want yourself.
+To bring the agent back, move its directory back to `agents/<id>/` and restart Doozers. Doozers
+never empties or backs up `trash/`, so delete what you don't want yourself.
 
 You can reuse the id at once. A new agent with the same id takes over the old agent's chats and
 answers them with its own settings. To start clean, pick another id.
 
-Giles refuses to remove an agent in two cases:
+Doozers refuses to remove an agent in two cases:
 
 - **Routes still name it.** The page lists them. Point each at another agent or remove it, then try
   again.
@@ -319,8 +319,8 @@ memories. Nobody else can see or change a group's memories.
 ## Routes
 
 **Routes** in the sidebar decides which agent answers each conversation, on every channel. A message
-in a conversation that no route matches is dropped. A fresh Giles has no routes, and answers nobody
-until you add one.
+in a conversation that no route matches is dropped. A fresh Doozers has no routes, and answers
+nobody until you add one.
 
 Routes are tried from the top, and the first match wins. Put a route for one conversation before a
 broader one for a whole channel or everything.
@@ -328,7 +328,7 @@ broader one for a whole channel or everything.
 **New route** opens a form:
 
 - **Channel**: one of your channel instances, or any.
-- **Kind**: direct, group, or any. Giles ignores group conversations for now.
+- **Kind**: direct, group, or any. Doozers ignores group conversations for now.
 - **Conversation**: the conversation id as the channel reports it, such as `#giles` on IRC, or empty
   for any. It must match exactly, capitals included.
 - **Agent**: required.
@@ -339,15 +339,15 @@ A route that sets nothing but the agent matches every conversation, so keep it l
 Each route in the list has **Edit**, **Up**, **Down**, and **Remove** buttons. A change applies to
 the next message, without a restart.
 
-Giles refuses a change that would leave a route unreachable, such as a duplicate, or a broad route
+Doozers refuses a change that would leave a route unreachable, such as a duplicate, or a broad route
 moved above a specific one. The form says what is wrong. To move a broad route up, move the specific
 routes it would hide above it instead.
 
 A route that stopped working, for example because its agent was removed by hand, stays in the list
 with a warning under it.
 
-Giles imports `[[routes]]` from an older `giles.toml` once. After that you can delete them from the
-file. See [Configuration](configuration.md#routes).
+Doozers imports `[[routes]]` from an older `doozers.toml` once. After that you can delete them from
+the file. See [Configuration](configuration.md#routes).
 
 ## MCP servers
 
@@ -359,14 +359,14 @@ Here you add, edit, rename, and remove remote servers, and the change applies at
 restart. A conversation that is already going keeps the tools it started with. New conversations get
 the new list.
 
-A server that Giles runs on this machine, a stdio server, is a `[toolset.<name>]` table in
-`giles.toml`, which [Configuration](configuration.md#toolsets) describes. It shows in the list too,
-but you can only change it in the file. Giles ignores a `[toolset.<name>]` table with `url` and logs
-a warning at every start. Add that server here instead.
+A server that Doozers runs on this machine, a stdio server, is a `[toolset.<name>]` table in
+`doozers.toml`, which [Configuration](configuration.md#toolsets) describes. It shows in the list
+too, but you can only change it in the file. Doozers ignores a `[toolset.<name>]` table with `url`
+and logs a warning at every start. Add that server here instead.
 
 ### Adding a remote server
 
-A remote server is one you reach over the network. Giles doesn't run or sandbox it.
+A remote server is one you reach over the network. Doozers doesn't run or sandbox it.
 
 1. Open **New MCP server** and enter a **Name**, such as `github`. Its tools are named
    `github__<tool>`.
@@ -374,13 +374,13 @@ A remote server is one you reach over the network. Giles doesn't run or sandbox 
 3. For **Authentication**, choose **Bearer token** and paste the token.
 4. Select **Add**.
 
-The server's page opens and shows its state and its tools. If Giles can't connect, the page shows
+The server's page opens and shows its state and its tools. If Doozers can't connect, the page shows
 why.
 
-Giles keeps the token encrypted and never shows it again. When you edit the server, leave the token
-field blank to keep the stored token, or type a new one to replace it. If you change the URL to
-another server, type the token again. Giles never sends a stored token to a server it wasn't given
-for.
+Doozers keeps the token encrypted and never shows it again. When you edit the server, leave the
+token field blank to keep the stored token, or type a new one to replace it. If you change the URL
+to another server, type the token again. Doozers never sends a stored token to a server it wasn't
+given for.
 
 ### Adding a server that each user signs in to
 
@@ -390,8 +390,8 @@ their own account on the [Connections](#connections) page, and an agent's calls 
 the sign-in of the person who asked.
 
 1. If the server needs a registered OAuth app, register one with the server's provider. Use the
-   **Sign-in callback** URL from the server's page in Giles as the redirect URI. It's
-   `<your Giles address>/connections/<name>/callback`, such as
+   **Sign-in callback** URL from the server's page in Doozers as the redirect URI. It's
+   `<your Doozers address>/connections/<name>/callback`, such as
    `http://127.0.0.1:8080/connections/github/callback`. Renaming the server changes it.
 2. Open **New MCP server**, and enter the **Name** and **URL**.
 3. For **Authentication**, choose **OAuth: each user signs in**.
@@ -401,13 +401,13 @@ the sign-in of the person who asked.
 6. Select **Add**, then sign in on **Connections**.
 
 The server shows as failed until someone signs in. Once you sign in, your conversations get the
-tools your own account offers. If you reach Giles through a domain name or a reverse proxy, set
+tools your own account offers. If you reach Doozers through a domain name or a reverse proxy, set
 [`public_url`](#login-links) so the callback URL is the one your browser can open.
 
 The form has more settings, all optional:
 
-- **Allow insecure connections** lets Giles reach another machine over plain `http://`. It shows
-  when the URL starts with `http:`. Giles accepts plain `http://` to this machine without it. Tick
+- **Allow insecure connections** lets Doozers reach another machine over plain `http://`. It shows
+  when the URL starts with `http:`. Doozers accepts plain `http://` to this machine without it. Tick
   it only on a network you trust.
 - **Deadline** limits how long one tool call may run. It defaults to `5m`.
 - **Tools may run in parallel** lets an agent's calls to the server run at the same time.
@@ -426,22 +426,22 @@ A server that failed to start, for example because its secret was missing, stays
 the reason. Fix the cause and select **Restart**, or change its settings and save.
 
 **Remove** opens a page that says what removing does. Nothing happens until you select
-**Remove MCP server**. Giles disconnects from the server and deletes its settings. The page lists
-the agents whose tools or ask-first list name the server's tools. Giles leaves those agents as they
-are.
+**Remove MCP server**. Doozers disconnects from the server and deletes its settings. The page lists
+the agents whose tools or ask-first list name the server's tools. Doozers leaves those agents as
+they are.
 
 ### Connections
 
 **Connections** lists the MCP servers that ask you to sign in with your own account. Select
 **Sign in** to go to the server's sign-in page. Once you approve, the server sends you back to
-Giles, and the page shows you as signed in.
+Doozers, and the page shows you as signed in.
 
-- Giles keeps your sign-in encrypted and refreshes it as needed. You don't have to sign in again
+- Doozers keeps your sign-in encrypted and refreshes it as needed. You don't have to sign in again
   unless the server revokes it.
 - An agent's call to the server on your behalf uses your sign-in. Someone who hasn't signed in gets
   an error in the conversation telling them to sign in, and so does a job you didn't start.
-- Select **Sign out** to delete your sign-in from Giles. To revoke Giles's access completely, also
-  remove it in your account settings on the server's website.
+- Select **Sign out** to delete your sign-in from Doozers. To revoke Doozers' access completely,
+  also remove it in your account settings on the server's website.
 
 ### Renaming an MCP server
 
@@ -450,20 +450,20 @@ ask-first lists, so a rename changes more than the name. To rename an MCP server
 
 1. Open the server's page and select **Rename**.
 2. Enter the **New name** and select **Show the changes**.
-3. Check the list of agents. Giles rewrites the entries in each agent's tools and ask-first lists
+3. Check the list of agents. Doozers rewrites the entries in each agent's tools and ask-first lists
    that start with `<old name>__` to start with `<new name>__`.
 4. Select **Rename to** `<new name>`.
 
-Giles disconnects from the server, rewrites the agents, and connects again under the new name. If a
-step fails, it undoes the steps before it, and the page says which step failed and why. A
+Doozers disconnects from the server, rewrites the agents, and connects again under the new name. If
+a step fails, it undoes the steps before it, and the page says which step failed and why. A
 conversation that is already going keeps the old tool names, and its calls to them fail. Start a new
 conversation to use the new names.
 
-Giles refuses the rename, and changes nothing, if the new name is taken, or if an agent has a glob
+Doozers refuses the rename, and changes nothing, if the new name is taken, or if an agent has a glob
 that matches the server's tools without starting with `<old name>__`, such as `github*`. The page
 lists those globs. Rewrite them, for example to `github__*`, and try again.
 
-You can't rename a server that you configure in `giles.toml` here. Stop Giles and run
+You can't rename a server that you configure in `doozers.toml` here. Stop Doozers and run
 [`doozers toolset rename`](cli.md#rename-a-toolset) for that.
 
 ## Workspaces
@@ -486,8 +486,8 @@ connected or fails when the page asks it, the page names it, and what comes from
 unknown. Reload the page to ask again.
 
 **Stop** stops the workspace and keeps its files. The agent's next command starts it again and tells
-the agent that it was stopped. If a turn is using the workspace, Giles asks first, because stopping
-ends the command the turn is running and its background processes.
+the agent that it was stopped. If a turn is using the workspace, Doozers asks first, because
+stopping ends the command the turn is running and its background processes.
 
 **Delete** opens a page that says what deleting does. Press **Delete workspace** to remove the
 workspace and everything in it. If a turn is using the workspace, the page says so: deleting stops

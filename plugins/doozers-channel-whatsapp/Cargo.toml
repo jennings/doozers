@@ -1,6 +1,6 @@
 [package]
 name = "doozers-channel-whatsapp"
-description = "The Giles WhatsApp channel plugin: a linked device on the WhatsApp Web protocol."
+description = "The Doozers WhatsApp channel plugin: a linked device on the WhatsApp Web protocol."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

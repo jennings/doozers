@@ -2,7 +2,7 @@
 //!
 //! The trampoline is this test binary itself: run as `<test> sandbox-exec <spec> -- <command>`, it
 //! does what `doozers sandbox-exec` does (`doozers_core::sandbox::exec`, single-threaded, before
-//! any runtime starts), because Cargo gives tests here the echo binary's path but not the `giles`
+//! any runtime starts), because Cargo gives tests here the echo binary's path but not the `doozers`
 //! binary's. Hence no libtest harness.
 //!
 //! Where the host can sandbox (macOS; Linux with Landlock) the launch succeeds. On a Linux kernel
@@ -63,7 +63,7 @@ async fn sandboxed_echo_launch() {
             .connection
             .health()
             .check(HealthCheckRequest {
-                service: "giles.channel.v1.ChannelService".into(),
+                service: "doozers.channel.v1.ChannelService".into(),
             })
             .await
             .unwrap()

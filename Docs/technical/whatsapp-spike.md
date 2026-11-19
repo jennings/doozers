@@ -5,7 +5,7 @@ section 10) or the `whatsmeow` fallback. The spike is a small CLI on `whatsapp-r
 `spikes/whatsapp/`. It links as a companion device, prints incoming messages, sends a DM, and reuses
 its saved session after a restart. Everything that needs no phone has been verified. The live run,
 which links a real account, is the owner's: follow the [test plan](#owner-test-plan) and fill in
-[Results](#results). [Issue #1](https://github.com/jennings/giles/issues/1) (verify the WhatsApp
+[Results](#results). [Issue #1](https://github.com/jennings/doozers/issues/1) (verify the WhatsApp
 plugin and library on a real account) stays open until then.
 
 **The owner chose not to wait.** The WhatsApp channel plugin ([WhatsApp channel](whatsapp.md)) is
@@ -14,7 +14,7 @@ plugin's behavior with a real account is unverified. Issue #1 stays open, and th
 the way to verify both the spike and the plugin later.
 
 **Recommendation:** build the plugin on `whatsapp-rust`, unless the live run fails one of the
-[decision criteria](#decision-criteria). It is actively maintained, covers everything Giles needs,
+[decision criteria](#decision-criteria). It is actively maintained, covers everything Doozers needs,
 and keeps the plugin in Rust, so it can use `doozers-plugin-sdk` (gRPC serving, the `whatsapp()`
 renderer, unacked-event storage). A Go plugin on `whatsmeow` would have to rebuild all of that in
 Go. The risks are its age (one year), a single main author, a fast-moving API, and fixes that are on
@@ -82,10 +82,10 @@ From reading the 0.7.0 sources, building the spike, and one unscanned `link --qr
   would come from the plugin config. After the 6th QR code expires, the client shuts itself down
   (`PairingQrCodesExhausted { disconnected: true }`) and a new `Client` on the same store must be
   built for more codes; the plugin should only do that on demand, not in a tight loop.
-- **Session store.** One SQLite file (`SqliteStore::new(path)`), which goes in `GILES_PLUGIN_DATA`.
-  The device identity (`Device::pn`, `Device::lid`) is readable before connecting, which tells the
-  plugin whether it is linked. Two processes must never share a store: both would connect as the
-  same device. The spike holds an exclusive `flock` on `<data>/lock`.
+- **Session store.** One SQLite file (`SqliteStore::new(path)`), which goes in
+  `DOOZERS_PLUGIN_DATA`. The device identity (`Device::pn`, `Device::lid`) is readable before
+  connecting, which tells the plugin whether it is linked. Two processes must never share a store:
+  both would connect as the same device. The spike holds an exclusive `flock` on `<data>/lock`.
 - **Identities.** A message has `sender`, `sender_alt` (the other form of the sender's address, when
   the server sends it), and `addressing_mode`. The LID-to-phone map learned from traffic is
   persisted and queryable (`Client::get_lid_pn_entry`). The spike reports the phone number as
@@ -94,8 +94,8 @@ From reading the 0.7.0 sources, building the spike, and one unscanned `link --qr
 - **Echoes.** `MessageSource::is_from_me` marks messages sent from the linked account by any of its
   devices. Whether the server ever hands a device its own sends back is not documented; the spike
   logs the ids it sent in `<data>/sent-ids` so the live run can tell. Because every message the
-  account sends is an echo, Giles should be linked to its own WhatsApp number: if it were linked to
-  the owner's personal account, the owner's own messages would all be dropped as echoes.
+  account sends is an echo, Doozers should be linked to its own WhatsApp number: if it were linked
+  to the owner's personal account, the owner's own messages would all be dropped as echoes.
 - **Message ids.** `MessageInfo::id` is the WhatsApp message id (e.g. `3EB0...`), chosen by the
   sending device. The protocol identifies a message by its `MessageKey` (chat, `from_me`, id, and
   the participant in groups), so the plugin's event id should combine those rather than use the id
@@ -140,7 +140,7 @@ Commands (`--data <DIR>` is required and comes first):
 
 `link` on a linked data directory prints the linked account and exits; `listen` and `send` on an
 unlinked one refuse. Phone numbers take a country code (`+1 555 123 4567`, `15551234567`). All
-history sync is skipped, as Giles doesn't import history. `RUST_LOG=info` (or `debug`) shows the
+history sync is skipped, as Doozers doesn't import history. `RUST_LOG=info` (or `debug`) shows the
 library's logs on stderr.
 
 The data directory (mode 0700) holds `whatsapp.db` (the session store), `sent-ids` (ids of messages
@@ -172,13 +172,13 @@ of its devices). `offline=true` marks a message queued on the server while the s
 
 ## Owner test plan
 
-You need the phone with the WhatsApp account to link (ideally the number Giles will use) and a
+You need the phone with the WhatsApp account to link (ideally the number Doozers will use) and a
 second account to message it from. Run everything from `spikes/whatsapp` after
 `cargo build --locked`:
 
 ```sh
 S=./target/debug/whatsapp-spike
-D=/tmp/whatsapp-spike      # any empty directory; never ~/.giles
+D=/tmp/whatsapp-spike      # any empty directory; never ~/.doozers
 A=+15551234567             # the linked account's number
 B=+15557654321             # the second account's number
 ```
@@ -226,7 +226,7 @@ If a step fails, rerun it with `RUST_LOG=info` (or `debug`) and keep the stderr 
 
 Fill in the result (pass, fail, or skipped) and notes for each step, plus the date, the phone's
 platform, and whether A is a consumer or Business account. Then record the decision in
-[issue #1](https://github.com/jennings/giles/issues/1) and close it.
+[issue #1](https://github.com/jennings/doozers/issues/1) and close it.
 
 | Step                  | Result | Notes |
 | --------------------- | ------ | ----- |
@@ -250,8 +250,8 @@ Choose `whatsapp-rust` if steps 1 through 7, 10, 11, and 12 pass, with at most a
 
 Switch to `whatsmeow` if any of these hold on both 0.7.0 and `main`:
 
-- Linking fails for the account Giles will use (QR or pair code; both are needed, as the admin page
-  offers both).
+- Linking fails for the account Doozers will use (QR or pair code; both are needed, as the admin
+  page offers both).
 - The saved session doesn't survive a restart, or the device is logged out without the owner
   removing it.
 - DMs are lost, arrive undecryptable, or sends report success but don't arrive.
@@ -285,8 +285,8 @@ config rewrites `https://github.com/` to SSH, which Cargo's built-in git can't u
 
 The plugin uses the same library at the commit under [Testing `main`](#testing-main), so the plan
 above checks it too, with the plugin's own surfaces in place of the spike's output. Link with
-`doozers-channel-whatsapp` instead of `spikes/whatsapp`, on a throwaway `GILES_HOME` (never
-`~/.giles`), with a `[channel.whatsapp]` instance and the web chat's admin page open:
+`doozers-channel-whatsapp` instead of `spikes/whatsapp`, on a throwaway `DOOZERS_HOME` (never
+`~/.doozers`), with a `[channel.whatsapp]` instance and the web chat's admin page open:
 
 - Steps 1 and 12 (QR and pair code): the admin page shows the QR code or the pair code
   (`link = "pair_code"` with `phone_number`), the status turns to `connected`, and a restart reuses
@@ -295,8 +295,8 @@ above checks it too, with the plugin's own surfaces in place of the spike's outp
   to `whatsapp`, the reply arrives with its markup, attachments arrive as attachments, and nothing
   the linked account itself sends starts a turn. Note whether the sender is the phone number or only
   the LID (`dropped inbound message` in the log shows the identity to list).
-- Step 6 (offline delivery): stop Giles, send two DMs, start it: both arrive once, in order. This is
-  the durability hook; also kill Giles (`kill -9`) right after a message arrives and check the
+- Step 6 (offline delivery): stop Doozers, send two DMs, start it: both arrive once, in order. This
+  is the durability hook; also kill Doozers (`kill -9`) right after a message arrives and check the
   message is in its conversation exactly once after the restart.
 - Step 7 (reconnect): the status reports the outage only if it outlasts 10 seconds, then `connected`
   again.

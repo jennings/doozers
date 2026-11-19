@@ -1,13 +1,13 @@
 {% extends "web/app.html" %}
 
-{% block title %}Connections - Giles{% endblock %}
+{% block title %}Connections - Doozers{% endblock %}
 
 {% block content %}
 <h1>Connections</h1>
 {%- if let Some(notice) = notice %}
 <p class="banner banner-info" role="status">{{ notice }}</p>
 {%- endif %}
-<p class="lede">These MCP servers act as you. Sign in to each with your own account, and an agent's calls to its tools on your behalf use your sign-in. Giles keeps the tokens encrypted and never shows them.</p>
+<p class="lede">These MCP servers act as you. Sign in to each with your own account, and an agent's calls to its tools on your behalf use your sign-in. Doozers keeps the tokens encrypted and never shows them.</p>
 {%- if servers.is_empty() %}
 <p>No MCP server asks you to sign in.</p>
 {%- else %}

@@ -292,14 +292,14 @@ fn stage_dir(root: &DataRoot) -> Result<TempDir, BackupError> {
         .map_err(io_error(&cache))
 }
 
-/// The name stem of a snapshot made by `doozers backup` at `now`: `giles-20261023T140312Z`. The
+/// The name stem of a snapshot made by `doozers backup` at `now`: `doozers-20261023T140312Z`. The
 /// time is UTC, so names sort in the order they were made.
 pub fn manual_stem(now: Timestamp) -> String {
-    format!("giles-{}", stamp(now))
+    format!("doozers-{}", stamp(now))
 }
 
 /// The name stem of a snapshot of a database at schema version `from`, made at `now` before
-/// migrating it: `giles-20261023T140312Z-pre-migration-v1`.
+/// migrating it: `doozers-20261023T140312Z-pre-migration-v1`.
 pub fn pre_migration_stem(now: Timestamp, from: i64) -> String {
     format!("{}{PRE_MIGRATION_MARK}{from}", manual_stem(now))
 }
@@ -477,12 +477,12 @@ pub fn prune_pre_migration(dir: &Path, keep: usize) -> io::Result<Vec<PathBuf>> 
 }
 
 /// The stem of `name` if it is a pre-migration snapshot file name:
-/// `giles-<YYYYMMDDTHHMMSSZ>-pre-migration-v<digits>.db` or `.tar`.
+/// `doozers-<YYYYMMDDTHHMMSSZ>-pre-migration-v<digits>.db` or `.tar`.
 fn pre_migration_stem_of(name: &str) -> Option<&str> {
     let stem = name
         .strip_suffix(".db")
         .or_else(|| name.strip_suffix(".tar"))?;
-    let rest = stem.strip_prefix("giles-")?;
+    let rest = stem.strip_prefix("doozers-")?;
     let (time, version) = rest.split_once(PRE_MIGRATION_MARK)?;
     let time_ok = time.len() == 16
         && time.bytes().enumerate().all(|(i, b)| match i {
@@ -497,7 +497,7 @@ fn pre_migration_stem_of(name: &str) -> Option<&str> {
 /// Writes the tar `archive` (an existing, empty file) of what a restore needs besides the
 /// database, with paths relative to the data root so it unpacks over one:
 ///
-/// - `giles.toml`;
+/// - `doozers.toml`;
 /// - everything under `agents/`, `users/`, and `skills/`: the TOML and Markdown files people and
 ///   the memory tools write, and whatever else is in those trees (a skill's scripts), except the
 ///   memory databases (below);

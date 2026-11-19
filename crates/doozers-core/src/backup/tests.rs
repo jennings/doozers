@@ -82,7 +82,7 @@ fn populate(root: &DataRoot) {
         "a removed agent\n",
     );
     put(&root.admin_token_file(), "token");
-    put(&r.join("data/giles.db-wal"), "wal");
+    put(&r.join("data/doozers.db-wal"), "wal");
 }
 
 /// The names in a tar, with their contents (empty for directories) and file modes.
@@ -133,7 +133,7 @@ async fn the_database_snapshot_restores_to_a_usable_store_with_the_same_rows() {
             .unwrap();
     }
     // The core is running: its latest writes are still in the WAL.
-    assert!(root.data_dir().join("giles.db-wal").exists());
+    assert!(root.data_dir().join("doozers.db-wal").exists());
 
     let out = tempfile::tempdir().unwrap();
     let snapshot = create(&root, &store, &blobs, out.path(), at(100))
@@ -141,11 +141,11 @@ async fn the_database_snapshot_restores_to_a_usable_store_with_the_same_rows() {
         .unwrap();
     assert_eq!(
         snapshot.database,
-        out.path().join("giles-20270115T080140Z.db")
+        out.path().join("doozers-20270115T080140Z.db")
     );
     assert_eq!(
         snapshot.archive,
-        out.path().join("giles-20270115T080140Z.tar")
+        out.path().join("doozers-20270115T080140Z.tar")
     );
     // Writes after the snapshot stay out of it.
     store
@@ -155,7 +155,7 @@ async fn the_database_snapshot_restores_to_a_usable_store_with_the_same_rows() {
 
     // Restoring is copying the file into place; the copy opens like any database.
     let restored = tempfile::tempdir().unwrap();
-    let restored_db = restored.path().join("giles.db");
+    let restored_db = restored.path().join("doozers.db");
     fs::copy(&snapshot.database, &restored_db).unwrap();
     let restored = Store::open(&restored_db).await.unwrap();
     for (i, job) in ["a", "b", "c"].into_iter().enumerate() {
@@ -207,7 +207,7 @@ async fn the_archive_holds_what_a_restore_needs_and_nothing_else() {
             "data/blobs/sha256",
             "data/blobs/sha256/ab",
             "data/blobs/sha256/ab/abcdef",
-            "giles.toml",
+            "doozers.toml",
             "skills",
             "skills/tea",
             "skills/tea/SKILL.md",
@@ -219,7 +219,7 @@ async fn the_archive_holds_what_a_restore_needs_and_nothing_else() {
         "no secrets.toml, plugins, plugin data, backups, run, cache, trash (removed agents), \
          database, links, or blob puts in progress"
     );
-    assert_eq!(text("giles.toml"), "[owner]\n");
+    assert_eq!(text("doozers.toml"), "[owner]\n");
     assert_eq!(text("agents/main/SOUL.md"), "I am Giles.\n");
     assert_eq!(text("agents/main/users/owner/MEMORY.md"), "likes tea\n");
     assert_eq!(text("users/owner/USER.md"), "Owner.\n");
@@ -272,7 +272,7 @@ async fn the_snapshot_never_contains_itself() {
             "{:?}",
             entries.keys().collect::<Vec<_>>()
         );
-        assert!(entries.contains_key("giles.toml"));
+        assert!(entries.contains_key("doozers.toml"));
     }
 }
 
@@ -320,10 +320,10 @@ async fn a_backup_never_overwrites_an_existing_one() {
 
 #[test]
 fn names_carry_the_utc_time_and_sort_by_it() {
-    assert_eq!(manual_stem(at(0)), "giles-20270115T080000Z");
+    assert_eq!(manual_stem(at(0)), "doozers-20270115T080000Z");
     assert_eq!(
         pre_migration_stem(at(0), 2),
-        "giles-20270115T080000Z-pre-migration-v2"
+        "doozers-20270115T080000Z-pre-migration-v2"
     );
     assert!(manual_stem(at(0)) < manual_stem(at(1)));
     assert!(manual_stem(at(59)) < manual_stem(at(61)));
@@ -342,11 +342,11 @@ fn pruning_keeps_the_newest_pre_migration_snapshots_and_nothing_else_is_touched(
     // A snapshot missing its other half is pruned with its stem; unrelated and look-alike
     // names are never touched, however old.
     let others = [
-        "giles-20200101T000000Z.db",
-        "giles-20200101T000000Z.tar",
-        "giles-20200101T000000Z-pre-migration-v.db",
-        "giles-2020-pre-migration-v1.db",
-        "giles-20200101T000000Z-pre-migration-v1.db.bak",
+        "doozers-20200101T000000Z.db",
+        "doozers-20200101T000000Z.tar",
+        "doozers-20200101T000000Z-pre-migration-v.db",
+        "doozers-2020-pre-migration-v1.db",
+        "doozers-20200101T000000Z-pre-migration-v1.db.bak",
         "notes.txt",
     ];
     for name in others {
@@ -446,7 +446,7 @@ async fn a_backup_is_written_before_migrations_only_when_some_are_pending() {
         .strip_suffix(".db")
         .expect("the database sorts first");
     assert!(
-        stem.starts_with("giles-") && stem.ends_with("-pre-migration-v1"),
+        stem.starts_with("doozers-") && stem.ends_with("-pre-migration-v1"),
         "{stem}"
     );
     assert_eq!(names[1], format!("{stem}.tar"));
@@ -454,7 +454,7 @@ async fn a_backup_is_written_before_migrations_only_when_some_are_pending() {
     assert_eq!(user_version(&database), 1, "the snapshot is the old schema");
     assert_eq!(mode(&database), 0o600);
     let archive = read_archive(&root.backups_dir().join(&names[1]));
-    assert!(archive.contains_key("giles.toml"));
+    assert!(archive.contains_key("doozers.toml"));
     assert!(archive.contains_key("data/blobs/sha256/ab/abcdef"));
     assert!(!archive.contains_key("secrets.toml"));
     // The rows survived into both the snapshot and the migrated database.
@@ -500,7 +500,7 @@ async fn only_the_newest_pre_migration_backups_are_kept() {
         put(&root.backups_dir().join(format!("{stem}.tar")), "tar");
     }
     put(
-        &root.backups_dir().join("giles-20200101T000000Z.db"),
+        &root.backups_dir().join("doozers-20200101T000000Z.db"),
         "manual",
     );
     downgrade_to_v1(&root.database_file());
@@ -520,16 +520,16 @@ async fn only_the_newest_pre_migration_backups_are_kept() {
     assert!(
         names
             .iter()
-            .any(|n| n.ends_with("-pre-migration-v1.db") && n.as_str() > "giles-2027")
+            .any(|n| n.ends_with("-pre-migration-v1.db") && n.as_str() > "doozers-2027")
     );
     assert!(!names.contains(&format!("{}.db", pre_migration_stem(at(-1000), 1))));
-    assert!(names.contains(&"giles-20200101T000000Z.db".to_owned()));
+    assert!(names.contains(&"doozers-20200101T000000Z.db".to_owned()));
 }
 
 #[tokio::test]
 async fn a_backup_directory_reached_through_a_symlink_does_not_archive_itself() {
     // The data root is `real`; the operator names the directory through a link to it, as
-    // `getcwd` and `~/.giles` being a link can make happen.
+    // `getcwd` and `~/.doozers` being a link can make happen.
     let (_dir, root) = data_root();
     populate(&root);
     let (store, blobs) = open_stores(&root).await;
@@ -548,7 +548,7 @@ async fn a_backup_directory_reached_through_a_symlink_does_not_archive_itself() 
     assert_eq!(snapshot.archive.parent().unwrap(), dir);
     let entries = read_archive(&snapshot.archive);
     assert!(
-        entries.keys().all(|name| !name.contains("giles-2027")),
+        entries.keys().all(|name| !name.contains("doozers-2027")),
         "{:?}",
         entries.keys().collect::<Vec<_>>()
     );
@@ -583,7 +583,7 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Logs {
 fn symlinks_are_left_out_with_a_warning_each() {
     let (_dir, root) = data_root();
     populate(&root);
-    // A dotfiles manager's `giles.toml`, a linked agent file, and a linked directory.
+    // A dotfiles manager's `doozers.toml`, a linked agent file, and a linked directory.
     let elsewhere = tempfile::tempdir().unwrap();
     put(&elsewhere.path().join("real.toml"), "[owner]\n");
     put(&elsewhere.path().join("memory.md"), "remember\n");
@@ -595,7 +595,7 @@ fn symlinks_are_left_out_with_a_warning_each() {
     symlink(elsewhere.path().join("dir"), main.join("linked")).unwrap();
 
     let out = tempfile::tempdir().unwrap();
-    let snapshot = Snapshot::reserve(out.path(), "giles-test").unwrap();
+    let snapshot = Snapshot::reserve(out.path(), "doozers-test").unwrap();
     let logs = Logs::default();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(logs.clone())
@@ -608,7 +608,7 @@ fn symlinks_are_left_out_with_a_warning_each() {
     let entries = read_archive(&snapshot.archive);
     let names: Vec<&str> = entries.keys().map(String::as_str).collect();
     // No entry for any link (and so no link to restore dangling), the rest as before.
-    assert!(!names.contains(&"giles.toml"), "{names:?}");
+    assert!(!names.contains(&"doozers.toml"), "{names:?}");
     assert!(
         names
             .iter()
@@ -755,9 +755,11 @@ async fn a_backup_finishes_when_its_caller_goes_away() {
         panic!("{:?}", listing());
     };
     let restored = tempfile::tempdir().unwrap();
-    fs::copy(database, restored.path().join("giles.db")).unwrap();
-    Store::open(restored.path().join("giles.db")).await.unwrap();
-    assert!(read_archive(archive).contains_key("giles.toml"));
+    fs::copy(database, restored.path().join("doozers.db")).unwrap();
+    Store::open(restored.path().join("doozers.db"))
+        .await
+        .unwrap();
+    assert!(read_archive(archive).contains_key("doozers.toml"));
 }
 
 /// The modes with a rollback journal; the default WAL is covered by the tests above.
@@ -785,7 +787,7 @@ async fn a_snapshot_taken_in_a_rollback_journal_mode_restores_in_that_mode_and_i
                 .await
                 .unwrap();
         }
-        assert!(!root.data_dir().join("giles.db-wal").exists(), "{mode}");
+        assert!(!root.data_dir().join("doozers.db-wal").exists(), "{mode}");
 
         let out = tempfile::tempdir().unwrap();
         let snapshot = create(&root, &store, &blobs, out.path(), at(100))
@@ -804,7 +806,7 @@ async fn a_snapshot_taken_in_a_rollback_journal_mode_restores_in_that_mode_and_i
 
         for target in [mode, JournalMode::Wal] {
             let restored = tempfile::tempdir().unwrap();
-            let restored_db = restored.path().join("giles.db");
+            let restored_db = restored.path().join("doozers.db");
             fs::copy(&snapshot.database, &restored_db).unwrap();
             let restored = Store::open_with(
                 &restored_db,
@@ -1192,7 +1194,7 @@ async fn a_symlinked_memory_database_is_left_out_with_a_warning() {
     symlink(elsewhere.path(), &linked_dir).unwrap();
 
     let out = tempfile::tempdir().unwrap();
-    let snapshot = Snapshot::reserve(out.path(), "giles-test").unwrap();
+    let snapshot = Snapshot::reserve(out.path(), "doozers-test").unwrap();
     let memory = MemorySnapshots::take(&root).await.unwrap();
     let logs = Logs::default();
     let subscriber = tracing_subscriber::fmt()

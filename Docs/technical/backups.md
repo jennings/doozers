@@ -3,7 +3,7 @@
 `doozers_core::backup` writes the snapshots of PLAN section 11.4, for two callers: the admin
 service's `Backup` RPC (`doozers backup <dir>`) and the core's own startup, before schema
 migrations. The database halves are `doozers_store::Store::vacuum_into` ([Storage](storage.md)), for
-`giles.db` and, through `MemoryStore`, for each agent's `memory.db` (see
+`doozers.db` and, through `MemoryStore`, for each agent's `memory.db` (see
 [Memory databases](#memory-databases)).
 
 ## Anatomy of a snapshot
@@ -18,7 +18,7 @@ A snapshot is two files that share a stem, `Snapshot { database, archive }`:
 - `<stem>.tar`: a tar with paths relative to the data root, so it unpacks over one. It holds each
   agent's `memory.db` as a `VACUUM INTO` snapshot, at `agents/<agent>/memory.db`.
 
-Copying `giles.db` (or a `memory.db`) is not an option while the core runs: in WAL mode the main
+Copying `doozers.db` (or a `memory.db`) is not an option while the core runs: in WAL mode the main
 file alone is behind the WAL, and the copy can race a checkpoint; in the other modes it can catch a
 commit half done. The snapshot doesn't carry the journal mode (only WAL is recorded in a file, and
 `VACUUM INTO` writes a plain rollback-mode file), so a restore opens in any mode and the next start
@@ -29,7 +29,7 @@ reserves the names (a snapshot never overwrites a file, and two backups in one s
 `Exists`), and gives the files their mode: SQLite accepts an empty existing file as the destination
 of `VACUUM INTO`, and writes into it without changing its permissions. A failed snapshot deletes
 both files (`Snapshot::discard`), so a partial one is never left to be mistaken for a good one.
-Stems are `giles-<UTC time as YYYYMMDDTHHMMSSZ>`, so name order is time order.
+Stems are `doozers-<UTC time as YYYYMMDDTHHMMSSZ>`, so name order is time order.
 
 ### The archive
 
@@ -38,7 +38,7 @@ files:
 
 | Included                                   | Why                                                          |
 | ------------------------------------------ | ------------------------------------------------------------ |
-| `giles.toml`                               | Startup settings.                                            |
+| `doozers.toml`                             | Startup settings.                                            |
 | `agents/`, `users/`, `skills/` (whole trees) | Config and Markdown people write. Taken whole, not filtered by extension, since a skill can carry scripts and the trees hold nothing else. The one exception is each agent's `memory.db` and the files SQLite keeps beside it: see below. |
 | `agents/<agent>/memory.db` (a snapshot)    | The agent's memories, written with `VACUUM INTO` and archived in place of the live file. |
 | `data/blobs/` (whole tree)                 | Attachments; the database holds their metadata.              |
@@ -46,17 +46,17 @@ files:
 Left out: `secrets.toml` and `secret.key` (a backup is meant to leave the machine, and credentials
 and the key that unlocks the [secret store](secret-store.md) are the operator's to keep), `plugins/`
 (binaries), `data/channel/`, `data/environment/`, `data/provider/`, and `data/toolset/`
-(plugin-owned state, the core doesn't read it), `data/giles.db*` (the `.db` file), `backups/`,
+(plugin-owned state, the core doesn't read it), `data/doozers.db*` (the `.db` file), `backups/`,
 `trash/` (agents removed in the web UI: the list of what is archived is explicit, so nothing outside
 it, the trash included, is picked up), `run/`, `cache/` (rebuilt; the memory snapshots are staged
 there, see below), and `data/blobs/sha256/tmp/` (the blob store's puts in progress, which it deletes
 when it opens). A file that vanishes while the walk runs is skipped. Directories are recorded (with
 their modes) so a restore into an empty root gets the same private layout.
 
-Every entry, including `giles.toml` and the four tree roots, goes through `Walk::visit`, which uses
-`symlink_metadata`:
+Every entry, including `doozers.toml` and the four tree roots, goes through `Walk::visit`, which
+uses `symlink_metadata`:
 
-- **Links** (a symlinked `giles.toml`, `USER.md`, or whole tree) are never followed and never
+- **Links** (a symlinked `doozers.toml`, `USER.md`, or whole tree) are never followed and never
   written as link entries, which a restore would leave dangling. Each one skipped is logged as a
   `warn` with its path, because linked Markdown files are a supported setup and the gap shouldn't be
   silent. Other file types (sockets, FIFOs) are skipped quietly.
@@ -68,10 +68,10 @@ Every entry, including `giles.toml` and the four tree roots, goes through `Walk:
 
 The snapshot's own two files are skipped by **device and inode**, recorded from the reserved files
 before the walk, not by path. The backup directory can be spelled differently from the data root's
-paths (a symlinked `~/.giles`, `doozers backup .` from a `getcwd` that resolved links, a `..`), and
-a path comparison then misses the archive being written, which would read itself and grow until the
-disk was full (a test backs up into `link/agents` where `link` points at the data root). So a backup
-directory inside an archived tree is fine. Earlier backups there are ordinary files and are
+paths (a symlinked `~/.doozers`, `doozers backup .` from a `getcwd` that resolved links, a `..`),
+and a path comparison then misses the archive being written, which would read itself and grow until
+the disk was full (a test backs up into `link/agents` where `link` points at the data root). So a
+backup directory inside an archived tree is fine. Earlier backups there are ordinary files and are
 archived.
 
 The database is written before the archive. The blob sweep could otherwise delete an old blob that
@@ -106,7 +106,7 @@ plain file, and for a live WAL database that is the wrong thing to copy. So the 
    `vacuum_into` into the staged file. The journal mode is whatever the file is in, so the daemon's
    choice (`[core] journal_mode`) is never undone by a backup. In WAL mode `VACUUM INTO` runs on a
    read connection and doesn't block the writer, so a daemon with the database open keeps writing;
-   in a rollback mode the writes queue for the copy, as for `giles.db`. Another handle on the file
+   in a rollback mode the writes queue for the copy, as for `doozers.db`. Another handle on the file
    (the daemon's) is fine, and closing this one doesn't delete the WAL while the other is open.
 
 When the walk reaches the live `memory.db`, `Walk::file` appends the staged snapshot under the live
@@ -148,7 +148,7 @@ checks the sweep stays held until the pair is complete.
 
 `BackupResponse.paths` is the database file, then the archive. The name uses the service's clock,
 and the work runs on the store's read pool and Tokio's blocking pool, so other RPCs and turns carry
-on. Like every RPC it needs the admin token. The `giles.admin.v1` messages didn't change; `Backup`
+on. Like every RPC it needs the admin token. The `doozers.admin.v1` messages didn't change; `Backup`
 was declared with the service.
 
 ## Before migrations
@@ -172,15 +172,15 @@ The snapshot also holds the memory databases, taken the same way as for `doozers
 (`MemorySnapshots::take`, staged under `cache/` and archived as `agents/<agent>/memory.db`). The
 hook is synchronous and runs on a thread of Tokio's blocking pool, where `MemoryStore` (async) is
 driven with `Handle::block_on`; the memory databases are separate files, so nothing waits on
-`giles.db`'s migration connection. A memory database that can't be snapshotted fails the hook like
+`doozers.db`'s migration connection. A memory database that can't be snapshotted fails the hook like
 any other failure, so the upgrade doesn't start. Opening a memory database for the snapshot migrates
 it to the binary's memory schema first (`MemoryStore::open` always does), so after a release that
 changes the memory schema this hook's copy of a database that was behind is already migrated; it is
-the `giles.db` snapshot that is the old schema.
+the `doozers.db` snapshot that is the old schema.
 
 After a successful snapshot, `prune_pre_migration` keeps the newest `KEEP_PRE_MIGRATION` (5)
 pre-migration snapshots and deletes the files of older stems. Only names the module makes
-(`giles-<16-character time>-pre-migration-v<digits>` with `.db` or `.tar`) are candidates, so
+(`doozers-<16-character time>-pre-migration-v<digits>` with `.db` or `.tar`) are candidates, so
 snapshots from `doozers backup`, even in `backups/`, and anything else the operator put there are
 never deleted. Failing to prune is logged, not an error. Five is a handful of upgrades back; the
 snapshots hold whole databases, so an unbounded count would eat the disk.

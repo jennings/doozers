@@ -1,6 +1,6 @@
 [package]
 name = "doozers-channel-echo"
-description = "A test-only Giles channel plugin: scripted inbound events, recorded sends."
+description = "A test-only Doozers channel plugin: scripted inbound events, recorded sends."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

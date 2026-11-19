@@ -53,7 +53,7 @@ impl Connector for RealConnector {
             .map_err(|e| format!("opening the session store {}: {e}", self.store.display()))?;
         let (tx, events) = mpsc::unbounded_channel();
 
-        // Giles never imports chat history.
+        // Doozers never imports chat history.
         let mut builder = Bot::builder()
             .with_backend(store)
             .skip_history_sync()

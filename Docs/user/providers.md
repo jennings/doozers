@@ -1,8 +1,8 @@
 # Model providers
 
-A provider instance connects Giles to a model API.
+A provider instance connects Doozers to a model API.
 
-Each instance is a `[provider.<instance>]` table in `giles.toml`. Agents name a model as
+Each instance is a `[provider.<instance>]` table in `doozers.toml`. Agents name a model as
 `<instance>/<model id>`, for example `anthropic/claude-opus-5-5`.
 
 The provider's settings go in the instance's `config` table. Write secrets there as
@@ -26,8 +26,8 @@ config = { api_key = { secret = "anthropic" } }
 | `beta`              | `[]`                        | Beta feature names, sent in the `anthropic-beta` header        |
 | `max_tokens`        | the model's maximum         | Default output limit (16384 for unknown models)                |
 
-Giles sends images (JPEG, PNG, GIF, WebP) and PDFs to the model. Other attachments reach it only as
-a text reference.
+Doozers sends images (JPEG, PNG, GIF, WebP) and PDFs to the model. Other attachments reach it only
+as a text reference.
 
 Without a reasoning budget, thinking is turned off on models that allow it. Claude Opus 5.5, Sonnet
 5.5, Fable, and Mythos always think.
@@ -55,7 +55,7 @@ component = "openai"
 [provider.openrouter.config]
 base_url = "https://openrouter.ai/api/v1"
 api_key = { env = "OPENROUTER_API_KEY" }
-headers = { "HTTP-Referer" = "https://giles.example", "X-Title" = "Giles" }
+headers = { "HTTP-Referer" = "https://doozers.example", "X-Title" = "Doozers" }
 
 [provider.ollama]
 component = "openai"
@@ -83,8 +83,8 @@ Settings under `models."<model id>"` override the instance's settings for that m
 The dialect is `openai` for `api.openai.com`, `openrouter` for `openrouter.ai`, and `generic`
 otherwise. Set `dialect` when a proxy sits in front of OpenAI or OpenRouter.
 
-Without a reasoning budget, Giles sends no reasoning settings, and each model reasons as it does by
-default.
+Without a reasoning budget, Doozers sends no reasoning settings, and each model reasons as it does
+by default.
 
 ### Describing your models
 

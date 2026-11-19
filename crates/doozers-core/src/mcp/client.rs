@@ -56,7 +56,7 @@ impl ClientHandler for ClientState {
         capabilities.elicitation = Some(elicitation);
         ClientConfig::new(
             capabilities,
-            Implementation::new("giles", env!("CARGO_PKG_VERSION")),
+            Implementation::new("doozers", env!("CARGO_PKG_VERSION")),
         )
         .with_protocol_version(PROTOCOL_VERSION)
     }

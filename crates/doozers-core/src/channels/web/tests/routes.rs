@@ -306,7 +306,7 @@ async fn a_route_that_never_matches_or_points_at_something_gone_is_flagged() {
 }
 
 #[tokio::test]
-async fn giles_toml_routes_that_are_still_there_are_reported() {
+async fn doozers_toml_routes_that_are_still_there_are_reported() {
     let env = env().await;
     let path = env.registry.root().config_file();
     let toml = std::fs::read_to_string(&path).unwrap();
@@ -315,7 +315,7 @@ async fn giles_toml_routes_that_are_still_there_are_reported() {
         env.registry.root(),
         &LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..LoadOptions::default()
         },
     )
@@ -329,7 +329,7 @@ async fn giles_toml_routes_that_are_still_there_are_reported() {
         .route_call(&routes, Method::GET, "/admin/routes", None)
         .await;
     assert!(
-        html.contains("giles.toml still has 1 <code>[[routes]]</code> rule"),
+        html.contains("doozers.toml still has 1 <code>[[routes]]</code> rule"),
         "{html}"
     );
     // It was imported once, so the list shows it.

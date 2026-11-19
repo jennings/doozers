@@ -8,7 +8,7 @@ use crate::auth_results::{self, Verdict};
 
 /// The local part prefix of the message ids this plugin generates, so its own sent copies can be
 /// recognized when they land in the watched mailbox.
-pub(crate) const OWN_ID_PREFIX: &str = "giles.";
+pub(crate) const OWN_ID_PREFIX: &str = "doozers.";
 
 /// What the channel needs to judge a message.
 #[derive(Debug, Clone, Copy)]
@@ -294,7 +294,7 @@ mod tests {
     }
 
     fn parse_ok(raw: &[u8]) -> Mail {
-        parse(raw, "1.2@giles.invalid", CONTEXT).unwrap()
+        parse(raw, "1.2@doozers.invalid", CONTEXT).unwrap()
     }
 
     const OWNER_HEADERS: &str = "Authentication-Results: mx.example.net; dmarc=pass header.from=example.com\n\
@@ -369,8 +369,8 @@ mod tests {
     fn a_missing_message_id_is_synthesized() {
         let headers = OWNER_HEADERS.replace("Message-ID: <root@example.com>", "X-Other: 1");
         let mail = parse_ok(&build(&headers, "hi"));
-        assert_eq!(mail.message_id, "1.2@giles.invalid");
-        assert_eq!(mail.root, "1.2@giles.invalid");
+        assert_eq!(mail.message_id, "1.2@doozers.invalid");
+        assert_eq!(mail.root, "1.2@doozers.invalid");
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn our_own_copies_are_dropped() {
-        let ours = "From: Giles <giles@example.net>\nMessage-ID: <giles.abc@example.net>";
+        let ours = "From: Giles <giles@example.net>\nMessage-ID: <doozers.abc@example.net>";
         assert_eq!(
             parse(&build(ours, "x"), "s", CONTEXT),
             Err(Dropped::OwnCopy)

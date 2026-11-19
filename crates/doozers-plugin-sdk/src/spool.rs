@@ -265,7 +265,7 @@ mod tests {
     }
 
     fn files(data: &Path) -> usize {
-        std::fs::read_dir(data.join("giles-sdk/events"))
+        std::fs::read_dir(data.join("doozers-sdk/events"))
             .unwrap()
             .count()
     }
@@ -335,7 +335,7 @@ mod tests {
         let spool = open(data.path());
         spool.push(event("a")).await.unwrap();
         drop(spool);
-        let events = data.path().join("giles-sdk/events");
+        let events = data.path().join("doozers-sdk/events");
         std::fs::write(
             events.join("00000000000000000007.pb"),
             b"\xff\xff not protobuf",

@@ -1,4 +1,4 @@
-//! Text edits for `giles <kind> rename`: rename one instance in `giles.toml` and in the agents'
+//! Text edits for `doozers <kind> rename`: rename one instance in `doozers.toml` and in the agents'
 //! `agent.toml` files while keeping everything else as the operator wrote it (comments, blank
 //! lines, key order, quoting). `toml_edit` does the editing; nothing here touches the file system.
 
@@ -28,7 +28,7 @@ pub(super) fn parse(source: &str) -> Result<DocumentMut, EditError> {
         .map_err(|e: toml_edit::TomlError| EditError::Syntax(e.to_string()))
 }
 
-/// The instances `giles.toml` configures, as `(kind, name)`: every key of `[provider]`,
+/// The instances `doozers.toml` configures, as `(kind, name)`: every key of `[provider]`,
 /// `[channel]`, and `[toolset]`, except a `[toolset.<name>]` with `url`, which the configuration
 /// loader ignores (remote toolsets are stored in the database).
 pub(super) fn configured(doc: &DocumentMut) -> BTreeSet<(Kind, String)> {
@@ -47,9 +47,9 @@ pub(super) fn configured(doc: &DocumentMut) -> BTreeSet<(Kind, String)> {
     names
 }
 
-/// What [`rename_in_giles_toml`] changed.
+/// What [`rename_in_doozers_toml`] changed.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct GilesEdit {
+pub(super) struct DoozersEdit {
     /// The edited document.
     pub text: String,
     /// Whether `[<kind>.<old>]` was renamed (it isn't when only `new` is configured, because the
@@ -64,12 +64,12 @@ pub(super) struct GilesEdit {
 /// `new` (the operator renamed it by hand), changes nothing but `routes`. A `[<kind>.<new>]` that
 /// is there too (a `[toolset.<new>]` with `url`, which loading ignores) is refused rather than
 /// overwritten.
-pub(super) fn rename_in_giles_toml(
+pub(super) fn rename_in_doozers_toml(
     source: &str,
     kind: Kind,
     old: &str,
     new: &str,
-) -> Result<GilesEdit, EditError> {
+) -> Result<DoozersEdit, EditError> {
     let mut doc = parse(source)?;
     let mut table_renamed = false;
     let old_component = component_of(&doc, kind, old);
@@ -78,7 +78,7 @@ pub(super) fn rename_in_giles_toml(
     {
         if parent.as_table_like().is_some_and(|t| t.contains_key(new)) {
             return Err(EditError::Unsupported(format!(
-                "giles.toml already has a [{kind}.{new}] table: remove it, then run the command \
+                "doozers.toml already has a [{kind}.{new}] table: remove it, then run the command \
                  again"
             )));
         }
@@ -142,7 +142,7 @@ pub(super) fn rename_in_giles_toml(
             }
         }
     }
-    Ok(GilesEdit {
+    Ok(DoozersEdit {
         text: doc.to_string(),
         table_renamed,
         routes,
@@ -427,7 +427,7 @@ fn map_strings(item: &mut Item, f: &dyn Fn(&str) -> Option<String>) -> usize {
 mod tests {
     use super::*;
 
-    const GILES: &str = r##"# Giles configuration
+    const DOOZERS: &str = r##"# Doozers configuration
 [core]
 http_listen = "127.0.0.1:8080"   # local only
 
@@ -458,11 +458,11 @@ agent = "jeeves"
 
     #[test]
     fn renames_a_table_in_place_and_keeps_everything_else_byte_for_byte() {
-        let edit = rename_in_giles_toml(GILES, Kind::Channel, "libera", "libera-chat").unwrap();
+        let edit = rename_in_doozers_toml(DOOZERS, Kind::Channel, "libera", "libera-chat").unwrap();
         assert!(edit.table_renamed);
         assert_eq!(edit.routes, 1);
         // Only the three places that name the instance differ.
-        let expected = GILES
+        let expected = DOOZERS
             .replace("[channel.libera]", "[channel.libera-chat]")
             .replace("[channel.libera.sandbox]", "[channel.libera-chat.sandbox]")
             .replace("channel = \"libera\"", "channel = \"libera-chat\"");
@@ -471,8 +471,8 @@ agent = "jeeves"
 
     #[test]
     fn the_renamed_document_means_what_the_old_one_did() {
-        let edit = rename_in_giles_toml(GILES, Kind::Channel, "libera", "libera-chat").unwrap();
-        let before: toml::Table = toml::from_str(GILES).unwrap();
+        let edit = rename_in_doozers_toml(DOOZERS, Kind::Channel, "libera", "libera-chat").unwrap();
+        let before: toml::Table = toml::from_str(DOOZERS).unwrap();
         let after: toml::Table = toml::from_str(&edit.text).unwrap();
         let mut expected = before.clone();
         let channels = expected["channel"].as_table_mut().unwrap();
@@ -484,19 +484,19 @@ agent = "jeeves"
 
     #[test]
     fn other_instances_and_routes_are_untouched() {
-        let edit = rename_in_giles_toml(GILES, Kind::Toolset, "files", "docs").unwrap();
+        let edit = rename_in_doozers_toml(DOOZERS, Kind::Toolset, "files", "docs").unwrap();
         assert_eq!(edit.routes, 0);
         assert_eq!(
             edit.text,
-            GILES.replace("[toolset.files]", "[toolset.docs]")
+            DOOZERS.replace("[toolset.files]", "[toolset.docs]")
         );
     }
 
     #[test]
     fn an_already_renamed_table_is_left_alone() {
-        let hand_edited = GILES.replace("libera", "libera-chat");
+        let hand_edited = DOOZERS.replace("libera", "libera-chat");
         let edit =
-            rename_in_giles_toml(&hand_edited, Kind::Channel, "libera", "libera-chat").unwrap();
+            rename_in_doozers_toml(&hand_edited, Kind::Channel, "libera", "libera-chat").unwrap();
         assert!(!edit.table_renamed);
         assert_eq!(edit.routes, 0);
         assert_eq!(edit.text, hand_edited);
@@ -505,18 +505,18 @@ agent = "jeeves"
     #[test]
     fn dotted_and_inline_spellings_are_renamed() {
         let dotted = "[channel]\nlibera.component = \"irc\"\nweb = {}\n";
-        let edit = rename_in_giles_toml(dotted, Kind::Channel, "libera", "oftc").unwrap();
+        let edit = rename_in_doozers_toml(dotted, Kind::Channel, "libera", "oftc").unwrap();
         assert_eq!(edit.text, "[channel]\noftc.component = \"irc\"\nweb = {}\n");
 
         let inline = "channel = { libera = { component = \"irc\" }, web = {} }\n";
-        let edit = rename_in_giles_toml(inline, Kind::Channel, "libera", "oftc").unwrap();
+        let edit = rename_in_doozers_toml(inline, Kind::Channel, "libera", "oftc").unwrap();
         assert_eq!(
             edit.text,
             "channel = { oftc = { component = \"irc\" }, web = {} }\n"
         );
 
         let routes = "routes = [{ channel = \"libera\", agent = \"a\" }]\n[channel.libera]\n";
-        let edit = rename_in_giles_toml(routes, Kind::Channel, "libera", "oftc").unwrap();
+        let edit = rename_in_doozers_toml(routes, Kind::Channel, "libera", "oftc").unwrap();
         assert_eq!(
             edit.text,
             "routes = [{ channel = \"oftc\", agent = \"a\" }]\n[channel.oftc]\ncomponent = \"libera\"\n"
@@ -525,13 +525,13 @@ agent = "jeeves"
 
     #[test]
     fn invalid_toml_is_a_syntax_error() {
-        let err = rename_in_giles_toml("[channel.x", Kind::Channel, "x", "y").unwrap_err();
+        let err = rename_in_doozers_toml("[channel.x", Kind::Channel, "x", "y").unwrap_err();
         assert!(matches!(err, EditError::Syntax(_)), "{err}");
     }
 
     #[test]
     fn configured_lists_every_kind_but_ignored_toolset_tables() {
-        let doc = parse(GILES).unwrap();
+        let doc = parse(DOOZERS).unwrap();
         let names = configured(&doc);
         assert_eq!(
             names,
@@ -543,14 +543,14 @@ agent = "jeeves"
         );
 
         // Loading ignores a toolset table with `url`, so it configures nothing.
-        let doc = parse(&format!("{GILES}[toolset.github]\nurl = \"https://x\"\n")).unwrap();
+        let doc = parse(&format!("{DOOZERS}[toolset.github]\nurl = \"https://x\"\n")).unwrap();
         assert!(!configured(&doc).contains(&(Kind::Toolset, "github".to_owned())));
     }
 
     #[test]
     fn a_table_already_under_the_new_name_is_refused_not_overwritten() {
-        let source = format!("{GILES}[toolset.docs]\nurl = \"https://x\"\n");
-        let err = rename_in_giles_toml(&source, Kind::Toolset, "files", "docs").unwrap_err();
+        let source = format!("{DOOZERS}[toolset.docs]\nurl = \"https://x\"\n");
+        let err = rename_in_doozers_toml(&source, Kind::Toolset, "files", "docs").unwrap_err();
         assert!(matches!(err, EditError::Unsupported(_)), "{err}");
         assert!(err.to_string().contains("[toolset.docs]"), "{err}");
     }
@@ -648,7 +648,7 @@ prompt = "Hi"
             (Kind::Channel, "irc", "libera"),
             (Kind::Provider, "anthropic", "claude"),
         ] {
-            let edit = rename_in_giles_toml(source, kind, old, new).unwrap();
+            let edit = rename_in_doozers_toml(source, kind, old, new).unwrap();
             assert_eq!(component(&edit.text, kind, new).as_deref(), Some(old));
             assert!(
                 edit.text.contains(&format!("component = \"{old}\"")),
@@ -656,20 +656,20 @@ prompt = "Hi"
                 edit.text
             );
         }
-        let edit = rename_in_giles_toml(source, Kind::Channel, "web", "chat").unwrap();
+        let edit = rename_in_doozers_toml(source, Kind::Channel, "web", "chat").unwrap();
         assert_eq!(
             edit.text,
             "# the web chat\n[channel.chat]\ncomponent = \"web\"\n\n[channel.irc]\n[provider.anthropic]\n"
         );
         // Inline and dotted spellings get it too.
-        let edit =
-            rename_in_giles_toml("channel = { web = {} }\n", Kind::Channel, "web", "chat").unwrap();
+        let edit = rename_in_doozers_toml("channel = { web = {} }\n", Kind::Channel, "web", "chat")
+            .unwrap();
         assert_eq!(
             component(&edit.text, Kind::Channel, "chat").as_deref(),
             Some("web")
         );
         let edit =
-            rename_in_giles_toml("[channel]\nweb.x = 1\n", Kind::Channel, "web", "chat").unwrap();
+            rename_in_doozers_toml("[channel]\nweb.x = 1\n", Kind::Channel, "web", "chat").unwrap();
         assert_eq!(
             component(&edit.text, Kind::Channel, "chat").as_deref(),
             Some("web")
@@ -679,12 +679,12 @@ prompt = "Hi"
     #[test]
     fn a_component_that_is_written_stays_as_written_and_toolsets_get_none() {
         let source = "[channel.libera]\ncomponent = \"irc\"\n";
-        let edit = rename_in_giles_toml(source, Kind::Channel, "libera", "oftc").unwrap();
+        let edit = rename_in_doozers_toml(source, Kind::Channel, "libera", "oftc").unwrap();
         assert_eq!(edit.text, "[channel.oftc]\ncomponent = \"irc\"\n");
 
         // A toolset runs no component, so nothing is added.
         let source = "[toolset.github]\ncommand = \"/bin/x\"\n";
-        let edit = rename_in_giles_toml(source, Kind::Toolset, "github", "gh").unwrap();
+        let edit = rename_in_doozers_toml(source, Kind::Toolset, "github", "gh").unwrap();
         assert_eq!(edit.text, "[toolset.gh]\ncommand = \"/bin/x\"\n");
     }
 

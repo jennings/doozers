@@ -1,18 +1,19 @@
 # Data root
 
-Everything Giles stores lives under one directory, the data root (`GILES_HOME`, PLAN section 11.1).
-The module `doozers_core::paths` owns its layout: no other code joins path strings onto the root.
+Everything Doozers stores lives under one directory, the data root (`DOOZERS_HOME`, PLAN section
+11.1). The module `doozers_core::paths` owns its layout: no other code joins path strings onto the
+root.
 
 ## Resolution
 
 The root is the first of:
 
 1. the `--home <DIR>` flag,
-2. the `GILES_HOME` environment variable, if set and non-empty,
-3. `$HOME/.giles`.
+2. the `DOOZERS_HOME` environment variable, if set and non-empty,
+3. `$HOME/.doozers`.
 
 If none applies (no flag, and both variables unset or empty), startup fails with an error naming
-`GILES_HOME` and `HOME`. A relative root is made absolute against the current directory, and every
+`DOOZERS_HOME` and `HOME`. A relative root is made absolute against the current directory, and every
 root is normalized lexically: repeated and trailing separators and `.` components are dropped. `..`
 and symlinks are kept as written, since resolving them needs the filesystem.
 
@@ -23,7 +24,7 @@ environment.
 
 ```text
 <root>/
-  giles.toml          DataRoot::config_file()       human-written
+  doozers.toml        DataRoot::config_file()       human-written
   secrets.toml        DataRoot::secrets_file()      human-written, mode 0600
   secret.key          DataRoot::secret_key_file()   the secret store's key, mode 0600, made at first start
   agents/<agent>/     DataRoot::agent_dir(name)     agent.toml, SOUL.md, skills/, ...
@@ -32,7 +33,7 @@ environment.
   skills/             DataRoot::skills_dir()
   plugins/            DataRoot::plugins_dir()       plugin binaries
   data/               DataRoot::data_dir()
-    giles.db          DataRoot::database_file()
+    doozers.db        DataRoot::database_file()
     blobs/            DataRoot::blobs_dir()
     <kind>/           DataRoot::plugin_data_root(kind)   channel, environment, provider, toolset
       <instance>/     DataRoot::plugin_data_dir(kind, name)
@@ -42,7 +43,7 @@ environment.
   run/                DataRoot::run_dir()           mode 0700
     admin.sock        DataRoot::admin_socket()      unless it falls back (below)
     admin.token       DataRoot::admin_token_file()
-    giles.lock        DataRoot::lock_file()         flock held by the running core
+    doozers.lock      DataRoot::lock_file()         flock held by the running core
     proxy.sock        DataRoot::proxy_socket()      unless it falls back (below)
     pids/<kind>/      DataRoot::pids_dir(kind)
       <instance>.pid  DataRoot::pid_file(kind, name)
@@ -58,7 +59,7 @@ Per-instance state sits under the instance's kind (`channel`, `environment`, `pr
 `toolset`, from `Kind::as_str`), so a channel and a toolset with the same name share no data
 directory, pid file, or sandbox spec. `create_layout` creates all twelve roots (`data/<kind>/`,
 `run/pids/<kind>/`, and `run/sandbox/<kind>/`). Nothing uses `data/provider/` yet, because providers
-are built in. Giles doesn't read `data/plugins/`, `run/pids/*.pid`, or `run/sandbox/*.json` from
+are built in. Doozers doesn't read `data/plugins/`, `run/pids/*.pid`, or `run/sandbox/*.json` from
 earlier releases and leaves them where they are.
 
 Accessors that take an agent, user, or instance name return `PathsError::InvalidName` unless the
@@ -71,9 +72,9 @@ either. It matters most for `data/<kind>/<instance>/`, the only directory a plug
 ## Creating the layout
 
 `DataRoot::create_layout` runs at `doozers serve` startup and is idempotent. It creates the root and
-every directory above, each with mode 0700. It creates no files: `giles.toml` and `secrets.toml` are
-written by people, and the database, `secret.key`, token, sockets, and pid files by the subsystems
-that own them.
+every directory above, each with mode 0700. It creates no files: `doozers.toml` and `secrets.toml`
+are written by people, and the database, `secret.key`, token, sockets, and pid files by the
+subsystems that own them.
 
 Existing directories keep their modes, so an operator may loosen one deliberately, except `run/`,
 which is reset to 0700 on every start because it holds the admin token and the sockets.
@@ -90,14 +91,14 @@ to a private directory under the temporary directory (`$TMPDIR`, else `/tmp`; an
 counts as unset):
 
 ```text
-$TMPDIR/giles-<16 hex digits>/admin.sock
-$TMPDIR/giles-<16 hex digits>/proxy.sock
+$TMPDIR/doozers-<16 hex digits>/admin.sock
+$TMPDIR/doozers-<16 hex digits>/proxy.sock
 ```
 
 - The name is the 64-bit FNV-1a hash of the absolute, normalized root path. It is a fixed algorithm
   (unlike Rust's `DefaultHasher`), so the daemon and any `doozers` CLI, even from another release,
-  derive the same directory from the same `GILES_HOME` without coordinating.
-- Only the sockets move. `run/admin.token`, `run/giles.lock`, `run/pids/`, and `run/sandbox/` stay
+  derive the same directory from the same `DOOZERS_HOME` without coordinating.
+- Only the sockets move. `run/admin.token`, `run/doozers.lock`, `run/pids/`, and `run/sandbox/` stay
   in the data root.
 - The temporary directory may be shared with other users (`/tmp`), and the name is predictable, so
   `create_layout` creates the directory with mode 0700 and, if it already exists, accepts it only if
@@ -107,7 +108,7 @@ $TMPDIR/giles-<16 hex digits>/proxy.sock
   `proxy_socket()`. For the fallback it applies the same checks and also requires that no other user
   can access the directory. Otherwise another user could plant `admin.sock` there and receive the
   admin token. For `run/` it checks nothing.
-- If the fallback path is also too long, startup fails and asks for a shorter `GILES_HOME` or
+- If the fallback path is also too long, startup fails and asks for a shorter `DOOZERS_HOME` or
   `TMPDIR`.
 - Spellings that differ only in repeated or trailing separators or `.` components are the same root
   (`/a/b`, `/a/b/`, `/a//b`). Spellings that differ through a symlink or `..` hash differently,

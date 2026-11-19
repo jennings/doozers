@@ -571,7 +571,7 @@ async fn the_channel_presenter_gives_web_chats_buttons_and_others_text() {
 
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
-        dir.path().join("giles.toml"),
+        dir.path().join("doozers.toml"),
         "[owner]\nidentities = [\"fake:owner\"]\n[channel.chat]\ncomponent = \"web\"\n",
     )
     .unwrap();
@@ -580,7 +580,7 @@ async fn the_channel_presenter_gives_web_chats_buttons_and_others_text() {
         &root,
         &crate::config::LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..crate::config::LoadOptions::default()
         },
     )

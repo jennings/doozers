@@ -1,5 +1,5 @@
 //! `routes`: the ordered routing rules (PLAN 6.1), and the marker that says the
-//! `[[routes]]` of `giles.toml` have been imported.
+//! `[[routes]]` of `doozers.toml` have been imported.
 //!
 //! The store keeps the rules as written and checks nothing about them but their shape: whether the
 //! channel instance and the agent exist, and whether a rule can ever match, is the core's business
@@ -177,7 +177,8 @@ impl Store {
         .await
     }
 
-    /// Whether the import of the `[[routes]]` of `giles.toml` has run ([`routes_import`](Self::routes_import)).
+    /// Whether the import of the `[[routes]]` of `doozers.toml` has run
+    /// ([`routes_import`](Self::routes_import)).
     pub async fn routes_imported(&self) -> Result<bool> {
         self.read(|conn| {
             let done: i64 =
@@ -187,7 +188,7 @@ impl Store {
         .await
     }
 
-    /// Imports `routes`, the `[[routes]]` of `giles.toml`, once: if the import has never run, it
+    /// Imports `routes`, the `[[routes]]` of `doozers.toml`, once: if the import has never run, it
     /// stores them in order, unless routes exist already (then they stay), and records that it
     /// ran. Returns how many routes it stored, or `None` if the import had run before, in which
     /// case nothing changes, whatever `routes` holds and even if every route has since been

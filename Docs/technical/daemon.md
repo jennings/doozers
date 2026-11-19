@@ -22,8 +22,8 @@ from `main`.
 like `env(1)` instead of 1 (see [Exit status](sandbox.md#exit-status)).
 
 `--home <DIR>` is global, so it is accepted before or after the subcommand. It is not tied to
-`GILES_HOME` through `clap`; `doozers_core::paths::resolve_root` applies the precedence (flag, then
-`GILES_HOME`, then `$HOME/.giles`) so it can be tested as a pure function (see
+`DOOZERS_HOME` through `clap`; `doozers_core::paths::resolve_root` applies the precedence (flag,
+then `DOOZERS_HOME`, then `$HOME/.doozers`) so it can be tested as a pure function (see
 [Data root](data-root.md)).
 
 `main` is synchronous. Only `serve` builds a multi-threaded Tokio runtime, and the admin client
@@ -36,7 +36,7 @@ Errors are `anyhow` in the binary and `thiserror` in libraries; a failed subcomm
 ## Logging
 
 One `tracing-subscriber` `fmt` subscriber, installed in `main` before any subcommand runs. It writes
-to stderr, with ANSI colors only when stderr is a terminal. The filter is `GILES_LOG`, else
+to stderr, with ANSI colors only when stderr is a terminal. The filter is `DOOZERS_LOG`, else
 `RUST_LOG`, else `info`; an invalid filter fails startup rather than being ignored.
 
 Spans name the instance a line is about. A plugin's supervisor logs under `channel{name=<name>}`,
@@ -49,14 +49,14 @@ logged under these spans with target `doozers_core::plugin_host::stderr` or
 ## `doozers serve` lifecycle
 
 1. Resolve the data root (`DataRoot::from_env`) and create its layout (`create_layout`), then take
-   the single-instance lock on `run/giles.lock` (`doozers_core::admin::InstanceLock`,
+   the single-instance lock on `run/doozers.lock` (`doozers_core::admin::InstanceLock`,
    [Admin Service](admin.md#one-core-per-data-root)). A second `doozers serve` on the same data root
    fails here.
 2. Load and validate the configuration (`doozers_core::config::Config::load`,
    [Configuration](config.md)). Any error ends the process here, before the runtime exists.
 3. Build the runtime.
 4. Install the SIGINT and SIGTERM handlers (`shutdown::cancel_on_signal`). This happens before
-   anything is logged, so a signal sent after the `giles started` line always takes the graceful
+   anything is logged, so a signal sent after the `doozers started` line always takes the graceful
    path instead of killing the process.
 5. Check that the host can sandbox plugins (`doozers_core::sandbox::check_host`, see
    [Plugin Sandbox](sandbox.md#host-check)) and log the result; a failure is a warning, and the
@@ -82,9 +82,9 @@ logged under these spans with target `doozers_core::plugin_host::stderr` or
    its own task ([HTTP Server](http.md#lifecycle)) and the admin service on another
    ([Admin service](admin.md)), and start supervising every plugin channel (`PluginHost::start`,
    [Plugin Host](plugin-host.md#supervision)), which waits for each one's first launch attempt,
-   while also waiting for the first start of each toolset of `giles.toml` (`ToolsetHost::started`; a
-   stored toolset starts in the background); both waits end if a shutdown signal arrives first. Each
-   plugin is registered with the registry and attached to the sessions as it comes up; one that
+   while also waiting for the first start of each toolset of `doozers.toml` (`ToolsetHost::started`;
+   a stored toolset starts in the background); both waits end if a shutdown signal arrives first.
+   Each plugin is registered with the registry and attached to the sessions as it comes up; one that
    fails is logged and relaunched with backoff, or once its binary changes. A toolset that fails to
    start is logged and retried with backoff ([Toolsets](toolsets.md#lifecycle)). The admin service
    reports plugin and toolset supervision through one `admin::PluginControl` (`admin::MergedControl`
@@ -101,7 +101,7 @@ logged under these spans with target `doozers_core::plugin_host::stderr` or
    [Environment workspaces](environments.md)) starts beside them: the first run a minute in, then
    every five minutes, plus a reconciliation each time an environment plugin connects. (Before that,
    `Runtime::start` settled the workspaces the previous process left: `Workspaces::recover`.)
-9. Log `giles started` with the root, admin socket path, HTTP URL, and instance and agent counts,
+9. Log `doozers started` with the root, admin socket path, HTTP URL, and instance and agent counts,
    plus a warning if the sockets use the `$TMPDIR` fallback.
 10. Wait until the shutdown token is cancelled, then await the HTTP server (it drains open requests
     for up to 5 s), the sessions (`Sessions::closed`: running turns are cancelled, channel pumps
@@ -112,7 +112,7 @@ logged under these spans with target `doozers_core::plugin_host::stderr` or
     `Shutdown`, then `SIGTERM`, then `SIGKILL` to each plugin's process group) and the toolsets
     (`ToolsetHost::stop`: stdio servers' process groups killed, remote connections closed), await
     the admin server (it drains for up to 5 s and removes its socket and token file), log
-    `giles stopped`, release the lock, and exit with status 0. If the HTTP server stops on its own
+    `doozers stopped`, release the lock, and exit with status 0. If the HTTP server stops on its own
     first, cancel the token, stop the workspace sweep, the plugins, the toolsets, and the admin
     server, and exit with an error.
 

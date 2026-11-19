@@ -10,9 +10,9 @@
 //!
 //! [`ToolsetHost`] registers every configured toolset at boot and supervises it ([`lifecycle`]):
 //! starts, restarts with backoff, `idle_stop`, and the tool-list cache ([`cache`]). It also adds,
-//! replaces, and removes one toolset while Giles runs.
+//! replaces, and removes one toolset while Doozers runs.
 //!
-//! [`ToolsetManager`] ([`manager`]) keeps the toolsets stored in `giles.db` and changes them: it
+//! [`ToolsetManager`] ([`manager`]) keeps the toolsets stored in `doozers.db` and changes them: it
 //! validates a spec, stores it, and adds, replaces, renames, or removes the toolset in the live
 //! configuration and the host.
 

@@ -4,7 +4,7 @@
 //! The header is believed only on this listener, never by source address: any local process,
 //! network-enabled plugins included, can connect to the main listener from loopback. The listener
 //! is either the Unix socket `run/proxy.sock` (mode 0600, in the 0700 socket directory, so only
-//! Giles's own user can connect) or a TCP address where every request must carry the shared
+//! Doozers' own user can connect) or a TCP address where every request must carry the shared
 //! secret header the proxy adds. Requests that pass are marked [`TrustedProxy`] and then served by
 //! the same application as the main listener.
 
@@ -37,8 +37,8 @@ pub enum ProxyError {
     /// The socket directory is unsafe (its fallback under `$TMPDIR` is shared or not ours).
     #[error("cannot use the socket directory for the trusted-proxy socket")]
     SocketDir(#[source] PathsError),
-    /// Another process is serving the socket: another Giles on the same data root.
-    #[error("{} is in use: is another giles running with this data root?", .0.display())]
+    /// Another process is serving the socket: another Doozers on the same data root.
+    #[error("{} is in use: is another doozers running with this data root?", .0.display())]
     InUse(PathBuf),
     /// Something other than a socket is at the socket's path.
     #[error("{} exists and is not a socket; remove it", .0.display())]

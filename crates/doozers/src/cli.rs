@@ -5,11 +5,11 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
-/// Giles: a personal agent daemon.
+/// Doozers: a personal agent daemon.
 #[derive(Debug, Parser)]
 #[command(name = "doozers", version)]
 pub struct Cli {
-    /// The data root. Overrides the GILES_HOME environment variable; the default is ~/.giles.
+    /// The data root. Overrides the DOOZERS_HOME environment variable; the default is ~/.doozers.
     #[arg(long, global = true, value_name = "DIR")]
     pub home: Option<PathBuf>,
 
@@ -102,7 +102,7 @@ pub struct ToolsetArgs {
 /// The `doozers toolset` subcommands.
 #[derive(Debug, Subcommand)]
 pub enum ToolsetCommand {
-    /// List every toolset, stored and from giles.toml.
+    /// List every toolset, stored and from doozers.toml.
     List,
     /// Print a toolset's spec as TOML, for `set`.
     Show(ToolsetNameArgs),
@@ -111,7 +111,7 @@ pub enum ToolsetCommand {
     /// Remove a stored toolset.
     Remove(ToolsetNameArgs),
     /// Rename a toolset, with its tool prefix and the agents' globs. A stored toolset can be
-    /// renamed while Giles runs; a `giles.toml` toolset needs Giles stopped.
+    /// renamed while Doozers runs; a `doozers.toml` toolset needs Doozers stopped.
     Rename(RenameArgs),
     /// Restart a toolset's server now.
     Restart(ToolsetNameArgs),

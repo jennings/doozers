@@ -1,4 +1,4 @@
-//! Conversions between `doozers-types`' environment types and the `giles.environment.v1` wire
+//! Conversions between `doozers-types`' environment types and the `doozers.environment.v1` wire
 //! types, by moving fields, following the mapping table in `Docs/technical/protocols.md`.
 //!
 //! The same rules as the rest of [`convert`](super): wire to domain validates (ids are checked,
@@ -372,7 +372,7 @@ mod tests {
             disk_used_bytes: Some(0),
             details: vec![
                 WorkspaceDetail::new("Image", "debian:stable"),
-                WorkspaceDetail::new("Container", "giles-main.ws-1"),
+                WorkspaceDetail::new("Container", "doozers-main.ws-1"),
             ],
         }
     }
@@ -416,7 +416,7 @@ mod tests {
                 },
                 pb::WorkspaceDetail {
                     label: "Container".into(),
-                    value: "giles-main.ws-1".into()
+                    value: "doozers-main.ws-1".into()
                 },
             ]
         );

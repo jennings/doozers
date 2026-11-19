@@ -220,7 +220,7 @@ impl Peer {
     pub async fn expect_hello(&mut self, nick: &str) {
         self.expect("CAP LS 302").await;
         self.expect(&format!("NICK {nick}")).await;
-        self.expect(&format!("USER {nick} 0 * :Giles")).await;
+        self.expect(&format!("USER {nick} 0 * :Doozers")).await;
     }
 
     /// Sends the welcome and ISUPPORT numerics for `nick`.

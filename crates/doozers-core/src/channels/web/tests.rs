@@ -105,7 +105,7 @@ const AGENTS: [(&str, &str); 2] = [
 ];
 
 /// Writes a configuration under `dir` for an owner with `identities`: a provider `fake`, a web
-/// channel, and [`AGENTS`], then `extra` (TOML appended to `giles.toml`); then loads it.
+/// channel, and [`AGENTS`], then `extra` (TOML appended to `doozers.toml`); then loads it.
 fn load_config(dir: &std::path::Path, identities: &[&str], extra: &str) -> crate::config::Config {
     let root = crate::paths::DataRoot::new(dir, &dir.join("tmp")).unwrap();
     let default = format!("{:?}", identities[0]);
@@ -137,7 +137,7 @@ fn load_config(dir: &std::path::Path, identities: &[&str], extra: &str) -> crate
         &root,
         &crate::config::LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..crate::config::LoadOptions::default()
         },
     )
@@ -149,10 +149,10 @@ async fn env_with(config: WebConfig, identities: &[&str]) -> Env {
     env_with_toml(config, identities, "").await
 }
 
-/// [`env_with`], with `extra` (TOML) appended to `giles.toml`.
+/// [`env_with`], with `extra` (TOML) appended to `doozers.toml`.
 async fn env_with_toml(config: WebConfig, identities: &[&str], extra: &str) -> Env {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(dir.path().join("giles.db")).await.unwrap();
+    let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
     let blobs = BlobStore::open(dir.path().join("blobs"), store.clone())
         .await
         .unwrap();
@@ -551,7 +551,7 @@ async fn a_chat_page_shows_the_transcript_and_follows_its_events() {
         &chat(),
         INSTANCE,
         vec![
-            stored(Role::User, vec![text("hello **giles**")]),
+            stored(Role::User, vec![text("hello **doozers**")]),
             stored(Role::Assistant, vec![text("<script>alert(1)</script> hi")]),
         ],
     )
@@ -559,7 +559,7 @@ async fn a_chat_page_shows_the_transcript_and_follows_its_events() {
     let response = env.get(&format!("/chats/{}", chat())).await;
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_text(response).await;
-    assert!(html.contains("hello <strong>giles</strong>"), "{html}");
+    assert!(html.contains("hello <strong>doozers</strong>"), "{html}");
     assert!(
         html.contains("&lt;script&gt;alert(1)&lt;/script&gt; hi"),
         "{html}"
@@ -1256,7 +1256,7 @@ fn set_cookie(response: &Response) -> &str {
 
 /// The token a `Set-Cookie` for the session cookie sets.
 fn cookie_token(set_cookie: &str) -> String {
-    let value = set_cookie.strip_prefix("giles_session=").unwrap();
+    let value = set_cookie.strip_prefix("doozers_session=").unwrap();
     value.split(';').next().unwrap().to_owned()
 }
 
@@ -1303,7 +1303,7 @@ async fn login_links_use_the_bound_address_unless_a_public_url_is_set() {
     );
 
     let config =
-        WebConfig::from_json(&serde_json::json!({"public_url": "https://giles.example.com"}))
+        WebConfig::from_json(&serde_json::json!({"public_url": "https://doozers.example.com"}))
             .unwrap();
     let env = env_with(config, &["web:owner"]).await;
     env.channel
@@ -1313,7 +1313,7 @@ async fn login_links_use_the_bound_address_unless_a_public_url_is_set() {
         .create_login_link(&identity::owner(), Timestamp::now())
         .unwrap();
     assert!(
-        link.url.starts_with("https://giles.example.com/login/"),
+        link.url.starts_with("https://doozers.example.com/login/"),
         "{}",
         link.url
     );
@@ -1454,7 +1454,7 @@ async fn expired_unknown_and_orphaned_sessions_are_logged_out() {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{token}");
         assert_eq!(
             set_cookie(&response),
-            "giles_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+            "doozers_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
         );
     }
 
@@ -1556,7 +1556,7 @@ async fn logging_out_needs_the_csrf_token_and_ends_the_session() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         set_cookie(&response),
-        "giles_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+        "doozers_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
     );
     assert!(env.store.web_session(&token, now).await.unwrap().is_none());
     let response = call(
@@ -1628,7 +1628,7 @@ async fn a_cookie_login_posts_with_its_csrf_token() {
 #[tokio::test]
 async fn an_https_public_url_makes_the_cookie_secure() {
     let config =
-        WebConfig::from_json(&serde_json::json!({"public_url": "https://giles.example.com"}))
+        WebConfig::from_json(&serde_json::json!({"public_url": "https://doozers.example.com"}))
             .unwrap();
     let env = env_with(config, &["web:owner"]).await;
     let link = env
@@ -1636,7 +1636,7 @@ async fn an_https_public_url_makes_the_cookie_secure() {
         .create_login_link(&identity::owner(), Timestamp::now())
         .unwrap();
     assert!(
-        link.url.starts_with("https://giles.example.com/login/"),
+        link.url.starts_with("https://doozers.example.com/login/"),
         "{}",
         link.url
     );
@@ -1730,12 +1730,12 @@ async fn a_tcp_proxy_listener_needs_the_shared_secret() {
     let owner = ("x-user", "owner");
     for headers in [
         vec![owner],
-        vec![owner, ("x-giles-proxy-secret", "0123456789abcdeF")],
+        vec![owner, ("x-doozers-proxy-secret", "0123456789abcdeF")],
     ] {
         let response = call(env.proxy_app(), Method::GET, "/", &headers, None).await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{headers:?}");
     }
-    let with_secret = [owner, ("x-giles-proxy-secret", secret)];
+    let with_secret = [owner, ("x-doozers-proxy-secret", secret)];
     let response = call(env.proxy_app(), Method::GET, "/", &with_secret, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     // The main listener believes neither.
@@ -1981,7 +1981,7 @@ async fn daemon(provider: Arc<dyn doozers_types::Provider>) -> (Env, crate::sess
         std::fs::write(path, contents).unwrap();
     };
     write(
-        "giles.toml",
+        "doozers.toml",
         "[core]\nhttp_listen = \"127.0.0.1:0\"\n\
          [owner]\nidentities = [\"web:owner\"]\n\
          [provider.fake]\ncomponent = \"openai\"\nconfig = { base_url = \"http://127.0.0.1:9/v1\" }\n\
@@ -1996,7 +1996,7 @@ async fn daemon(provider: Arc<dyn doozers_types::Provider>) -> (Env, crate::sess
         &root,
         &crate::config::LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..crate::config::LoadOptions::default()
         },
     )

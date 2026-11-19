@@ -82,7 +82,7 @@ pub enum WorkspaceError {
     /// owner has no workspace now and can create another.
     #[error(
         "your workspace {id} no longer exists in the environment {environment:?} (it was removed \
-         outside Giles); create a new one"
+         outside Doozers); create a new one"
     )]
     Gone {
         /// The workspace.

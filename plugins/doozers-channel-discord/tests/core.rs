@@ -118,7 +118,7 @@ impl Core {
                 &LoadOptions {
                     builtins: Builtins::V1,
                     env: &env,
-                    giles_exe: None,
+                    doozers_exe: None,
                 },
             )
             .unwrap(),
@@ -144,7 +144,7 @@ impl Core {
             blobs: runtime.blobs.clone(),
         };
         let launcher =
-            Launcher::new(root, PathBuf::from("/nonexistent/giles"), Ok(())).env(|_| None);
+            Launcher::new(root, PathBuf::from("/nonexistent/doozers"), Ok(())).env(|_| None);
         let host = Arc::new(PluginHost::new(launcher, wiring));
         tokio::time::timeout(WAIT, host.start(&config))
             .await

@@ -2,12 +2,12 @@
 //! off it, and the marker that a logout is waiting to be cleaned up.
 //!
 //! ```text
-//! <GILES_PLUGIN_DATA>/
+//! <DOOZERS_PLUGIN_DATA>/
 //!   whatsapp.db          the session store (SQLite; also -wal and -shm while open)
 //!   lock                 held exclusively while the plugin runs
 //!   logged-out           present after WhatsApp logged the device out
 //!   whatsapp.db.logged-out   (and -wal, -shm) the store of the logged-out session, kept aside
-//!   giles-sdk/           the SDK's own state
+//!   doozers-sdk/         the SDK's own state
 //! ```
 
 use std::fs::{self, File, OpenOptions, TryLockError};

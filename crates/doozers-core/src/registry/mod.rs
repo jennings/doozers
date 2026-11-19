@@ -253,7 +253,7 @@ impl Registry {
     ///
     /// # Errors
     ///
-    /// [`RegistryError::Config`] naming the `giles.toml` key (with its line and column) of the
+    /// [`RegistryError::Config`] naming the `doozers.toml` key (with its line and column) of the
     /// instance at fault.
     pub fn from_config(
         root: DataRoot,
@@ -262,7 +262,8 @@ impl Registry {
     ) -> Result<Self, RegistryError> {
         let registry = Self::new(root, config);
         let config = registry.config();
-        // Keys the built-in components ignored, under `giles.toml`'s `[<kind>.<instance>.config]`.
+        // Keys the built-in components ignored, under `doozers.toml`'s
+        // `[<kind>.<instance>.config]`.
         let mut unknown = Vec::new();
         for instance in config.providers.values() {
             let (provider, keys) = build_provider(instance, &media).map_err(|(key, reason)| {
@@ -270,7 +271,7 @@ impl Registry {
                     .key("provider")
                     .key(instance.name.as_str())
                     .key(key);
-                registry.giles_toml_error(path, reason)
+                registry.doozers_toml_error(path, reason)
             })?;
             insert(&registry.providers, &instance.name, provider);
             let at = KeyPath::root()
@@ -287,7 +288,7 @@ impl Registry {
                             .key("channel")
                             .key(instance.name.as_str())
                             .key(key);
-                        registry.giles_toml_error(path, reason)
+                        registry.doozers_toml_error(path, reason)
                     })?;
                 insert(&registry.channels, &instance.name, channel);
                 let at = KeyPath::root()
@@ -314,9 +315,9 @@ impl Registry {
         }
     }
 
-    /// An error at `key` in `giles.toml`, with the key's position if the file can be read again
+    /// An error at `key` in `doozers.toml`, with the key's position if the file can be read again
     /// (only on this error path, so loading never keeps the source around).
-    fn giles_toml_error(&self, key: KeyPath, reason: String) -> ConfigError {
+    fn doozers_toml_error(&self, key: KeyPath, reason: String) -> ConfigError {
         let file = self.root.config_file();
         let error = ConfigError::at(&file, key, reason);
         match std::fs::read_to_string(&file) {
@@ -577,7 +578,7 @@ impl Registry {
         get(&self.channels, name)
     }
 
-    /// The built-in web channel, typed, if `giles.toml` configures one: its pages
+    /// The built-in web channel, typed, if `doozers.toml` configures one: its pages
     /// ([`WebApp`](crate::channels::web::WebApp)), approval prompts, and login links
     /// need more than [`Channel`].
     #[cfg(feature = "channel-web")]
@@ -639,7 +640,7 @@ impl Registry {
     }
 
     /// Configured channels, environments, and toolsets that nothing has registered yet, by kind
-    /// and name, with the part of Giles that will start them.
+    /// and name, with the part of Doozers that will start them.
     pub fn pending(&self) -> Vec<Pending> {
         let config = self.config();
         let channels = config
@@ -769,8 +770,8 @@ fn environment_entry(
     }
 }
 
-/// A built-in component and the keys of its `config` table that it ignored, or the `giles.toml` key
-/// under the instance table and the reason it can't be built.
+/// A built-in component and the keys of its `config` table that it ignored, or the `doozers.toml`
+/// key under the instance table and the reason it can't be built.
 type Built<T> = Result<(Arc<T>, Vec<KeyPath>), (&'static str, String)>;
 
 /// Builds a built-in provider; the error is the key under `[provider.<instance>]` and the
@@ -797,7 +798,7 @@ fn build_provider(
         #[cfg(not(feature = "provider-anthropic"))]
         "anthropic" => Err((
             "component",
-            "this giles was built without the `provider-anthropic` feature".to_owned(),
+            "this doozers was built without the `provider-anthropic` feature".to_owned(),
         )),
         #[cfg(feature = "provider-openai")]
         "openai" => {
@@ -810,7 +811,7 @@ fn build_provider(
         #[cfg(not(feature = "provider-openai"))]
         "openai" => Err((
             "component",
-            "this giles was built without the `provider-openai` feature".to_owned(),
+            "this doozers was built without the `provider-openai` feature".to_owned(),
         )),
         other => Err(("component", format!("no built-in provider {other:?}"))),
     }
@@ -842,7 +843,7 @@ fn build_channel(registry: &Registry, instance: &ChannelInstance) -> Built<dyn C
         #[cfg(not(feature = "channel-web"))]
         "web" => Err((
             "component",
-            "this giles was built without the `channel-web` feature".to_owned(),
+            "this doozers was built without the `channel-web` feature".to_owned(),
         )),
         other => Err(("component", format!("no built-in channel {other:?}"))),
     }

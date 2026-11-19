@@ -210,7 +210,7 @@ fn state() -> pb::StatusResponse {
                 instance: "libera".into(),
                 kind: pb::InstanceKind::Channel.into(),
                 component: "irc".into(),
-                location: "/opt/giles/plugins/doozers-channel-irc".into(),
+                location: "/opt/doozers/plugins/doozers-channel-irc".into(),
                 state: pb::PluginState::Backoff.into(),
                 retry_at: at(1_792_540_860),
                 restarts: 3,
@@ -342,7 +342,7 @@ async fn the_status_page_shows_the_admin_state_with_plugin_strings_escaped() {
     let (status, html) = env.admin_page(&admin, "/admin").await;
     assert_eq!(status, StatusCode::OK);
     for expected in [
-        "giles 1.2.3",
+        "doozers 1.2.3",
         "Seatbelt (sandbox-exec)",
         r#"<section class="card" id="channel-libera">"#,
         "irc, plugin",
@@ -452,7 +452,7 @@ async fn the_plugins_page_shows_each_plugin_and_restart_buttons_for_supervised_o
         "down, retrying at 2026-10-21 00:01:00 UTC; 3 restarts",
         "connection refused &#60;script&#62;",
         "0.1.0 &#60;script&#62;",
-        "/opt/giles/plugins/doozers-channel-irc",
+        "/opt/doozers/plugins/doozers-channel-irc",
         "<dd>error: nick in use",
         r#"<form method="post" action="/admin/plugins/channel/libera/restart">"#,
         &format!(r#"<input type="hidden" name="csrf" value="{CSRF}">"#),

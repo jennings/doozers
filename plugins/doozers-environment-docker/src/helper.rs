@@ -12,7 +12,7 @@ use bytes::Bytes;
 use crate::error::{Error, ErrorExt as _, Result};
 
 /// Where the helper lives inside a container.
-pub const HELPER_PATH: &str = "/.giles/bin/doozers-workspace-helper";
+pub const HELPER_PATH: &str = "/.doozers/bin/doozers-workspace-helper";
 
 /// A CPU architecture the helper is built for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,14 +84,14 @@ pub fn load(dir: &Path, arch: Arch) -> Result<Vec<u8>> {
     })
 }
 
-/// A tar archive, to extract at `/`, holding `/.giles/bin/doozers-workspace-helper` and the empty
-/// directory `/.giles/run` where `run` records process groups.
+/// A tar archive, to extract at `/`, holding `/.doozers/bin/doozers-workspace-helper` and the empty
+/// directory `/.doozers/run` where `run` records process groups.
 pub fn archive(helper: &[u8]) -> Result<Bytes> {
     let mut builder = tar::Builder::new(Vec::with_capacity(helper.len() + 4096));
-    directory(&mut builder, ".giles/", 0o755)?;
-    directory(&mut builder, ".giles/bin/", 0o755)?;
+    directory(&mut builder, ".doozers/", 0o755)?;
+    directory(&mut builder, ".doozers/bin/", 0o755)?;
     // Sticky and world-writable, so commands that run as another user can still record a group.
-    directory(&mut builder, ".giles/run/", 0o1777)?;
+    directory(&mut builder, ".doozers/run/", 0o1777)?;
     let mut header = tar::Header::new_gnu();
     header.set_entry_type(tar::EntryType::Regular);
     header.set_size(helper.len() as u64);
@@ -100,7 +100,7 @@ pub fn archive(helper: &[u8]) -> Result<Bytes> {
     header.set_gid(0);
     header.set_mtime(0);
     builder
-        .append_data(&mut header, ".giles/bin/doozers-workspace-helper", helper)
+        .append_data(&mut header, ".doozers/bin/doozers-workspace-helper", helper)
         .map_err(|e| Error::other(format!("building the helper archive: {e}")))?;
     builder
         .into_inner()
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn a_missing_helper_says_where_it_looked_and_how_to_build_it() {
-        let dir = std::env::temp_dir().join("giles-no-such-helper-dir");
+        let dir = std::env::temp_dir().join("doozers-no-such-helper-dir");
         let error = load(&dir, Arch::Aarch64).unwrap_err().to_string();
         assert!(
             error.contains("doozers-workspace-helper-aarch64"),
@@ -180,11 +180,11 @@ mod tests {
         assert_eq!(
             seen,
             [
-                (".giles/".to_owned(), 0o755, String::new()),
-                (".giles/bin/".to_owned(), 0o755, String::new()),
-                (".giles/run/".to_owned(), 0o1777, String::new()),
+                (".doozers/".to_owned(), 0o755, String::new()),
+                (".doozers/bin/".to_owned(), 0o755, String::new()),
+                (".doozers/run/".to_owned(), 0o1777, String::new()),
                 (
-                    ".giles/bin/doozers-workspace-helper".to_owned(),
+                    ".doozers/bin/doozers-workspace-helper".to_owned(),
                     0o755,
                     "#!helper".to_owned()
                 ),

@@ -413,8 +413,8 @@ pub(crate) fn api_error(kind: &str, message: String) -> Error {
     }
 }
 
-/// `end_turn`, `stop_sequence` (Giles sends no stop sequences), and `pause_turn` (a server tool
-/// loop paused; Giles configures no server tools) end the turn. `model_context_window_exceeded`
+/// `end_turn`, `stop_sequence` (Doozers sends no stop sequences), and `pause_turn` (a server tool
+/// loop paused; Doozers configures no server tools) end the turn. `model_context_window_exceeded`
 /// cut the output short like `max_tokens`. Unknown reasons end the turn.
 fn stop_reason(reason: &str) -> StopReason {
     match reason {

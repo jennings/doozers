@@ -1,6 +1,6 @@
 [package]
 name = "doozers-store"
-description = "SQLite and file storage for the Giles core."
+description = "SQLite and file storage for the Doozers core."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

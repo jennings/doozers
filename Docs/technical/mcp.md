@@ -17,7 +17,7 @@ tools return (see result content below).
 
 Every constructor returns once the server has answered `initialize` and the client has sent
 `notifications/initialized`: the handshake is the readiness signal. A server gets `INIT_TIMEOUT` (30
-s) to answer. The client introduces itself as `giles` with the crate version and asks for protocol
+s) to answer. The client introduces itself as `doozers` with the crate version and asks for protocol
 version 2025-11-25 (`ProtocolVersion::LATEST_WITH_INITIALIZE`, the newest one that still has
 `initialize`). Its only client capability is form-mode elicitation (`"elicitation": {"form": {}}`):
 no roots, no sampling, no URL-mode elicitation.
@@ -55,7 +55,7 @@ instance's `env` values ([Toolsets](toolsets.md)).
 - **Stderr** is read line by line, scrubbed, and logged with target `doozers_core::mcp::stderr`
   inside the `mcp{toolset=<name>}` span, at the level the line carries if it starts with a timestamp
   and a level, else `info` (the same rule as for plugins, see [Plugin host](plugin-host.md)).
-  `GILES_LOG=info,doozers_core::mcp::stderr=warn` silences chatty servers. Lines are cut at 4 KiB
+  `DOOZERS_LOG=info,doozers_core::mcp::stderr=warn` silences chatty servers. Lines are cut at 4 KiB
   (marked `…`); a cut line that ends in the first bytes of a secret has that end redacted too.
   Invalid UTF-8 is replaced.
 - **The child** runs as the leader of its own process group and is owned by a supervisor task. If
@@ -199,7 +199,7 @@ blob into `dir` and replaces every reference object with the copy's absolute pat
 before sending `tools/call`; an id missing from `ToolCall::media` is `InvalidRequest`
 (`unknown media <id>`), and so is an input that is a reference itself. The copies (`mcp/files.rs`):
 
-- are named `giles-media-<16 random hex>-<name>`: the media's name reduced to its last path
+- are named `doozers-media-<16 random hex>-<name>`: the media's name reduced to its last path
   component and ASCII letters, digits, `.`, `-`, `_` (others become `_`), at most 100 bytes keeping
   a short extension, `media` without a name, and the media type's usual extension added when the
   name has none (servers often go by it);
@@ -211,7 +211,7 @@ before sending `tools/call`; an id missing from `ToolCall::media` is `InvalidReq
 - are removed (`unlinkat` through the same descriptor, which never follows a link) when the call's
   task ends: with the result, an error, or cancellation. A failed copy removes the ones already
   made. Copies a crash left behind are removed when the server next starts (`connect_stdio` sweeps
-  `giles-media-*` entries before spawning it), since the core keeps no list across restarts.
+  `doozers-media-*` entries before spawning it), since the core keeps no list across restarts.
 
 The blob reader checks the content's hash as it copies, so a damaged blob fails the call instead of
 reaching the server. Other connections (remote servers, and `McpMedia::new` alone) take no media: a
@@ -220,7 +220,7 @@ section 7.10 says for v1. Without media the input is sent unchanged.
 
 ## Errors
 
-| Failure                                                  | `doozers_types::Error`               |
+| Failure                                                  | `doozers_types::Error`             |
 | -------------------------------------------------------- | ---------------------------------- |
 | Connection closed, transport failure, server exited      | `Unavailable` (retryable)          |
 | HTTP 401 or 403 during `initialize`                      | `InvalidRequest`                   |
@@ -247,7 +247,7 @@ runs:
   `answers` is dropped, and that with two calls running on the pipe a question is declined without
   asking anyone;
 - as a real stdio child (`tests/mcp_stdio.rs`): the test binary re-executes itself with
-  `GILES_MCP_TEST_SERVER` set and serves MCP instead of running tests. Libtest would print to
+  `DOOZERS_MCP_TEST_SERVER` set and serves MCP instead of running tests. Libtest would print to
   stdout, so this target has `harness = false` and its `main` runs the tests. It checks stderr
   logging with an echoed `env` secret redacted, cancellation reaching the child, a crash and the
   exit status from `closed()`, the exit status in a failed handshake's message (a child that exits
@@ -264,8 +264,8 @@ runs:
 
 `mcp/files.rs` unit tests cover the copy (contents, mode 0600, gone on drop, nothing left after a
 missing blob), a link in place of the directory (refused, nothing written where it points), the
-sweep (only `giles-media-*` entries, a link removed rather than followed), and safe file names. The
-[toolsets tests](toolsets.md#tests) hand a file to a real server, sandboxed and not.
+sweep (only `doozers-media-*` entries, a link removed rather than followed), and safe file names.
+The [toolsets tests](toolsets.md#tests) hand a file to a real server, sandboxed and not.
 `mcp/elicitation.rs` unit tests cover routing (by stream, the lone call without stream information,
 nobody on the standalone stream, waiting for a call being sent, a call ending while a question
 waits), the answer mapping, and the waiting questions. `tests/approvals.rs` runs the test server as

@@ -278,7 +278,7 @@ mod tests {
     #[tokio::test]
     async fn an_existing_database_gains_the_table_and_keeps_its_data() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("giles.db");
+        let path = dir.path().join("doozers.db");
         let before = MIGRATIONS
             .iter()
             .position(|m| m.name == "0004_toolsets")

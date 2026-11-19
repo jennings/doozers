@@ -68,7 +68,7 @@ async fn endpoint(
 fn client(url: &url::Url, scopes: &[&str]) -> TokenClient {
     TokenClient::new(OAuthClientCredentials {
         token_url: url.clone(),
-        client_id: "giles core".into(),
+        client_id: "doozers core".into(),
         client_secret: Secret::new("s3cr:et&"),
         scopes: scopes.iter().map(|s| (*s).to_owned()).collect(),
     })
@@ -97,7 +97,7 @@ async fn a_token_request_uses_basic_auth_and_the_form_body() {
     // RFC 6749 section 2.3.1: both parts form-encoded before Basic encoding.
     assert_eq!(
         String::from_utf8(decoded).unwrap(),
-        "giles+core:s3cr%3Aet%26"
+        "doozers+core:s3cr%3Aet%26"
     );
     assert_eq!(
         seen.content_type.as_deref(),

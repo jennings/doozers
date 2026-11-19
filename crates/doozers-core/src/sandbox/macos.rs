@@ -87,7 +87,7 @@ fn check_sandbox_exec(path: &Path) -> Result<(), HostError> {
 }
 
 /// Runs `<path> -p '(version 1)(allow default)' /usr/bin/true`: fails when the profile can't be
-/// applied, e.g. because Giles itself runs in a sandbox that forbids it.
+/// applied, e.g. because Doozers itself runs in a sandbox that forbids it.
 fn probe_sandbox_exec(path: &Path) -> Result<(), HostError> {
     let output = Command::new(path)
         .args(["-p", PROBE_PROFILE, PROBE_COMMAND])

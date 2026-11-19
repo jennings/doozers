@@ -15,8 +15,8 @@ use crate::process_group;
 use crate::stderr_lines;
 
 /// The `tracing` target of a stdio server's stderr lines, so an operator can filter them
-/// (`GILES_LOG=info,doozers_core::mcp::stderr=warn`). The level is the one the line itself carries
-/// if it is a log message, else `info`.
+/// (`DOOZERS_LOG=info,doozers_core::mcp::stderr=warn`). The level is the one the line itself
+/// carries if it is a log message, else `info`.
 pub const STDERR_TARGET: &str = "doozers_core::mcp::stderr";
 
 /// A stdio MCP server run directly, unsandboxed.
@@ -192,7 +192,7 @@ mod tests {
         let mut server = DirectCommand::new("/usr/bin/env");
         server
             .env
-            .insert("GILES_TEST".to_owned(), Secret::new("value-1"));
+            .insert("DOOZERS_TEST".to_owned(), Secret::new("value-1"));
         assert_eq!(server.secrets(), [Secret::new("value-1")]);
         let output = server.command().output().await.unwrap();
         assert!(output.status.success());
@@ -203,6 +203,6 @@ mod tests {
             .map(str::to_owned)
             .collect();
         vars.sort();
-        assert_eq!(vars, ["GILES_TEST=value-1"]);
+        assert_eq!(vars, ["DOOZERS_TEST=value-1"]);
     }
 }

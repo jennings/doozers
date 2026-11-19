@@ -12,7 +12,7 @@ fn agent_id(name: &str) -> AgentId {
     AgentId::new(name).unwrap()
 }
 
-/// The smallest valid `giles.toml`.
+/// The smallest valid `doozers.toml`.
 const MINIMAL: &str = "[owner]\nidentities = [\"web:owner\"]\n";
 
 /// A temporary data root.
@@ -22,11 +22,11 @@ struct Home {
 }
 
 impl Home {
-    fn new(giles_toml: &str) -> Self {
+    fn new(doozers_toml: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::new(dir.path(), Path::new("/tmp")).unwrap();
         let home = Self { dir, root };
-        home.write("giles.toml", giles_toml);
+        home.write("doozers.toml", doozers_toml);
         home
     }
 
@@ -122,17 +122,17 @@ fn minimal_config_gets_defaults() {
 }
 
 #[test]
-fn missing_giles_toml_is_an_error() {
+fn missing_doozers_toml_is_an_error() {
     let home = Home::new(MINIMAL);
-    std::fs::remove_file(home.path("giles.toml")).unwrap();
-    assert_error(&home, "giles.toml", "", "not found");
+    std::fs::remove_file(home.path("doozers.toml")).unwrap();
+    assert_error(&home, "doozers.toml", "", "not found");
 }
 
 #[test]
 fn invalid_utf8_is_an_error_with_a_position() {
     let home = Home::new(MINIMAL);
     std::fs::write(
-        home.path("giles.toml"),
+        home.path("doozers.toml"),
         b"[owner]\nidentities = [\"\xff\"]\n",
     )
     .unwrap();
@@ -158,7 +158,7 @@ fn syntax_errors_have_a_position() {
 #[test]
 fn type_errors_have_a_key_path_and_position() {
     let home = Home::new(&format!("{MINIMAL}[core]\nhttp_listen = 8080\n"));
-    assert_error(&home, "giles.toml", "core.http_listen", "invalid type");
+    assert_error(&home, "doozers.toml", "core.http_listen", "invalid type");
     let err = home.load().unwrap_err();
     assert_eq!(
         err.position,
@@ -220,24 +220,24 @@ fn the_secret_key_file_defaults_to_the_data_root_and_resolves_relative_paths_the
     assert_eq!(home.load_ok().core.secret_key_file, home.path("secret.key"));
     for (value, expected) in [
         (
-            "/run/secrets/giles_key",
-            PathBuf::from("/run/secrets/giles_key"),
+            "/run/secrets/doozers_key",
+            PathBuf::from("/run/secrets/doozers_key"),
         ),
-        ("keys/giles.key", home.path("keys/giles.key")),
+        ("keys/doozers.key", home.path("keys/doozers.key")),
     ] {
         home.write(
-            "giles.toml",
+            "doozers.toml",
             &format!("{MINIMAL}[core]\nsecret_key_file = {value:?}\n"),
         );
         assert_eq!(home.load_ok().core.secret_key_file, expected, "{value}");
     }
     home.write(
-        "giles.toml",
+        "doozers.toml",
         &format!("{MINIMAL}[core]\nsecret_key_file = \"\"\n"),
     );
     assert_error(
         &home,
-        "giles.toml",
+        "doozers.toml",
         "core.secret_key_file",
         "must not be empty",
     );
@@ -250,12 +250,12 @@ fn no_grant_may_reach_a_secret_key_file_outside_the_data_root() {
     let home = Home::new(&format!(
         "{MINIMAL}[core]\nsecret_key_file = {:?}\n\
          [toolset.t]\ncommand = \"/x\"\nsandbox = {{ read = [{:?}] }}\n",
-        key_dir.join("giles.key"),
+        key_dir.join("doozers.key"),
         key_dir,
     ));
     assert_error(
         &home,
-        "giles.toml",
+        "doozers.toml",
         "toolset.t.sandbox.read[0]",
         "overlaps the secret store's key file",
     );
@@ -271,7 +271,7 @@ fn journal_modes_that_risk_corruption_or_do_not_exist_are_refused() {
         ("true", "invalid type"),
     ] {
         let home = Home::new(&format!("{MINIMAL}[core]\njournal_mode = {value}\n"));
-        assert_error(&home, "giles.toml", "core.journal_mode", reason);
+        assert_error(&home, "doozers.toml", "core.journal_mode", reason);
     }
     // The refusal names the way forward.
     let home = Home::new(&format!("{MINIMAL}[core]\njournal_mode = \"memory\"\n"));
@@ -293,11 +293,11 @@ fn errors_found_after_parsing_have_positions() {
     assert_eq!(err.key.to_string(), "owner.default");
     assert_eq!(err.position, pos(3, 3), "{err}");
     // An array item.
-    home.write("giles.toml", "[owner]\nidentities = [\"a:b\", \"a:b\"]\n");
+    home.write("doozers.toml", "[owner]\nidentities = [\"a:b\", \"a:b\"]\n");
     let err = home.load().unwrap_err();
     assert_eq!(err.position, pos(2, 22), "{err}");
     // A missing key: the deepest part of its path that's there.
-    home.write("giles.toml", "[owner]\nidentities = [\"a:b\", \"c:d\"]\n");
+    home.write("doozers.toml", "[owner]\nidentities = [\"a:b\", \"c:d\"]\n");
     let err = home.load().unwrap_err();
     assert_eq!(err.key.to_string(), "owner.default");
     assert_eq!(err.position, pos(1, 2), "{err}");
@@ -348,7 +348,7 @@ fn owner_rules() {
         ),
     ];
     for (toml, key, reason) in cases {
-        assert_error(&Home::new(toml), "giles.toml", key, reason);
+        assert_error(&Home::new(toml), "doozers.toml", key, reason);
     }
 
     let config = Home::new(
@@ -448,13 +448,13 @@ bogus = true
         .iter()
         .find(|k| k.key.to_string() == "owner.nmae")
         .unwrap();
-    assert_eq!(owner.file, home.path("giles.toml"));
+    assert_eq!(owner.file, home.path("doozers.toml"));
     assert_eq!(owner.position, Some(Position { line: 6, column: 1 }));
     assert_eq!(
         owner.to_string(),
         format!(
             "{}:6:1: unknown key `owner.nmae` (ignored)",
-            home.path("giles.toml").display()
+            home.path("doozers.toml").display()
         )
     );
 }
@@ -572,7 +572,7 @@ fn a_known_key_with_the_wrong_type_still_fails_whatever_else_is_wrong() {
             format!("{MINIMAL}{toml}\n")
         };
         let home = Home::new(&source);
-        assert_error(&home, "giles.toml", key, reason);
+        assert_error(&home, "doozers.toml", key, reason);
         let err = home.load().unwrap_err();
         assert!(err.position.is_some(), "{err}");
     }
@@ -655,7 +655,7 @@ fn instance_names_and_components() {
     ];
     for (toml, key, reason) in cases {
         let home = Home::new(&format!("{MINIMAL}{toml}\n"));
-        assert_error(&home, "giles.toml", key, reason);
+        assert_error(&home, "doozers.toml", key, reason);
     }
 }
 
@@ -712,7 +712,7 @@ fn a_provider_a_channel_and_a_toolset_may_share_a_name_and_keep_their_own_state(
 
     // All three load, each as its own kind.
     home.write(
-        "giles.toml",
+        "doozers.toml",
         &toml(&format!("{channel_dir:?}"), &format!("{toolset_dir:?}")),
     );
     let config = home.load_ok();
@@ -722,22 +722,22 @@ fn a_provider_a_channel_and_a_toolset_may_share_a_name_and_keep_their_own_state(
 
     // An instance's own data directory is the one of its kind: the other kind's is not its own.
     home.write(
-        "giles.toml",
+        "doozers.toml",
         &toml(&format!("{toolset_dir:?}"), &format!("{toolset_dir:?}")),
     );
     assert_error(
         &home,
-        "giles.toml",
+        "doozers.toml",
         "channel.aperture.sandbox.write[0]",
         "overlaps the data root",
     );
     home.write(
-        "giles.toml",
+        "doozers.toml",
         &toml(&format!("{channel_dir:?}"), &format!("{channel_dir:?}")),
     );
     assert_error(
         &home,
-        "giles.toml",
+        "doozers.toml",
         "toolset.aperture.sandbox.write[0]",
         "overlaps the data root",
     );
@@ -865,7 +865,7 @@ fn channel_rules() {
     ];
     for (toml, key, reason) in cases {
         let home = Home::new(&format!("{MINIMAL}{toml}\n"));
-        assert_error(&home, "giles.toml", key, reason);
+        assert_error(&home, "doozers.toml", key, reason);
     }
 }
 
@@ -903,7 +903,7 @@ fn toolsets() {
 fn a_toolset_without_command_is_refused() {
     for table in ["", "parallel = true\nargs = [\"--stdio\"]"] {
         let home = Home::new(&format!("{MINIMAL}[toolset.shell]\n{table}\n"));
-        assert_error(&home, "giles.toml", "toolset.shell", "missing `command`");
+        assert_error(&home, "doozers.toml", "toolset.shell", "missing `command`");
     }
 }
 
@@ -911,20 +911,20 @@ fn a_toolset_without_command_is_refused() {
 fn a_toolset_with_component_is_refused_with_the_program_to_set_instead() {
     // The hint names the program the table ran before: `component`, else the toolset's name.
     for (table, program) in [
-        ("component = \"sh\"", "\"giles-toolset-sh\""),
+        ("component = \"sh\"", "\"doozers-toolset-sh\""),
         (
             "command = \"/bin/sh\"\ncomponent = 5",
-            "\"giles-toolset-shell\"",
+            "\"doozers-toolset-shell\"",
         ),
     ] {
         let home = Home::new(&format!("{MINIMAL}[toolset.shell]\n{table}\n"));
         assert_error(
             &home,
-            "giles.toml",
+            "doozers.toml",
             "toolset.shell.component",
             "a toolset has no component: set `command`",
         );
-        assert_error(&home, "giles.toml", "toolset.shell.component", program);
+        assert_error(&home, "doozers.toml", "toolset.shell.component", program);
     }
 }
 
@@ -955,11 +955,11 @@ fn a_toolset_table_with_url_is_ignored_whatever_it_holds_and_reported() {
     let ignored = config.ignored_toolset_tables();
     let names: Vec<&str> = ignored.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["github", "Files"]);
-    assert_eq!(ignored[0].file, home.path("giles.toml"));
+    assert_eq!(ignored[0].file, home.path("doozers.toml"));
     assert_eq!(ignored[0].position.map(|p| p.line), Some(3));
     assert_eq!(
         ignored[0].to_string(),
-        "giles.toml: [toolset.github] is ignored: remote toolsets are managed in the web UI \
+        "doozers.toml: [toolset.github] is ignored: remote toolsets are managed in the web UI \
          (Admin → MCP servers) or with doozers toolset set"
     );
 
@@ -985,12 +985,20 @@ fn toolset_rules() {
         ("deadline = \"5\"", "deadline", "invalid duration"),
         ("deadline = \"0s\"", "deadline", "longer than 0s"),
         ("idle_stop = \"0ms\"", "idle_stop", "longer than 0s"),
-        ("env = { HOME = \"x\" }", "env.HOME", "HOME is set by Giles"),
-        ("env = { PATH = \"x\" }", "env.PATH", "PATH is set by Giles"),
         (
-            "env = { GILES_PLUGIN_DATA = \"x\" }",
-            "env.GILES_PLUGIN_DATA",
-            "is set by Giles",
+            "env = { HOME = \"x\" }",
+            "env.HOME",
+            "HOME is set by Doozers",
+        ),
+        (
+            "env = { PATH = \"x\" }",
+            "env.PATH",
+            "PATH is set by Doozers",
+        ),
+        (
+            "env = { DOOZERS_PLUGIN_DATA = \"x\" }",
+            "env.DOOZERS_PLUGIN_DATA",
+            "is set by Doozers",
         ),
         (
             "skills = [\"/ok\", \"relative\"]",
@@ -1006,7 +1014,7 @@ fn toolset_rules() {
             "command = \"/x\"\n"
         };
         let home = Home::new(&format!("{MINIMAL}[toolset.t]\n{command}{toml}\n"));
-        assert_error(&home, "giles.toml", &format!("toolset.t.{key}"), reason);
+        assert_error(&home, "doozers.toml", &format!("toolset.t.{key}"), reason);
     }
 }
 
@@ -1017,7 +1025,7 @@ fn with_provider() -> Home {
 }
 
 #[test]
-fn routes_in_giles_toml_are_kept_as_written_for_the_import() {
+fn routes_in_doozers_toml_are_kept_as_written_for_the_import() {
     // The web UI owns routes: the file's rules aren't checked here, so one that
     // names a channel or agent that's gone can't stop a core that no longer reads them.
     let home = Home::new(&format!(
@@ -1083,7 +1091,7 @@ fn validate_agent_checks_a_source_as_loading_does() {
     assert!(unknown.position.is_some(), "{unknown}");
     let glob = error("bunter", "models = [\"anthropic/m\"]\ntools = [\"a b\"]");
     assert_eq!(glob.key.to_string(), "tools[0]");
-    // A key Giles doesn't recognize is ignored, as at startup.
+    // A key Doozers doesn't recognize is ignored, as at startup.
     let ignored = config
         .validate_agent(
             &home.root,
@@ -1179,7 +1187,7 @@ fn instance_name(name: &str) -> InstanceName {
 }
 
 /// A configuration with a provider `anthropic`, a channel `web`, a toolset `files` from
-/// `giles.toml`, and a stored toolset `github`.
+/// `doozers.toml`, and a stored toolset `github`.
 fn with_toolsets() -> Config {
     let home = Home::new(&format!(
         "{MINIMAL}[provider.anthropic]\n[channel.web]\n\
@@ -1599,7 +1607,7 @@ fn agent_rules() {
 }
 
 #[test]
-fn unknown_agent_keys_are_ignored_and_reported_after_those_of_giles_toml() {
+fn unknown_agent_keys_are_ignored_and_reported_after_those_of_doozers_toml() {
     let home = with_provider();
     home.agent(
         "jeeves",
@@ -1607,8 +1615,8 @@ fn unknown_agent_keys_are_ignored_and_reported_after_those_of_giles_toml() {
          [[jobs]]\nid = \"j\"\ncron = \"0 8 * * *\"\nprompt = \"p\"\ndeliver_to = \"stephen\"\n",
     )
     .agent("bunter", "models = [\"anthropic/m\"]\ntoools = [\"x\"]\n");
-    let source = std::fs::read_to_string(home.path("giles.toml")).unwrap();
-    std::fs::write(home.path("giles.toml"), format!("typo = 1\n{source}")).unwrap();
+    let source = std::fs::read_to_string(home.path("doozers.toml")).unwrap();
+    std::fs::write(home.path("doozers.toml"), format!("typo = 1\n{source}")).unwrap();
     let config = home.load_ok();
     assert_eq!(config.agents.len(), 2);
     assert_eq!(
@@ -1625,7 +1633,7 @@ fn unknown_agent_keys_are_ignored_and_reported_after_those_of_giles_toml() {
         [
             format!(
                 "{}:1:1: unknown key `typo` (ignored)",
-                home.path("giles.toml").display()
+                home.path("doozers.toml").display()
             ),
             format!(
                 "{}:2:1: unknown key `toools` (ignored)",
@@ -1669,7 +1677,7 @@ fn agent_directories() {
     assert_error(&home, "agents/empty", "", "needs an agent.toml");
 }
 
-/// The `toml` code blocks of a Markdown document whose first line is `# ~/.giles/<path>`
+/// The `toml` code blocks of a Markdown document whose first line is `# ~/.doozers/<path>`
 /// (optionally followed by a note), as (path, contents).
 fn documented_files(markdown: &str) -> Vec<(&str, String)> {
     let mut files = Vec::new();
@@ -1681,7 +1689,7 @@ fn documented_files(markdown: &str) -> Vec<(&str, String)> {
         let block: Vec<&str> = lines.by_ref().take_while(|l| *l != "```").collect();
         let path = block
             .first()
-            .and_then(|l| l.strip_prefix("# ~/.giles/"))
+            .and_then(|l| l.strip_prefix("# ~/.doozers/"))
             .and_then(|l| l.split_whitespace().next());
         if let Some(path) = path {
             files.push((path, block.join("\n")));
@@ -1697,7 +1705,7 @@ fn the_documented_full_example_is_valid() {
     let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
     assert_eq!(
         paths,
-        ["giles.toml", "secrets.toml", "agents/jeeves/agent.toml"]
+        ["doozers.toml", "secrets.toml", "agents/jeeves/agent.toml"]
     );
     let home = Home::new("");
     for (path, contents) in &files {
@@ -1720,7 +1728,7 @@ config = { api_key = { secret = "anthropic" }, region = "us" }
 [channel.mail]
 component = "email"
 address = "https://mail.example.com:7443"
-auth = { oauth = { token_url = "https://auth.example.com/token", client_id = "giles", client_secret = { secret = "mail" }, scopes = ["chat", "admin"] } }
+auth = { oauth = { token_url = "https://auth.example.com/token", client_id = "doozers", client_secret = { secret = "mail" }, scopes = ["chat", "admin"] } }
 
 [channel.relay]
 component = "irc"
@@ -1753,7 +1761,7 @@ fn secret_references_resolve() {
         panic!("{:?}", mail.auth)
     };
     assert_eq!(oauth.token_url.as_str(), "https://auth.example.com/token");
-    assert_eq!(oauth.client_id, "giles");
+    assert_eq!(oauth.client_id, "doozers");
     assert_eq!(oauth.client_secret.expose(), "mail-secret");
     assert_eq!(oauth.scopes, ["chat", "admin"]);
 
@@ -1813,7 +1821,7 @@ fn secret_resolution_errors() {
     for (toml, key, reason) in cases {
         let home = Home::new(&format!("{MINIMAL}{toml}\n"));
         home.secrets(SECRETS, 0o600);
-        assert_error(&home, "giles.toml", key, reason);
+        assert_error(&home, "doozers.toml", key, reason);
     }
     let home = Home::new(&format!(
         "{MINIMAL}[provider.anthropic]\nconfig = {{ api_key = {{ secret = \"anthropic\" }} }}\n"
@@ -1821,7 +1829,7 @@ fn secret_resolution_errors() {
     let missing = format!("{} does not exist", home.path("secrets.toml").display());
     assert_error(
         &home,
-        "giles.toml",
+        "doozers.toml",
         "provider.anthropic.config.api_key",
         &missing,
     );
@@ -1920,7 +1928,7 @@ fn auth_and_env_rules() {
     ];
     for (toml, key, reason) in cases {
         let home = Home::new(&format!("{MINIMAL}{toml}\n"));
-        assert_error(&home, "giles.toml", key, reason);
+        assert_error(&home, "doozers.toml", key, reason);
     }
 }
 
@@ -1954,7 +1962,7 @@ fn sandbox_grants() {
     let home = Home::new(MINIMAL);
     let own = home.path("data/toolset/files");
     home.write(
-        "giles.toml",
+        "doozers.toml",
         &format!(
             "{MINIMAL}[channel.irc]\n\
              [channel.libera]\ncomponent = \"irc\"\n\
@@ -2020,7 +2028,7 @@ fn sandbox_rules() {
     ];
     for (toml, key, reason) in shapes {
         let home = Home::new(&format!("{MINIMAL}{toml}\nsandbox = {{}}\n"));
-        assert_error(&home, "giles.toml", &format!("{key}.sandbox"), reason);
+        assert_error(&home, "doozers.toml", &format!("{key}.sandbox"), reason);
     }
 
     let grants = [
@@ -2036,7 +2044,7 @@ fn sandbox_rules() {
         ));
         assert_error(
             &home,
-            "giles.toml",
+            "doozers.toml",
             &format!("toolset.t.sandbox.{key}"),
             reason,
         );
@@ -2050,7 +2058,7 @@ fn grants_must_not_overlap_the_data_root() {
     let parent = root.parent().unwrap().to_path_buf();
     let overlapping = [
         root.clone(),
-        root.join("giles.toml"),
+        root.join("doozers.toml"),
         root.join("secrets.toml"),
         root.join("plugins"),
         root.join("agents/jeeves"),
@@ -2069,7 +2077,7 @@ fn grants_must_not_overlap_the_data_root() {
     let grant = |key: &str, paths: &[&Path]| {
         let paths: Vec<String> = paths.iter().map(|p| format!("{p:?}")).collect();
         home.write(
-            "giles.toml",
+            "doozers.toml",
             &format!(
                 "{MINIMAL}[toolset.t]\ncommand = \"/x\"\nsandbox = {{ {key} = [{}] }}\n",
                 paths.join(", ")
@@ -2081,7 +2089,7 @@ fn grants_must_not_overlap_the_data_root() {
             grant(key, &[path]);
             assert_error(
                 &home,
-                "giles.toml",
+                "doozers.toml",
                 &format!("toolset.t.sandbox.{key}[0]"),
                 "overlaps the data root",
             );
@@ -2103,7 +2111,7 @@ fn grants_through_a_symlink_into_the_data_root_are_rejected() {
     std::os::unix::fs::symlink(home.root.root(), &link).unwrap();
     let grant = link.join("secrets.toml");
     home.write(
-        "giles.toml",
+        "doozers.toml",
         &format!("{MINIMAL}[toolset.t]\ncommand = \"/x\"\nsandbox = {{ read = [{grant:?}] }}\n"),
     );
     let result = home.load();
@@ -2162,7 +2170,7 @@ fn grants_must_not_write_where_binaries_live() {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         path
     };
-    let giles = executable("giles-bin/giles");
+    let doozers = executable("doozers-bin/doozers");
     executable("path/doozers-channel-irc");
     executable("path/uvx");
     let server = executable("venv/bin/server");
@@ -2173,7 +2181,7 @@ fn grants_must_not_write_where_binaries_live() {
     let env = move |name: &str| (name == "PATH").then(|| path_var.clone());
 
     let home = Home::new(MINIMAL);
-    let load = |instance: &str, sandbox: &str, giles_exe: Option<PathBuf>| {
+    let load = |instance: &str, sandbox: &str, doozers_exe: Option<PathBuf>| {
         let mut toml = format!(
             "{MINIMAL}[channel.irc]\n[toolset.venv]\ncommand = {server:?}\n\
              [toolset.uv]\ncommand = \"uvx\"\n[toolset.shell]\ncommand = \"shell\"\n"
@@ -2182,10 +2190,10 @@ fn grants_must_not_write_where_binaries_live() {
             &format!("[{instance}]\n"),
             &format!("[{instance}]\nsandbox = {{ {sandbox} }}\n"),
         );
-        home.write("giles.toml", &toml);
+        home.write("doozers.toml", &toml);
         let options = LoadOptions {
             env: &env,
-            giles_exe,
+            doozers_exe,
             ..LoadOptions::default()
         };
         Config::load_with(&home.root, &options)
@@ -2193,12 +2201,12 @@ fn grants_must_not_write_where_binaries_live() {
     let dir = |relative: &str| format!("{:?}", tools.join(relative));
 
     let rejected = [
-        ("channel.irc", "write", "giles-bin", "the giles binary"),
+        ("channel.irc", "write", "doozers-bin", "the doozers binary"),
         (
             "channel.irc",
             "write",
-            "giles-bin/giles",
-            "the giles binary",
+            "doozers-bin/doozers",
+            "the doozers binary",
         ),
         ("channel.irc", "write", "path", "channel irc's plugin"),
         (
@@ -2220,7 +2228,7 @@ fn grants_must_not_write_where_binaries_live() {
         let err = load(
             instance,
             &format!("{key} = [{}]", dir(grant)),
-            Some(giles.clone()),
+            Some(doozers.clone()),
         )
         .unwrap_err();
         assert_eq!(
@@ -2242,16 +2250,16 @@ fn grants_must_not_write_where_binaries_live() {
     for (instance, sandbox) in [
         (
             "channel.irc",
-            format!("read = [{}, {}]", dir("path"), dir("giles-bin")),
+            format!("read = [{}, {}]", dir("path"), dir("doozers-bin")),
         ),
         ("toolset.venv", format!("write = [{}]", dir("other"))),
     ] {
-        load(instance, &sandbox, Some(giles.clone())).unwrap_or_else(|e| panic!("{e}"));
+        load(instance, &sandbox, Some(doozers.clone())).unwrap_or_else(|e| panic!("{e}"));
     }
-    // Without a known giles binary, its directory isn't checked.
+    // Without a known doozers binary, its directory isn't checked.
     load(
         "channel.irc",
-        &format!("write = [{}]", dir("giles-bin")),
+        &format!("write = [{}]", dir("doozers-bin")),
         None,
     )
     .unwrap_or_else(|e| panic!("{e}"));
@@ -2263,7 +2271,7 @@ fn toolset_skill_directories_must_not_be_writable_by_plugins() {
     let skills = outside.path().join("skills");
     let home = Home::new(MINIMAL);
     let write = |toml: &str| {
-        home.write("giles.toml", &format!("{MINIMAL}{toml}"));
+        home.write("doozers.toml", &format!("{MINIMAL}{toml}"));
     };
 
     // A write grant on the skills, or on a directory holding them.
@@ -2278,7 +2286,7 @@ fn toolset_skill_directories_must_not_be_writable_by_plugins() {
         ));
         assert_error(
             &home,
-            "giles.toml",
+            "doozers.toml",
             "channel.irc.sandbox.write[0]",
             "toolset docs's skills",
         );
@@ -2295,7 +2303,7 @@ fn toolset_skill_directories_must_not_be_writable_by_plugins() {
     ));
     assert_error(
         &home,
-        "giles.toml",
+        "doozers.toml",
         "toolset.docs.skills[0]",
         "overlaps the plugins' data directories",
     );
@@ -2310,8 +2318,8 @@ fn toolset_skill_directories_must_not_be_writable_by_plugins() {
 
 #[test]
 fn config_hashes_follow_the_instance_table_as_written() {
-    let hashes = |giles_toml: &str, secrets: &str| {
-        let home = Home::new(&format!("{MINIMAL}{giles_toml}"));
+    let hashes = |doozers_toml: &str, secrets: &str| {
+        let home = Home::new(&format!("{MINIMAL}{doozers_toml}"));
         home.secrets(secrets, 0o600);
         let config = home.load_ok();
         (
@@ -2511,7 +2519,7 @@ fn an_environment_plugin_may_read_its_binary_directory_but_not_write_or_use_sock
             &home.root,
             &LoadOptions {
                 env: &env,
-                giles_exe: None,
+                doozers_exe: None,
                 ..LoadOptions::default()
             },
         )

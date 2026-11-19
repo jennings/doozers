@@ -1,7 +1,7 @@
 //! `MemoryStore`: the per-agent memory database (`agents/<agent>/memory.db`).
 //!
 //! A memory is one short piece of text the agent keeps, with an integer id the model names it by.
-//! The database is a separate file from `giles.db`, opened through the same [`Store`] machinery
+//! The database is a separate file from `doozers.db`, opened through the same [`Store`] machinery
 //! (one writer, a pool of readers, the configured journal mode) but with its own migrations and
 //! `user_version`. [`MemoryStore`] wraps that handle and exposes only the memory methods.
 //!
@@ -155,7 +155,7 @@ pub struct Memory {
     pub created_at: Timestamp,
     /// When it last changed.
     pub updated_at: Timestamp,
-    /// The session (in `giles.db`) it was written in. Only recorded, never checked.
+    /// The session (in `doozers.db`) it was written in. Only recorded, never checked.
     pub source_session: Option<SessionId>,
 }
 

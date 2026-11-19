@@ -31,8 +31,8 @@ pub struct Harness {
 
 /// The harness, or `None` (after printing why) when there is no engine to test against.
 ///
-/// `GILES_REQUIRE_DOCKER=1` turns "no engine" into a failure, so CI can't skip silently.
-/// `GILES_HELPER_DIR` names a directory that already holds `doozers-workspace-helper-<arch>`;
+/// `DOOZERS_REQUIRE_DOCKER=1` turns "no engine" into a failure, so CI can't skip silently.
+/// `DOOZERS_HELPER_DIR` names a directory that already holds `doozers-workspace-helper-<arch>`;
 /// otherwise the helper is built with `cargo build --target <arch>-unknown-linux-musl`.
 pub fn harness() -> Option<&'static Harness> {
     static HARNESS: OnceLock<Result<Harness, String>> = OnceLock::new();
@@ -45,8 +45,8 @@ pub fn harness() -> Option<&'static Harness> {
     match HARNESS.get_or_init(init) {
         Ok(harness) => Some(harness),
         Err(reason) => {
-            let required = std::env::var("GILES_REQUIRE_DOCKER").is_ok_and(|v| !v.is_empty());
-            assert!(!required, "GILES_REQUIRE_DOCKER is set, but: {reason}");
+            let required = std::env::var("DOOZERS_REQUIRE_DOCKER").is_ok_and(|v| !v.is_empty());
+            assert!(!required, "DOOZERS_REQUIRE_DOCKER is set, but: {reason}");
             eprintln!("skipping: {reason}");
             None
         }
@@ -75,7 +75,7 @@ fn setup() -> Result<Harness, String> {
     let arch = Arch::from_engine(info.architecture.as_deref().unwrap_or_default())
         .map_err(|e| e.to_string())?;
 
-    let helper_dir = match std::env::var_os("GILES_HELPER_DIR") {
+    let helper_dir = match std::env::var_os("DOOZERS_HELPER_DIR") {
         Some(dir) => PathBuf::from(dir),
         None => build_helper(arch)?,
     };
@@ -123,7 +123,7 @@ fn build_helper(arch: Arch) -> Result<PathBuf, String> {
         })
         .find_map(|m| m["executable"].as_str().map(PathBuf::from))
         .ok_or("cargo didn't report the helper executable")?;
-    let dir = std::env::temp_dir().join(format!("giles-helper-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("doozers-helper-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::copy(&executable, dir.join(arch.file_name())).map_err(|e| e.to_string())?;
     Ok(dir)
@@ -191,7 +191,7 @@ fn uuid_suffix() -> String {
 pub struct Scope {
     pub env: DockerEnvironment,
     pub docker: Docker,
-    /// The instance name, which is the `giles.instance` label of its workspaces.
+    /// The instance name, which is the `doozers.instance` label of its workspaces.
     pub instance: String,
 }
 

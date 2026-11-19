@@ -192,7 +192,7 @@ async fn messages_are_answered_through_the_serve_wiring() {
         std::fs::write(path, contents).unwrap();
     };
     write(
-        "giles.toml",
+        "doozers.toml",
         "[owner]\nidentities = [\"fake:owner\"]\ntimezone = \"Europe/London\"\n\
          [provider.anthropic]\nconfig = { api_key = \"sk-test\" }\n\
          [channel.fake]\n\
@@ -208,7 +208,7 @@ async fn messages_are_answered_through_the_serve_wiring() {
         &root,
         &LoadOptions {
             env: &|_| None,
-            giles_exe: None,
+            doozers_exe: None,
             ..LoadOptions::default()
         },
     )

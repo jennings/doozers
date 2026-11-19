@@ -371,11 +371,11 @@ async fn handshake_describe_configure_and_health() {
 
     assert_eq!(plugin.health("").await, ServingStatus::Serving);
     assert_eq!(
-        plugin.health("giles.plugin.v1.PluginService").await,
+        plugin.health("doozers.plugin.v1.PluginService").await,
         ServingStatus::Serving
     );
     assert_eq!(
-        plugin.health("giles.channel.v1.ChannelService").await,
+        plugin.health("doozers.channel.v1.ChannelService").await,
         ServingStatus::NotServing
     );
 
@@ -394,7 +394,7 @@ async fn handshake_describe_configure_and_health() {
         "echo:test"
     );
     assert_eq!(
-        plugin.health("giles.channel.v1.ChannelService").await,
+        plugin.health("doozers.channel.v1.ChannelService").await,
         ServingStatus::Serving
     );
 }
@@ -534,7 +534,7 @@ async fn events_blobs_and_acks_survive_a_crash() {
         acks.unbounded_send(ack(id)).unwrap();
     }
     until("all acks", || read_lines(&acks_file).len() == 4).await;
-    let events_dir = data.path().join("giles-sdk/events");
+    let events_dir = data.path().join("doozers-sdk/events");
     assert_eq!(std::fs::read_dir(events_dir).unwrap().count(), 0);
 }
 
@@ -697,7 +697,7 @@ async fn run_by_hand_it_says_what_it_is() {
     assert_eq!(status.code(), Some(1));
     assert_eq!(stdout, "");
     assert!(
-        stderr.contains("doozers-channel-echo is a Giles plugin"),
+        stderr.contains("doozers-channel-echo is a Doozers plugin"),
         "{stderr}"
     );
 }
@@ -712,7 +712,7 @@ async fn no_shared_protocol_exits_with_its_own_status() {
     assert_eq!(status.code(), Some(EXIT_NO_SHARED_PROTOCOL));
     assert_eq!(stdout, "");
     assert!(
-        stderr.contains("no shared plugin protocol: Giles speaks 2,3, this plugin speaks 1"),
+        stderr.contains("no shared plugin protocol: Doozers speaks 2,3, this plugin speaks 1"),
         "{stderr}"
     );
 }

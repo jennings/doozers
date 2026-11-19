@@ -523,7 +523,7 @@ async fn create(
             error_page(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Agent not created",
-                "Giles couldn't write the agent's files. The error is in its log.",
+                "Doozers couldn't write the agent's files. The error is in its log.",
             )
         }
     }
@@ -634,7 +634,7 @@ fn edit_failed(error: &EditError, id: &str) -> Response {
             error_page(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Agent not changed",
-                "Giles couldn't read or write the agent's files. The error is in its log.",
+                "Doozers couldn't read or write the agent's files. The error is in its log.",
             )
         }
         other => error_page(
@@ -807,7 +807,7 @@ fn remove_failed(error: &RemoveError, id: &str) -> Response {
             error_page(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Agent not removed",
-                "Giles couldn't move the agent's files or read what it needs. Nothing was changed. The error is in its log.",
+                "Doozers couldn't move the agent's files or read what it needs. Nothing was changed. The error is in its log.",
             )
         }
     }

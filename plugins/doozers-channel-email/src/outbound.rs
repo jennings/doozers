@@ -58,7 +58,7 @@ pub(crate) struct Outgoing<'a> {
     pub date: i64,
 }
 
-/// A new message id: `giles.<128 random bits>@<domain>`.
+/// A new message id: `doozers.<128 random bits>@<domain>`.
 pub(crate) fn new_message_id(domain: &str) -> String {
     let mut random = [0u8; 16];
     aws_lc_rs::default_provider()
@@ -190,10 +190,10 @@ mod tests {
         let b = new_message_id("example.net");
         assert_ne!(a, b);
         assert!(
-            a.starts_with("giles.") && a.ends_with("@example.net"),
+            a.starts_with("doozers.") && a.ends_with("@example.net"),
             "{a}"
         );
-        assert_eq!(a.len(), "giles.".len() + 32 + "@example.net".len());
+        assert_eq!(a.len(), "doozers.".len() + 32 + "@example.net".len());
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
             to: "me@example.com",
             to_name: Some("Stephen"),
             subject: "Re: Groceries",
-            message_id: "giles.1@example.net",
+            message_id: "doozers.1@example.net",
             in_reply_to: Some("b@example.com"),
             references: &references,
             markdown: "**Done.** ![x](https://evil.example/?d=1) [link](https://example.com)",
@@ -239,7 +239,7 @@ mod tests {
         let text = String::from_utf8_lossy(&raw);
         assert!(text.contains("Auto-Submitted: auto-replied\r\n"), "{text}");
         let message = MessageParser::default().parse(&raw).unwrap();
-        assert_eq!(message.message_id(), Some("giles.1@example.net"));
+        assert_eq!(message.message_id(), Some("doozers.1@example.net"));
         assert_eq!(message.subject(), Some("Re: Groceries"));
         let from = message.from().unwrap().first().unwrap();
         assert_eq!(
@@ -297,7 +297,7 @@ mod tests {
             to: "me@example.com",
             to_name: None,
             subject: "Reminder\r\nBcc: evil@evil.example",
-            message_id: "giles.2@example.net",
+            message_id: "doozers.2@example.net",
             in_reply_to: None,
             references: &[],
             markdown: "Water the plants.",

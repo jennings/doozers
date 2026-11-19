@@ -1,4 +1,4 @@
-//! `giles.plugin.v1.PluginService`, the base service every gRPC plugin serves (PLAN section 8.2).
+//! `doozers.plugin.v1.PluginService`, the base service every gRPC plugin serves (PLAN section 8.2).
 
 use std::sync::Arc;
 
@@ -309,7 +309,7 @@ mod tests {
     #[async_trait]
     impl Kind for FakeKind {
         fn service_name(&self) -> &'static str {
-            "giles.test.Fake"
+            "doozers.test.Fake"
         }
 
         fn describe(&self) -> DescribeResponse {
@@ -542,7 +542,7 @@ mod tests {
             assert_eq!(status.code(), Code::InvalidArgument, "{status:?}");
             assert!(status.message().contains(message), "{status:?}");
         }
-        let left = std::fs::read_dir(f._data.path().join("giles-sdk/outbound"))
+        let left = std::fs::read_dir(f._data.path().join("doozers-sdk/outbound"))
             .unwrap()
             .count();
         assert_eq!(left, 0, "refused transfers leave nothing behind");

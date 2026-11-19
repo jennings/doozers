@@ -19,7 +19,7 @@ use self::support::{ECHO, Home, WAIT};
 
 /// No trampoline: these instances are unsandboxed, which bypasses it.
 fn no_trampoline() -> PathBuf {
-    PathBuf::from("/nonexistent/giles")
+    PathBuf::from("/nonexistent/doozers")
 }
 
 #[tokio::test]
@@ -52,7 +52,7 @@ async fn launches_describes_and_configures_with_resolved_secrets() {
     );
     assert!(data.join("tmp").is_dir());
     assert!(
-        data.join("giles-sdk").is_dir(),
+        data.join("doozers-sdk").is_dir(),
         "the plugin used its data directory"
     );
 
@@ -69,7 +69,7 @@ async fn launches_describes_and_configures_with_resolved_secrets() {
         .connection
         .health()
         .check(HealthCheckRequest {
-            service: "giles.channel.v1.ChannelService".into(),
+            service: "doozers.channel.v1.ChannelService".into(),
         })
         .await
         .unwrap()
