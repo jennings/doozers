@@ -15,11 +15,11 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates.
-giles-core = { path = "crates/giles-core", version = "0.1.0", default-features = false }
-giles-plugin-sdk = { path = "crates/giles-plugin-sdk", version = "0.1.0" }
-giles-proto = { path = "crates/giles-proto", version = "0.1.0" }
-giles-store = { path = "crates/giles-store", version = "0.1.0" }
-giles-types = { path = "crates/giles-types", version = "0.1.0" }
+doozers-core = { path = "crates/doozers-core", version = "0.1.0", default-features = false }
+doozers-plugin-sdk = { path = "crates/doozers-plugin-sdk", version = "0.1.0" }
+doozers-proto = { path = "crates/doozers-proto", version = "0.1.0" }
+doozers-store = { path = "crates/doozers-store", version = "0.1.0" }
+doozers-types = { path = "crates/doozers-types", version = "0.1.0" }
 
 # Shared third-party stack (PLAN section 13.2). Members opt in with `<dep>.workspace = true` and
 # add the features they need.
@@ -33,10 +33,10 @@ jiff = { version = "0.2.38", default-features = false, features = ["std"] }
 libc = "0.2.191"
 prost = "0.14.4"
 prost-types = "0.14.4"
-# Outbound HTTP client (`giles_core::net`). TLS is rustls; `net::tls_client_builder` trusts only the
-# bundled `webpki-root-certs`, so the platform verifier this feature compiles in is never used.
+# Outbound HTTP client (`doozers_core::net`). TLS is rustls; `net::tls_client_builder` trusts only
+# the bundled `webpki-root-certs`, so the platform verifier this feature compiles in is never used.
 reqwest = { version = "0.13.5", default-features = false, features = ["http2", "rustls", "stream"] }
-# SQLite (`giles-store`; `giles-core` tests inject faults through a second connection).
+# SQLite (`doozers-store`; `doozers-core` tests inject faults through a second connection).
 rusqlite = "0.40.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -51,8 +51,8 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 # The Mozilla root certificates every Giles TLS client trusts instead of the OS store.
 webpki-root-certs = "1.0.10"
-# TLS for remote plugins (`giles_plugin_sdk::RemoteServer`, the core's plugin host); rustls itself
-# comes from `giles_plugin_sdk::tls`.
+# TLS for remote plugins (`doozers_plugin_sdk::RemoteServer`, the core's plugin host); rustls itself
+# comes from `doozers_plugin_sdk::tls`.
 tokio-rustls = { version = "0.26.6", default-features = false }
 # Test certificates for remote plugins over TLS.
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }

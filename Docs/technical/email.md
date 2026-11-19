@@ -1,9 +1,9 @@
 # Email channel
 
-`plugins/giles-channel-email` is the email channel plugin (PLAN sections 3.3, 8.5, and 10): a binary
-on the plugin SDK ([Plugin SDK](plugin-sdk.md)) whose `Channel` reads one IMAP mailbox and sends by
-SMTP. `ChannelInfo { identity_namespace: "email", output: Blocks, can_initiate: true }`. User-facing
-behavior and config keys: [Email](../user/email.md).
+`plugins/doozers-channel-email` is the email channel plugin (PLAN sections 3.3, 8.5, and 10): a
+binary on the plugin SDK ([Plugin SDK](plugin-sdk.md)) whose `Channel` reads one IMAP mailbox and
+sends by SMTP. `ChannelInfo { identity_namespace: "email", output: Blocks, can_initiate: true }`.
+User-facing behavior and config keys: [Email](../user/email.md).
 
 ## Libraries
 
@@ -11,7 +11,7 @@ behavior and config keys: [Email](../user/email.md).
 | ---------------------- | ---------------------------------------------------- | ----------------------------------------- |
 | `async-imap` (tokio)   | IMAP: login, `SELECT`, `UID SEARCH`/`FETCH`, `IDLE`  | Maintained (Delta Chat), IDLE support, and the caller brings the stream, so TLS is ours |
 | `async-smtp` (tokio)   | SMTP: EHLO, STARTTLS, AUTH, send                     | Same author and model: bring your own stream; `starttls()` hands the plain stream back for the upgrade |
-| `tokio-rustls`         | TLS on both                                          | With `giles_plugin_sdk::tls::client_config()` (bundled Mozilla roots, aws-lc-rs), like every Giles client |
+| `tokio-rustls`         | TLS on both                                          | With `doozers_plugin_sdk::tls::client_config()` (bundled Mozilla roots, aws-lc-rs), like every Giles client |
 | `mail-parser`          | Parsing inbound mail (MIME, encodings, HTML to text) | Complete, fast, keeps raw header offsets (needed to read `Authentication-Results` verbatim); `full_encoding` for legacy charsets |
 | `mail-builder`         | Building outbound mail                               | Same project as `mail-parser`; `multipart/alternative` + attachments, RFC 2047 headers, no dependencies with default features off |
 
@@ -26,7 +26,7 @@ crate: see [Alignment](#alignment).
 | `config`       | Parses and validates the `config` table; errors are `invalid config: <key>: ...`    |
 | `channel`      | `EmailChannel` (the `Channel`), the event stream's state machine, sending           |
 | `imap`         | Connect, log in, select; UIDs after the cursor; fetch; wait with IDLE or polling    |
-| `smtp`         | One connection per message; maps SMTP failures to `giles_types::Error`              |
+| `smtp`         | One connection per message; maps SMTP failures to `doozers_types::Error`              |
 | `inbound`      | Raw message to `Mail` or a drop reason: automated mail, sender, threading, text     |
 | `auth_results` | `Authentication-Results` parsing (RFC 8601) and sender verification                 |
 | `outbound`     | Building the outgoing message; subjects; message ids                                |

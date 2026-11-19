@@ -6,13 +6,13 @@ This page lists every setting in Giles' configuration files. Both kinds live in 
 - `giles.toml`: the core, the owner, and component instances.
 - `agents/<agent>/agent.toml`: one per agent.
 
-Giles reads them when `giles serve` starts, so restart it after you edit them. Giles never changes
+Giles reads them when `doozers serve` starts, so restart it after you edit them. Giles never changes
 `giles.toml`.
 
 Agents you create or edit in [the web UI](web.md#agents) are saved to `agent.toml` and take effect
 at once. The web UI keeps the rest of the file as you wrote it, comments included.
 
-If a file has an error, `giles serve` refuses to start. It prints one error naming the file, the
+If a file has an error, `doozers serve` refuses to start. It prints one error naming the file, the
 line and column when known, the key, and what is wrong:
 
 ```text
@@ -179,24 +179,24 @@ Providers, channels, environments, and toolsets are configured as instances, one
 **Choose instance names with care.** Sessions, history, tool names (`<instance>__<tool>`), and the
 instance's data directory are keyed by the name. To change it, use the rename command for its kind:
 
-- [`giles channel rename`](cli.md#giles-channel-rename-old-new)
-- [`giles environment rename`](cli.md#giles-environment-rename-old-new)
-- [`giles provider rename`](cli.md#giles-provider-rename-old-new)
-- [`giles toolset rename`](cli.md#rename-a-toolset)
+- [`doozers channel rename`](cli.md#doozers-channel-rename-old-new)
+- [`doozers environment rename`](cli.md#doozers-environment-rename-old-new)
+- [`doozers provider rename`](cli.md#doozers-provider-rename-old-new)
+- [`doozers toolset rename`](cli.md#rename-a-toolset)
 
 A provider, a channel, an environment, and a toolset can share a name. They are separate instances
 with their own data. Names are unique within a kind, ignoring case. `Libera` and `libera` clash.
 
 A provider, channel, or environment's `component` says what runs the instance, and defaults to the
 instance name. Giles uses its built-in component of that kind and name, if it has one. Otherwise the
-instance runs the plugin `giles-<kind>-<component>`, found in `<data root>/plugins/` or on `$PATH`.
-A toolset has no component. It runs its `command`.
+instance runs the plugin `doozers-<kind>-<component>`, found in `<data root>/plugins/` or on
+`$PATH`. A toolset has no component. It runs its `command`.
 
 Two IRC networks are two instances of one component:
 
 ```toml
 [channel.irc-libera]
-component = "irc"          # runs giles-channel-irc
+component = "irc"          # runs doozers-channel-irc
 config = { server = "irc.libera.chat", nick = "jeeves", network = "libera.chat" }
 
 [channel.irc-oftc]
@@ -286,7 +286,7 @@ that ship with Giles [run this way](remote-plugins.md), and
 or sandboxes it, and the plugin keeps its own state.
 
 - While Giles can't connect, it runs without that channel and keeps retrying. That includes when the
-  plugin refuses Giles' token or its certificate doesn't check out. `giles status` shows the
+  plugin refuses Giles' token or its certificate doesn't check out. `doozers status` shows the
   instance as `down, retrying at ...` with the last error, or once connected, as `running` with no
   pid.
 - With `https://`, the plugin's certificate must be valid for the host in `address`. It must be
@@ -303,7 +303,7 @@ or sandboxes it, and the plugin keeps its own state.
 #### Environments
 
 An environment gives agents isolated workspaces to run commands and edit files in. An
-`[environment.<name>]` table configures a plugin `giles-environment-<component>`. Its keys are:
+`[environment.<name>]` table configures a plugin `doozers-environment-<component>`. Its keys are:
 
 | Key            | Default        | Meaning                                                          |
 | -------------- | -------------- | ---------------------------------------------------------------- |
@@ -330,8 +330,8 @@ launches and talks to over its standard input and output. Set `toolset.<name>.co
 server's program, as an absolute path or a program name Giles looks up on `$PATH`.
 
 A remote server, one Giles reaches over the network, is added in the [web UI](web.md#mcp-servers) or
-with [`giles toolset set`](cli.md#giles-toolset). Giles ignores a `[toolset.<name>]` table that has
-`url`, and logs a warning naming it at every start.
+with [`doozers toolset set`](cli.md#doozers-toolset). Giles ignores a `[toolset.<name>]` table that
+has `url`, and logs a warning naming it at every start.
 
 | Key           | Default   | Meaning                                                       |
 | ------------- | --------- | ------------------------------------------------------------- |

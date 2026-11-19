@@ -74,12 +74,13 @@ The job sets up Buildx (`docker/setup-buildx-action`), builds the image for `lin
 `docker/build-push-action`, loads it into the runner's Docker as `giles:test`, and smoke-tests it
 before anything is pushed:
 
-- `giles --version` runs, and the four channel plugin binaries (IRC, email, WhatsApp, Discord), the
-  Docker environment plugin, and its `giles-workspace-helper-x86_64` file are in `/usr/local/bin/`.
-  The helper runs (`df /`) with no libraries of the image, which shows it is a static binary.
-- `giles serve` starts with the default entrypoint, a fresh named volume at `/data` holding a
+- `doozers --version` runs, and the four channel plugin binaries (IRC, email, WhatsApp, Discord),
+  the Docker environment plugin, and its `doozers-workspace-helper-x86_64` file are in
+  `/usr/local/bin/`. The helper runs (`df /`) with no libraries of the image, which shows it is a
+  static binary.
+- `doozers serve` starts with the default entrypoint, a fresh named volume at `/data` holding a
   `giles.toml` with only `http_listen = "0.0.0.0:8080"` and the owner, and the port published.
-- `giles status`, run in the container until the admin socket answers (up to 30 seconds), must
+- `doozers status`, run in the container until the admin socket answers (up to 30 seconds), must
   report `Plugin sandbox: Landlock ABI ...`: the startup sandbox check passes under Docker's default
   seccomp profile on the runner's kernel. The status and the container log are printed.
 - The web server answers `GET /` with a success status through the published port.
@@ -100,12 +101,12 @@ merged into one manifest list.
 
 The `environment-docker-image` job builds and publishes the
 [Docker environment image](container-image.md#the-docker-environment-image) the same way, as
-`ghcr.io/jennings/giles-environment-docker` with the same tags. It has its own concurrency group and
-its own `gha` cache scope, so the two image jobs run side by side without evicting each other's
+`ghcr.io/jennings/doozers-environment-docker` with the same tags. It has its own concurrency group
+and its own `gha` cache scope, so the two image jobs run side by side without evicting each other's
 layers. Its smoke test plays the Giles core against the runner's Docker engine before anything is
 pushed:
 
-- Both `giles-workspace-helper-*` files are in the image, and the `x86_64` one runs.
+- Both `doozers-workspace-helper-*` files are in the image, and the `x86_64` one runs.
 - The container starts with `/var/run/docker.sock` mounted and the token in
   `GILES_ENVIRONMENT_DOCKER_TOKEN`, and logs `listening on`.
 - `grpcurl` (a pinned release) calls `Configure`, `CreateWorkspace` with `alpine:3.20`,

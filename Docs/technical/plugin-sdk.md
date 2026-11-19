@@ -1,9 +1,9 @@
 # Plugin SDK
 
-`giles-plugin-sdk` is the plugin side of PLAN sections 7.4 and 8: everything a gRPC plugin must do
+`doozers-plugin-sdk` is the plugin side of PLAN sections 7.4 and 8: everything a gRPC plugin must do
 between being launched by the core and serving its kind service. The core side (launch, supervision,
-the `Remote*` adapters) lives in `giles-core`. The wire setup it builds on is in
-[Plugin transport](plugin-transport.md); the shared constants are `giles_proto::handshake` (see
+the `Remote*` adapters) lives in `doozers-core`. The wire setup it builds on is in
+[Plugin transport](plugin-transport.md); the shared constants are `doozers_proto::handshake` (see
 [gRPC Protocols](protocols.md#launch-handshake)).
 
 ## Command line
@@ -12,7 +12,7 @@ A plugin's `main` calls `ChannelPlugin::run(configure)` or `EnvironmentPlugin::r
 which parse the binary's command line (`cli.rs`, shared through `run.rs`) with a hand-written
 parser, so the SDK needs no `clap`:
 
-- `socket` is how the core launches the plugin (`giles_proto::handshake::SOCKET_COMMAND`, the
+- `socket` is how the core launches the plugin (`doozers_proto::handshake::SOCKET_COMMAND`, the
   plugin's only argument). It runs `serve` below, so [Startup](#startup) applies. Nobody runs it by
   hand; run so, it still says that it's a Giles plugin. It takes no further argument.
 - `serve` runs the plugin as a [remote plugin](#remote-plugins). Its transport settings are flags,
@@ -77,9 +77,9 @@ core reports the exit and its stderr as a failed launch.
 With `socket`, the SDK does these steps in order, and any failure ends the process with a message on
 stderr:
 
-1. Magic cookie: `GILES_PLUGIN_MAGIC` must equal `giles_proto::handshake::MAGIC_COOKIE`. Without it,
-   someone ran the binary by hand: the plugin says that it's a Giles plugin, launched by Giles, and
-   exits with status 1. Nothing else is touched, fd 3 included.
+1. Magic cookie: `GILES_PLUGIN_MAGIC` must equal `doozers_proto::handshake::MAGIC_COOKIE`. Without
+   it, someone ran the binary by hand: the plugin says that it's a Giles plugin, launched by Giles,
+   and exits with status 1. Nothing else is touched, fd 3 included.
 2. Protocol: `GILES_PLUGIN_PROTOCOLS` is a comma-separated list of majors (spaces around entries are
    allowed). The SDK picks the highest one it also speaks (now only 1). A missing or malformed list
    exits with status 1; a list with no shared major exits with status 76
@@ -212,13 +212,13 @@ async fn main() -> ExitCode {
   `Fn(Configure) -> impl Future<Output = Result<impl Environment>>`. `Configure` is shared by every
   kind.
 - `Blobs`: `put`, `put_reader`, `open`, `read`, `path`.
-- `convert`: the `giles-types` and wire conversions in both directions, plus the `Error` and
+- `convert`: the `doozers-types` and wire conversions in both directions, plus the `Error` and
   `Status` mapping (below), public so the core's adapters and tests can share them.
 - `config`: `parse_duration` and `parse_size`, and the serde field types `HumanDuration` and
   `ByteSize` built on them, so a plugin's `config` table writes durations (`"10m"`) and sizes
   (`"50 MiB"`) like `giles.toml` does. The core's own config uses the same functions
   ([Configuration](config.md#values)).
-- Re-exports `giles_types` and `async_trait`, so a plugin uses the same versions as the SDK.
+- Re-exports `doozers_types` and `async_trait`, so a plugin uses the same versions as the SDK.
 
 ## Lifecycle
 
@@ -247,7 +247,7 @@ Health (`grpc.health.v1`): the overall service `""` and `giles.plugin.v1.PluginS
 `Configure` calls the plugin's `configure` closure with the parsed config, under a lock so calls
 don't overlap. On success the SDK checks the channel against what `Describe` promised: its
 `Channel::info()` must have the same `output` and `can_initiate`, and its `identity_namespace` must
-follow the core's rule (`giles_core::identity::validate_namespace`): the plugin name itself or
+follow the core's rule (`doozers_core::identity::validate_namespace`): the plugin name itself or
 `<name>:...` (so plugin `echo` may report `echo` or `echo:test`, but not `echoer`), with every
 `:`-separated part non-empty and free of whitespace and control characters. A mismatch is a plugin
 bug and fails with `INTERNAL`, naming the namespace. It returns the namespace and marks
@@ -264,7 +264,7 @@ path, e.g. `invalid config: tls.verify: invalid type: string "yes", expected a b
 Delivery is at least once (PLAN section 8.5), and the SDK makes it durable for every channel:
 
 1. The first `Events` call starts the pump: it calls `Channel::events()` once and moves each event
-   into the spool. An event the wire can't carry (a newer `giles-types` variant) is logged and
+   into the spool. An event the wire can't carry (a newer `doozers-types` variant) is logged and
    dropped. A stream error item is logged, and the pump waits before polling again (100 ms, doubling
    to 10 s while errors continue, reset by the next event), so a broken source doesn't spin. If the
    channel's stream ends, the pump stops and the next `Events` call calls `Channel::events()` again.
@@ -295,8 +295,8 @@ the core put for it (see [Blobs](#blobs)).
 
 ### Conversions and errors
 
-`convert` moves fields between `giles-types` and `giles.channel.v1` following the tables in
-[gRPC Protocols](protocols.md#mapping-to-giles-types). Wire to domain validates ids, requires
+`convert` moves fields between `doozers-types` and `giles.channel.v1` following the tables in
+[gRPC Protocols](protocols.md#mapping-to-doozers-types). Wire to domain validates ids, requires
 "Always set" fields, and refuses unspecified enum values and unknown `oneof` variants. Timestamps
 keep nanoseconds in `0..1e9`, so a time before 1970 has negative seconds and positive nanoseconds.
 
@@ -307,7 +307,7 @@ content. The core's `RemoteChannel` uses these helpers but takes a message's att
 converting it, so it accepts any handle, and it never trusts one: it fetches the bytes with
 `GetBlob` and hashes them.
 
-| `giles_types::Error`          | gRPC status        | Back to `Error` (`error_from_status`) |
+| `doozers_types::Error`          | gRPC status        | Back to `Error` (`error_from_status`) |
 | ----------------------------- | ------------------ | ------------------------------------- |
 | `InvalidId`, `InvalidRequest` | `INVALID_ARGUMENT` | `InvalidRequest`                      |
 | `NotFound`                    | `NOT_FOUND`        | `NotFound`                            |
@@ -320,8 +320,8 @@ converting it, so it accepts any handle, and it never trusts one: it fetches the
 
 `EnvironmentPlugin` has the same entry points as `ChannelPlugin` (`new`, `requested_grants`,
 `serve`, `serve_remote`, `run`) and serves `giles.environment.v1.EnvironmentService` by adapting the
-`giles_types::Environment` its `configure` closure returns. The closure gets the same `Configure` as
-a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and empty `EnvironmentCapabilities`.
+`doozers_types::Environment` its `configure` closure returns. The closure gets the same `Configure`
+as a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and empty `EnvironmentCapabilities`.
 
 - `Configure` calls the closure under a lock, as for channels, answers with an empty identity
   namespace, and marks `EnvironmentService` serving. A repeated identical `Configure` (same instance
@@ -337,7 +337,8 @@ a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and empty `Environment
   event, which is always the last message, and after an error. A stream that ends without an exit
   event is reported as `INTERNAL`, naming a plugin bug.
 - Errors map as in [Conversions and errors](#conversions-and-errors). `convert::environment` has the
-  field conversions in both directions (see [gRPC Protocols](protocols.md#mapping-to-giles-types)).
+  field conversions in both directions (see
+  [gRPC Protocols](protocols.md#mapping-to-doozers-types)).
 - There is no persistence to manage: workspaces belong to the plugin's backend, and `ListWorkspaces`
   is how the core finds them again after a restart. Blobs aren't used, but `Configure::blobs()`
   exists for every kind.
@@ -380,7 +381,7 @@ side in [Plugin Host](plugin-host.md#remote-plugins)), is
 
 The SDK makes no TLS connections of its own: the core reaches a launched plugin over a private
 socket pair. Channel plugins make their own (IRC, IMAP, SMTP, WhatsApp), so the default `tls`
-feature exposes `giles_plugin_sdk::tls`: `root_store()` (the Mozilla roots compiled in from
+feature exposes `doozers_plugin_sdk::tls`: `root_store()` (the Mozilla roots compiled in from
 `webpki-root-certs`), `client_config()` (a `rustls::ClientConfig` with those roots, the safe default
 protocol versions, and the `aws-lc-rs` provider named explicitly), and
 `client_config_with_roots(roots)` (the same with other roots), and re-exports `rustls`. This is the
@@ -391,7 +392,7 @@ no client certificates). A plugin that needs no TLS can turn the feature off.
 
 ## The echo plugin
 
-`plugins/giles-channel-echo` (`publish = false`) is a channel plugin for tests of the plugin host,
+`plugins/doozers-channel-echo` (`publish = false`) is a channel plugin for tests of the plugin host,
 built on the SDK. It talks to nobody; tests drive it through files in its data directory:
 
 | Path            | Meaning                                                                     |
@@ -401,7 +402,7 @@ built on the SDK. It talks to nobody; tests drive it through files in its data d
 | `acks.jsonl`    | One line per event the core acked: `event_id`                               |
 
 An injection is `{"event": <ChannelEvent>, "attachments": [{"text", "media_type", "name"}]}`, the
-event in `giles-types` JSON and `attachments` optional (message events only; each is stored with
+event in `doozers-types` JSON and `attachments` optional (message events only; each is stored with
 `Blobs::put` and appended to the message's attachments, so `GetBlob` and `ReleaseBlob` can be
 exercised). The plugin deletes an injection when the SDK polls its stream again, that is once the
 event is persisted, so after that only the SDK's spool has it: killing the plugin then shows that
@@ -413,24 +414,24 @@ when set, every sent message comes back as an inbound message from `echo_sender`
 stored again as the plugin's own blobs); `unavailable` (recipients whose sends fail with
 `UNAVAILABLE`). It reports `output = blocks` and `can_initiate = true`.
 
-It's built on `run` like the shipped plugins, so `giles-channel-echo serve` runs it as a remote
+It's built on `run` like the shipped plugins, so `doozers-channel-echo serve` runs it as a remote
 plugin, with the token in `GILES_CHANNEL_ECHO_TOKEN` or `--no-auth`.
-`plugins/giles-channel-echo/tests/cli.rs` tests the command line through the binary.
+`plugins/doozers-channel-echo/tests/cli.rs` tests the command line through the binary.
 
-Its integration tests (`plugins/giles-channel-echo/tests/plugin.rs`) launch the binary exactly as
+Its integration tests (`plugins/doozers-channel-echo/tests/plugin.rs`) launch the binary exactly as
 the core will: the `socket` argument, a `socketpair`, the plugin's end made fd 3 with `dup2` in
 `pre_exec`, the token on stdin, the scrubbed environment, then the handshake line, then every RPC
 through the generated clients with a bearer interceptor and 16 MiB limits.
 
 ### Using it from other tests
 
-Cargo gives integration tests the path of a binary (`env!("CARGO_BIN_EXE_giles-channel-echo")`) only
-within the binary's own package, and builds the binary before running them. So tests that launch the
-echo plugin through the real host (plugin launch, supervision, `RemoteChannel`) belong in
-`plugins/giles-channel-echo/tests/`, with `giles-core` as a dev-dependency of the echo crate; that
-works for `cargo test --workspace`, `cargo test -p giles-channel-echo`, and any target or build
-directory. A discovery test can symlink that path into `<root>/plugins/`.
+Cargo gives integration tests the path of a binary (`env!("CARGO_BIN_EXE_doozers-channel-echo")`)
+only within the binary's own package, and builds the binary before running them. So tests that
+launch the echo plugin through the real host (plugin launch, supervision, `RemoteChannel`) belong in
+`plugins/doozers-channel-echo/tests/`, with `doozers-core` as a dev-dependency of the echo crate;
+that works for `cargo test --workspace`, `cargo test -p doozers-channel-echo`, and any target or
+build directory. A discovery test can symlink that path into `<root>/plugins/`.
 
 From another package there's no reliable path: test executables live in the build directory
-(`CARGO_BUILD_BUILD_DIR`), binaries in the target directory, and `cargo test -p giles-core` doesn't
-build the echo binary at all.
+(`CARGO_BUILD_BUILD_DIR`), binaries in the target directory, and `cargo test -p doozers-core`
+doesn't build the echo binary at all.

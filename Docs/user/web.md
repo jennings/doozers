@@ -25,7 +25,7 @@ Every page needs a login. You log in with a one-time link, or through a trusted 
 Run this to get a login link:
 
 ```sh
-giles admin login-link --user owner
+doozers admin login-link --user owner
 ```
 
 Open the link and press **Log in** to log that browser in for 30 days. The link works once, and only
@@ -171,7 +171,7 @@ The `[[jobs]]` from `agent.toml` can't be changed here. Edit `agent.toml` to cha
 
 The **Admin** group in the sidebar opens the admin pages. Only the owner sees it and can open them.
 
-`/admin` shows what [`giles status`](cli.md) shows, including each channel's last status.
+`/admin` shows what [`doozers status`](cli.md) shows, including each channel's last status.
 
 `/admin/plugins` shows each plugin in detail, including its state, restarts, and last error. It
 lists MCP toolsets too, with the number of tools each offers. **Restart** restarts a plugin or
@@ -464,7 +464,7 @@ that matches the server's tools without starting with `<old name>__`, such as `g
 lists those globs. Rewrite them, for example to `github__*`, and try again.
 
 You can't rename a server that you configure in `giles.toml` here. Stop Giles and run
-[`giles toolset rename`](cli.md#rename-a-toolset) for that.
+[`doozers toolset rename`](cli.md#rename-a-toolset) for that.
 
 ## Workspaces
 

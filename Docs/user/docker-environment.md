@@ -1,8 +1,8 @@
 # Docker environment
 
 This page shows how to give agents a workspace in a Docker container with the Docker environment
-plugin, `giles-environment-docker`. In a workspace the agent runs commands and reads, writes, finds,
-and searches files without touching your machine.
+plugin, `doozers-environment-docker`. In a workspace the agent runs commands and reads, writes,
+finds, and searches files without touching your machine.
 
 The plugin works with anything that serves the Docker Engine API: Docker, Podman, Docker Desktop,
 OrbStack, and Colima. Each workspace is one container plus one volume, and each conversation gets
@@ -79,9 +79,9 @@ and limits, and stops or deletes them.
 
 ## Run the plugin in its own container
 
-The `giles-environment-docker` image runs the plugin for Giles to connect to. It keeps the engine's
-socket away from Giles, and it is the setup to use when Giles runs in its container image. To run
-both containers with Docker Compose, follow
+The `doozers-environment-docker` image runs the plugin for Giles to connect to. It keeps the
+engine's socket away from Giles, and it is the setup to use when Giles runs in its container image.
+To run both containers with Docker Compose, follow
 [Run Giles with Docker Compose](container.md#run-giles-with-docker-compose) instead of the steps
 below.
 
@@ -96,11 +96,11 @@ Create a network for the two containers, and start the plugin on it with the eng
 
 ```sh
 docker network create giles
-docker run --detach --name giles-environment-docker --restart unless-stopped \
+docker run --detach --name doozers-environment-docker --restart unless-stopped \
   --network giles \
   --volume /run/user/1000/podman/podman.sock:/var/run/docker.sock \
   --env GILES_ENVIRONMENT_DOCKER_TOKEN="<token>" \
-  ghcr.io/jennings/giles-environment-docker:latest
+  ghcr.io/jennings/doozers-environment-docker:latest
 ```
 
 For rootless Podman, run it with `podman run` as the user that owns the socket. On a host with
@@ -113,13 +113,13 @@ In `giles.toml`, the instance has the plugin's address and the token, stored as 
 ```toml
 [environment.docker]
 description = "Disposable Linux containers for running code and building software."
-address = "http://giles-environment-docker:7443"
+address = "http://doozers-environment-docker:7443"
 insecure = true
 auth = { bearer = { secret = "docker-remote" } }
 ```
 
 `insecure = true` allows plain HTTP, which stays on the `giles` network. The plugin's messages are
-in `docker logs giles-environment-docker`.
+in `docker logs doozers-environment-docker`.
 
 ### Change the plugin's settings
 
@@ -134,12 +134,12 @@ memory = "2g"
 ```
 
 ```sh
-docker run --detach --name giles-environment-docker --restart unless-stopped \
+docker run --detach --name doozers-environment-docker --restart unless-stopped \
   --network giles \
   --volume /run/user/1000/podman/podman.sock:/var/run/docker.sock \
-  --volume "$PWD/giles-environment-docker.toml:/etc/giles-environment-docker.toml:ro" \
+  --volume "$PWD/doozers-environment-docker.toml:/etc/doozers-environment-docker.toml:ro" \
   --env GILES_ENVIRONMENT_DOCKER_TOKEN="<token>" \
-  ghcr.io/jennings/giles-environment-docker:latest --config /etc/giles-environment-docker.toml
+  ghcr.io/jennings/doozers-environment-docker:latest --config /etc/doozers-environment-docker.toml
 ```
 
 Registry logins and environment variables go in this file too. Leave `socket` unset.
@@ -159,13 +159,13 @@ auth = { bearer = { secret = "docker-remote" } }
 
 ### Run the plugin without a container
 
-Install `giles-environment-docker` and the `giles-workspace-helper-*` files next to it, and run
-`giles-environment-docker serve --config <file>`. The file holds the settings in
+Install `doozers-environment-docker` and the `doozers-workspace-helper-*` files next to it, and run
+`doozers-environment-docker serve --config <file>`. The file holds the settings in
 [Running a plugin on another machine](remote-plugins.md) and the plugin's `[config]` table:
 
 ```toml
 listen = "0.0.0.0:7443"
-data = "/var/lib/giles-environment-docker"
+data = "/var/lib/doozers-environment-docker"
 tls_cert = "/etc/giles/fullchain.pem"
 tls_key = "/etc/giles/key.pem"
 token_file = "/etc/giles/docker.token"
@@ -292,17 +292,17 @@ file. An unknown key or invalid value stops the instance from starting, and the 
 | `pids`           | none                         | The process limit of a container                             |
 | `network`        | `"bridge"`                   | The [network](#limit-resources-and-network) containers join  |
 | `env`            | none                         | [Variables](#set-environment-variables) set in every container |
-| `helper_dir`     | the plugin's own directory   | The directory with the `giles-workspace-helper-*` files      |
+| `helper_dir`     | the plugin's own directory   | The directory with the `doozers-workspace-helper-*` files      |
 
 ## Check that it works
 
-Run `giles status`. The instance shows `running`. Then ask an agent that has the environment to
+Run `doozers status`. The instance shows `running`. Then ask an agent that has the environment to
 create a workspace and run `uname -a`.
 
 If the instance doesn't start, the error names the problem:
 
 - A message that no workspace helper exists for your architecture means the plugin can't find
-  `giles-workspace-helper-x86_64` or `giles-workspace-helper-aarch64` next to it. Set `helper_dir`
-  to the directory that has them, and grant read access to it.
+  `doozers-workspace-helper-x86_64` or `doozers-workspace-helper-aarch64` next to it. Set
+  `helper_dir` to the directory that has them, and grant read access to it.
 - A message that the Docker socket can't be used means the path is wrong, the engine isn't running,
   or the sandbox grant doesn't include the socket.

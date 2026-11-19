@@ -1226,6 +1226,333 @@ dependencies = [
 ]
 
 [[package]]
+name = "doozers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "doozers-core",
+ "doozers-plugin-sdk",
+ "doozers-proto",
+ "doozers-store",
+ "doozers-types",
+ "jiff",
+ "libc",
+ "prost-types",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "doozers-channel-discord"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "doozers-core",
+ "doozers-plugin-sdk",
+ "doozers-proto",
+ "fastrand",
+ "futures",
+ "http",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tokio-websockets",
+ "toml 1.1.8+spec-1.1.0",
+ "tonic",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+ "twilight-gateway",
+ "twilight-http",
+ "twilight-model",
+]
+
+[[package]]
+name = "doozers-channel-echo"
+version = "0.1.0"
+dependencies = [
+ "doozers-core",
+ "doozers-plugin-sdk",
+ "doozers-proto",
+ "futures",
+ "hyper-util",
+ "libc",
+ "rcgen",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "socket2",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tonic-health",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "doozers-channel-email"
+version = "0.1.0"
+dependencies = [
+ "async-imap",
+ "async-smtp",
+ "base64 0.22.1",
+ "doozers-plugin-sdk",
+ "futures",
+ "mail-builder",
+ "mail-parser",
+ "rcgen",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "doozers-channel-irc"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "doozers-core",
+ "doozers-plugin-sdk",
+ "futures",
+ "irc-proto",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "toml 1.1.8+spec-1.1.0",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "doozers-channel-whatsapp"
+version = "0.1.0"
+dependencies = [
+ "doozers-plugin-sdk",
+ "doozers-proto",
+ "futures",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml 1.1.8+spec-1.1.0",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "whatsapp-rust",
+]
+
+[[package]]
+name = "doozers-core"
+version = "0.1.0"
+dependencies = [
+ "askama",
+ "async-trait",
+ "aws-lc-rs",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "croner",
+ "doozers-plugin-sdk",
+ "doozers-proto",
+ "doozers-store",
+ "doozers-types",
+ "futures",
+ "getrandom 0.4.3",
+ "hyper-util",
+ "jiff",
+ "landlock",
+ "libc",
+ "prost",
+ "prost-types",
+ "qrcode",
+ "reqwest",
+ "rmcp",
+ "rusqlite",
+ "seccompiler",
+ "serde",
+ "serde-saphyr",
+ "serde_ignored",
+ "serde_json",
+ "serde_path_to_error",
+ "sha2 0.11.1",
+ "socket2",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "toml 1.1.8+spec-1.1.0",
+ "toml_edit",
+ "tonic",
+ "tonic-health",
+ "tonic-prost",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "webpki-root-certs",
+ "zeroize",
+]
+
+[[package]]
+name = "doozers-environment-docker"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bollard",
+ "bytes",
+ "doozers-plugin-sdk",
+ "doozers-proto",
+ "doozers-types",
+ "futures",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "jiff",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 1.1.8+spec-1.1.0",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "doozers-environment-echo"
+version = "0.1.0"
+dependencies = [
+ "doozers-core",
+ "doozers-plugin-sdk",
+ "futures",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tonic-health",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "doozers-plugin-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "doozers-proto",
+ "doozers-types",
+ "futures",
+ "hyper-util",
+ "libc",
+ "prost",
+ "prost-types",
+ "pulldown-cmark",
+ "pulldown-cmark-escape",
+ "rcgen",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "toml 1.1.8+spec-1.1.0",
+ "tonic",
+ "tonic-health",
+ "tower",
+ "tracing",
+ "webpki-root-certs",
+]
+
+[[package]]
+name = "doozers-proto"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-build",
+ "prost-types",
+ "protoc-bin-vendored",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
+name = "doozers-store"
+version = "0.1.0"
+dependencies = [
+ "doozers-types",
+ "rusqlite",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "doozers-types"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "jiff",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "doozers-workspace-helper"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "ignore",
+ "regex",
+ "rustix",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1581,333 +1908,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eecf2d5dc9b66b732b97707a0210906b1d30523eb773193ab777c0c84b3e8d5"
 dependencies = [
  "polyval",
-]
-
-[[package]]
-name = "giles"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "giles-core",
- "giles-plugin-sdk",
- "giles-proto",
- "giles-store",
- "giles-types",
- "jiff",
- "libc",
- "prost-types",
- "rusqlite",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "tonic",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "giles-channel-discord"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "fastrand",
- "futures",
- "giles-core",
- "giles-plugin-sdk",
- "giles-proto",
- "http",
- "reqwest",
- "serde",
- "serde_json",
- "socket2",
- "tempfile",
- "tokio",
- "tokio-util",
- "tokio-websockets",
- "toml 1.1.8+spec-1.1.0",
- "tonic",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "twilight-gateway",
- "twilight-http",
- "twilight-model",
-]
-
-[[package]]
-name = "giles-channel-echo"
-version = "0.1.0"
-dependencies = [
- "futures",
- "giles-core",
- "giles-plugin-sdk",
- "giles-proto",
- "hyper-util",
- "libc",
- "rcgen",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "socket2",
- "tempfile",
- "tokio",
- "tokio-util",
- "tonic",
- "tonic-health",
- "tower",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "giles-channel-email"
-version = "0.1.0"
-dependencies = [
- "async-imap",
- "async-smtp",
- "base64 0.22.1",
- "futures",
- "giles-plugin-sdk",
- "mail-builder",
- "mail-parser",
- "rcgen",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tempfile",
- "tokio",
- "tokio-rustls",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "giles-channel-irc"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "futures",
- "giles-core",
- "giles-plugin-sdk",
- "irc-proto",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tempfile",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "toml 1.1.8+spec-1.1.0",
- "tonic",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "giles-channel-whatsapp"
-version = "0.1.0"
-dependencies = [
- "futures",
- "giles-plugin-sdk",
- "giles-proto",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tempfile",
- "tokio",
- "tokio-util",
- "toml 1.1.8+spec-1.1.0",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "whatsapp-rust",
-]
-
-[[package]]
-name = "giles-core"
-version = "0.1.0"
-dependencies = [
- "askama",
- "async-trait",
- "aws-lc-rs",
- "axum",
- "base64 0.22.1",
- "bytes",
- "croner",
- "futures",
- "getrandom 0.4.3",
- "giles-plugin-sdk",
- "giles-proto",
- "giles-store",
- "giles-types",
- "hyper-util",
- "jiff",
- "landlock",
- "libc",
- "prost",
- "prost-types",
- "qrcode",
- "reqwest",
- "rmcp",
- "rusqlite",
- "seccompiler",
- "serde",
- "serde-saphyr",
- "serde_ignored",
- "serde_json",
- "serde_path_to_error",
- "sha2 0.11.1",
- "socket2",
- "tar",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "toml 1.1.8+spec-1.1.0",
- "toml_edit",
- "tonic",
- "tonic-health",
- "tonic-prost",
- "tower",
- "tracing",
- "tracing-subscriber",
- "url",
- "webpki-root-certs",
- "zeroize",
-]
-
-[[package]]
-name = "giles-environment-docker"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bollard",
- "bytes",
- "futures",
- "giles-plugin-sdk",
- "giles-proto",
- "giles-types",
- "http-body-util",
- "hyper",
- "hyper-util",
- "jiff",
- "prost-types",
- "serde",
- "serde_json",
- "tar",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "toml 1.1.8+spec-1.1.0",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "giles-environment-echo"
-version = "0.1.0"
-dependencies = [
- "futures",
- "giles-core",
- "giles-plugin-sdk",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "tonic-health",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "giles-plugin-sdk"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures",
- "giles-proto",
- "giles-types",
- "hyper-util",
- "libc",
- "prost",
- "prost-types",
- "pulldown-cmark",
- "pulldown-cmark-escape",
- "rcgen",
- "rustls",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "sha2 0.11.1",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "toml 1.1.8+spec-1.1.0",
- "tonic",
- "tonic-health",
- "tower",
- "tracing",
- "webpki-root-certs",
-]
-
-[[package]]
-name = "giles-proto"
-version = "0.1.0"
-dependencies = [
- "prost",
- "prost-build",
- "prost-types",
- "protoc-bin-vendored",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
-]
-
-[[package]]
-name = "giles-store"
-version = "0.1.0"
-dependencies = [
- "giles-types",
- "rusqlite",
- "serde_json",
- "sha2 0.11.1",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "giles-types"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures",
- "jiff",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
-]
-
-[[package]]
-name = "giles-workspace-helper"
-version = "0.1.0"
-dependencies = [
- "globset",
- "ignore",
- "regex",
- "rustix",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]

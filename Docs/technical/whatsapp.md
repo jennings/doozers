@@ -1,6 +1,6 @@
 # WhatsApp channel
 
-`plugins/giles-channel-whatsapp` (`publish = false`) is the WhatsApp channel plugin (PLAN sections
+`plugins/doozers-channel-whatsapp` (`publish = false`) is the WhatsApp channel plugin (PLAN sections
 3.3, 8.5, and 10): a binary on the plugin SDK ([Plugin SDK](plugin-sdk.md)) whose `Channel` is a
 linked device on the WhatsApp Web protocol, built on `whatsapp-rust`.
 `ChannelInfo { identity_namespace: "whatsapp", output: Blocks, can_initiate: true }`. User-facing
@@ -31,7 +31,7 @@ this workspace, for the two reasons the spike found:
 - Its default `simd` feature needs a nightly compiler (`portable_simd`); the spike turned default
   features off, but that's the lesser problem.
 - Its SQLite store (`whatsapp-rust-sqlite-storage` 0.7.0) requires `libsqlite3-sys` 0.37, while
-  `giles-store`'s `rusqlite` 0.40 uses 0.38. Cargo allows one package per native `links` name in a
+  `doozers-store`'s `rusqlite` 0.40 uses 0.38. Cargo allows one package per native `links` name in a
   resolve, so the two can't coexist.
 
 No release after 0.7.0 exists (checked on crates.io on 2026-10-25). `main` already uses
@@ -48,7 +48,7 @@ The crate's version number on `main` still says 0.7.0, which is why Cargo shows
 the release.
 
 Features: default features off, then `sqlite-storage`, `sqlite-storage-bundled` (compile SQLite in
-tree, like `giles-store`), `tokio-native`, `tokio-runtime`, `tokio-transport`, `ureq-client`. The
+tree, like `doozers-store`), `tokio-native`, `tokio-runtime`, `tokio-transport`, `ureq-client`. The
 spike's `signal` feature (Ctrl-C handling) is left out: the SDK owns shutdown.
 
 To move the pin: pick a newer `main` commit (or a release, once one is built on `libsqlite3-sys`
@@ -62,7 +62,7 @@ to SSH, fetching the git source needs `CARGO_NET_GIT_FETCH_WITH_CLI=true` and an
 
 ## Licensing
 
-`giles-channel-whatsapp` is `AGPL-3.0-only`; the rest of the repository is `MIT OR Apache-2.0`.
+`doozers-channel-whatsapp` is `AGPL-3.0-only`; the rest of the repository is `MIT OR Apache-2.0`.
 
 - **Why.** The dependency tree has one AGPL component: `wacore-libsignal`, a crate of
   `whatsapp-rust` (a port of Signal's `libsignal`). Its 31 source files carry
@@ -75,7 +75,7 @@ to SSH, fetching the git source needs `CARGO_NET_GIT_FETCH_WITH_CLI=true` and an
   inheriting the workspace's, and has `LICENSE-AGPL-3.0`, a `README.md` explaining the license, and
   `THIRD-PARTY`, the notices and source offer. `whatsapp-rust` is a dependency of this crate alone,
   not of `[workspace.dependencies]`, and nothing depends on the plugin: it is a binary run as its
-  own process, which talks to the core over gRPC (`giles-plugin-sdk`) and is found by name.
+  own process, which talks to the core over gRPC (`doozers-plugin-sdk`) and is found by name.
   `license_tests` checks the license field, that `THIRD-PARTY` names the pinned revision, and that
   no other manifest mentions the plugin or the library.
 - **The image.** It ships the plugin binary, so the OCI license label is
@@ -284,7 +284,7 @@ the same way.
 
 `outbound::send`:
 
-1. Renders the CommonMark with `giles_plugin_sdk::render::whatsapp` and splits it into parts of at
+1. Renders the CommonMark with `doozers_plugin_sdk::render::whatsapp` and splits it into parts of at
    most 4,096 characters (`split::split`): paragraph break, then line, then space, then character
    boundary, with an open code fence closed at the end of a part and reopened at the start of the
    next (8 characters of each part's budget are reserved for that). `reply_to` is ignored: a
@@ -333,10 +333,10 @@ line names only the mode (`link = "pair_code"`).
 
 ## Logging
 
-The binary's default filter is `warn,giles_channel_whatsapp=info,giles_plugin_sdk=info` (`GILES_LOG`
-overrides it): the library logs each connection step at `info`, including the pair code, and its
-JIDs. The plugin's own logs name no number or text; a dropped message is logged with its id and
-chat, not its content.
+The binary's default filter is `warn,doozers_channel_whatsapp=info,doozers_plugin_sdk=info`
+(`GILES_LOG` overrides it): the library logs each connection step at `info`, including the pair
+code, and its JIDs. The plugin's own logs name no number or text; a dropped message is logged with
+its id and chat, not its content.
 
 ## Tests
 

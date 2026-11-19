@@ -1,7 +1,7 @@
 # Toolsets
 
-Code: `crates/giles-core/src/toolsets/` (`giles_core::toolsets`). Design: PLAN sections 7.5, 7.6,
-7.9, and 7.10. A toolset is an MCP server; the [MCP client](mcp.md) is the connection, and this
+Code: `crates/doozers-core/src/toolsets/` (`doozers_core::toolsets`). Design: PLAN sections 7.5,
+7.6, 7.9, and 7.10. A toolset is an MCP server; the [MCP client](mcp.md) is the connection, and this
 module decides how to reach each toolset (`ToolsetLauncher`), a stdio `[toolset.<instance>]` table
 of `giles.toml` or a remote server [stored in the database](#stored-toolsets), and keeps it going
 until it is removed or the daemon stops (`ToolsetHost`).
@@ -9,9 +9,9 @@ until it is removed or the daemon stops (`ToolsetHost`).
 ## Connecting
 
 `ToolsetLauncher::new(root, trampoline, sandbox, blobs)` mirrors the [plugin host](plugin-host.md)'s
-`Launcher`: `trampoline` is the `giles` binary (run as `giles sandbox-exec`), and `sandbox` is the
-host check `serve` runs once; an error refuses every sandboxed server with that message. `blobs` is
-the runtime's blob store, where every connection keeps the media its tools return
+`Launcher`: `trampoline` is the `doozers` binary (run as `doozers sandbox-exec`), and `sandbox` is
+the host check `serve` runs once; an error refuses every sandboxed server with that message. `blobs`
+is the runtime's blob store, where every connection keeps the media its tools return
 ([MCP Client](mcp.md#mapping-mcp-to-the-toolset-trait)). `.env(f)` replaces the process environment
 for `PATH` lookups (tests).
 
@@ -24,7 +24,7 @@ for `PATH` lookups (tests).
   toolset with `auth.oauth` signs each user in instead ([Each user's sign-in](#each-users-sign-in)):
   `connect_oauth` returns a `UserOAuthToolset`. OAuth client credentials are for remote channels.
 
-Errors are `giles_types::Error`, prefixed `toolset <instance>:`. `InvalidRequest` means retrying
+Errors are `doozers_types::Error`, prefixed `toolset <instance>:`. `InvalidRequest` means retrying
 won't help (the host can't sandbox, an invalid spec, the sandbox trampoline failing at launch with
 125 or macOS's 71, rejected credentials); `Unavailable` covers the rest (program not found, a server
 that fails to start or answer, an unreachable URL).
@@ -68,7 +68,7 @@ The server's `PATH` is the directory of `found`, then that of a program found th
 `/usr/bin:/bin`, so `#!/usr/bin/env node` finds the same `node` it would for the operator. Paths
 containing `..` (or `:`, for `PATH`) are left out; the spec refuses them.
 
-Configured `write` and `unix` grants can't touch a directory holding the `giles` binary, a plugin,
+Configured `write` and `unix` grants can't touch a directory holding the `doozers` binary, a plugin,
 or a toolset's command (config loading checks that). That doesn't cover script interpreters (the
 `#!` interpreter and a program found through `env`): their prefixes are granted read and execute
 here, but config loading doesn't know them, so a `write` grant on, say, a Node installation would
@@ -94,7 +94,7 @@ Like a plugin launch ([Plugin host](plugin-host.md)), without the gRPC parts:
   the names in `env`, and `path` from the plan. No `env`: MCP servers aren't Giles plugins and get
   no handshake variables.
 - Sandboxed: the spec goes to `run/sandbox/toolset/<instance>.json` (0600, atomically), and the
-  command is `giles sandbox-exec <spec> -- <program> <args>` with the `env` values set on the
+  command is `doozers sandbox-exec <spec> -- <program> <args>` with the `env` values set on the
   trampoline's process. The trampoline passes exactly those names on (the sandbox's
   [inherited variables](sandbox.md#environment)), so credentials never touch the spec file or
   `argv`.
@@ -115,7 +115,7 @@ Like a plugin launch ([Plugin host](plugin-host.md)), without the gRPC parts:
 ## Lifecycle
 
 `ToolsetHost::start(launcher, &registry)` runs in `serve` right after the registry is built
-([The `giles` Binary](daemon.md#giles-serve-lifecycle)). For each configured toolset it:
+([The `giles` Binary](daemon.md#doozers-serve-lifecycle)). For each configured toolset it:
 
 1. Looks up the [tool-list cache](#tool-list-cache) (stdio servers only) and offers a hit at once.
 2. Registers a `ManagedToolset` with `Registry::register_toolset`. It stays registered until the
@@ -241,7 +241,7 @@ and a replaced one starts over as `Starting`.
 
 `toolsets/manager.rs`: the remote MCP servers that the web UI manages are stored in the database
 ([Storage](storage.md#toolsets)), and `ToolsetManager` is the one place that changes them. There is
-one per core, built in `giles serve` after the host has started the toolsets of `giles.toml`. The
+one per core, built in `doozers serve` after the host has started the toolsets of `giles.toml`. The
 web pages, the admin RPCs, and the CLI call it; none touches the table, the live configuration, or
 the host. Both sources work side by side, and toolset names stay unique across them.
 
@@ -417,7 +417,7 @@ of that name returns.
 A toolset's name is its tool prefix and the start of the globs agents use in `tools` and `ask`, so
 `rename(old, new)` is more than a change to the row
 ([Instance rename](instance-rename.md#renaming-while-giles-runs) has the full account, and the
-offline `giles toolset rename` does the same for either kind of toolset while Giles is stopped).
+offline `doozers toolset rename` does the same for either kind of toolset while Giles is stopped).
 `rename_preview(old, new)` makes the checks and returns a `RenamePreview { agents }`, the
 `AgentGlobChange { agent, globs }` of every agent whose `tools` or `ask` globs would change, each
 `GlobChange { key, from, to }` with the list it is in (`tools` or `ask`) and the glob before and
@@ -468,8 +468,8 @@ the reason as `last_error`. Its `restart(kind, name)` accepts a failed stored to
 the toolset's credentials from the secret store again, validates the stored spec against the live
 configuration as startup did, and starts the toolset, or leaves it failed with the new reason.
 `retry` is public, and returns the `ToolsetView`. `ListPlugins` and `Status` list a runtime that the
-configuration doesn't have as a toolset, after the configured instances, so `giles status` shows the
-failed toolset and why. The fix is in the web UI, which needs Giles running: saving the toolset
+configuration doesn't have as a toolset, after the configured instances, so `doozers status` shows
+the failed toolset and why. The fix is in the web UI, which needs Giles running: saving the toolset
 again validates it and starts it (`update` on a failed toolset adds it), and removing it deletes the
 row.
 
@@ -516,18 +516,19 @@ failed write is logged.
   cached tools; `list_changed` reaches new snapshots and the cache, not running sessions; a `skills`
   directory is served by bare name and indexed for the agent with the prefix, its skill's files
   listed for `load_skill`.
-- `crates/giles/tests/serve.rs`: a stdio toolset that exits and an unreachable remote one are logged
-  and retried, with their tools registered (nothing pending) and `giles` running and stopping
+- `crates/doozers/tests/serve.rs`: a stdio toolset that exits and an unreachable remote one are
+  logged and retried, with their tools registered (nothing pending) and `giles` running and stopping
   cleanly. With stored toolsets, all remote, one valid and two that can't start (a bearer token from
   the environment, a name that `giles.toml` uses): `giles` runs, the valid one is started and
-  supervised, `giles status` lists the others as failed with their reasons, and the log names them.
-- `crates/giles-core/tests/toolsets.rs` (`harness = false`): the test binary is both the trampoline
-  and the server, found by name on a `PATH` through a link. It reports its environment, working
-  directory, and a TCP connect to a local listener on stderr. Sandboxed (Seatbelt on macOS, Landlock
-  where the kernel has it; elsewhere the launch is refused with the host check's message): exactly
-  the scrubbed variables plus the `env` names, the credential passed, the data directory as working
-  directory, the network denied, and with a `tcp:<port>` grant connected; the spec file is 0600 and
-  holds the grants and the credential's name but not its value. An attachment passed as
+  supervised, `doozers status` lists the others as failed with their reasons, and the log names
+  them.
+- `crates/doozers-core/tests/toolsets.rs` (`harness = false`): the test binary is both the
+  trampoline and the server, found by name on a `PATH` through a link. It reports its environment,
+  working directory, and a TCP connect to a local listener on stderr. Sandboxed (Seatbelt on macOS,
+  Landlock where the kernel has it; elsewhere the launch is refused with the host check's message):
+  exactly the scrubbed variables plus the `env` names, the credential passed, the data directory as
+  working directory, the network denied, and with a `tcp:<port>` grant connected; the spec file is
+  0600 and holds the grants and the credential's name but not its value. An attachment passed as
   `{"$media": "<id>"}` reaches the server as a path in its `TMPDIR` that it can read inside the
   sandbox, and the copy is gone after the call. Unsandboxed: the same environment, network open, the
   same media hand-over, and a copy a crash left behind removed at the next start (the server's own
@@ -568,8 +569,8 @@ failed write is logged.
   tests (`rename/tests.rs`) cover the offline rename of a stored toolset: the row and the agents'
   globs; the refusals; the case of a name; a failure undone with the row put back exactly; and a run
   that stopped after the row finished by running it again.
-- `crates/giles-core/tests/toolset_oauth.rs`, against a fake authorization server and an MCP server
-  whose tools depend on the account: a user signs in, and their tokens are stored, used, refreshed,
-  and deleted. With two users signed in, each is offered only the tools their own account lists, and
-  no one else gets any. The dispatcher's tests cover calling a per-user toolset's tool, which the
-  index doesn't list.
+- `crates/doozers-core/tests/toolset_oauth.rs`, against a fake authorization server and an MCP
+  server whose tools depend on the account: a user signs in, and their tokens are stored, used,
+  refreshed, and deleted. With two users signed in, each is offered only the tools their own account
+  lists, and no one else gets any. The dispatcher's tests cover calling a per-user toolset's tool,
+  which the index doesn't list.

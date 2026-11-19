@@ -1,0 +1,342 @@
+//! `doozers serve`: the daemon.
+
+use std::path::Path;
+use std::sync::Arc;
+
+use anyhow::Context;
+use doozers_core::admin::{
+    AdminListener, AdminOptions, AdminService, InstanceLock, MergedControl, PluginControl,
+    ToolsetAdmin,
+};
+use doozers_core::agent_loop::AgentLoop;
+use doozers_core::approvals::{ApprovalBoard, ChannelPresenter};
+use doozers_core::config::Config;
+use doozers_core::http;
+use doozers_core::paths::DataRoot;
+use doozers_core::plugin_host::{ChannelWiring, Launcher, PluginHost};
+use doozers_core::runtime::Runtime;
+use doozers_core::sandbox::{self, HostReport};
+use doozers_core::sessions::SystemClock;
+use doozers_core::toolsets::{ToolsetHost, ToolsetLauncher, ToolsetManager, ToolsetManagerOptions};
+use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
+
+use crate::cli::ServeArgs;
+use crate::shutdown;
+
+/// Resolves and creates the data root, takes its single-instance lock, loads the configuration,
+/// then runs the daemon until SIGINT or SIGTERM. A second daemon on the same data root and an
+/// invalid configuration fail before anything starts.
+pub fn run(home: Option<&Path>, _args: &ServeArgs) -> anyhow::Result<()> {
+    let root = DataRoot::from_env(home)?;
+    root.create_layout()?;
+    let lock = InstanceLock::acquire(&root)?;
+    let config = Config::load(&root)?;
+    // Once, here: the configuration is read only at startup.
+    for unknown in &config.unknown_keys {
+        warn!("{unknown}");
+    }
+    for ignored in config.ignored_toolset_tables() {
+        warn!("{ignored}");
+    }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("cannot start the async runtime")?
+        .block_on(serve(root, config, lock))
+}
+
+async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Result<()> {
+    let started_at = jiff::Timestamp::now();
+    let shutdown = CancellationToken::new();
+    shutdown::cancel_on_signal(shutdown.clone()).context("cannot install signal handlers")?;
+
+    if root.uses_socket_fallback() {
+        warn!(
+            socket_dir = %root.socket_dir().display(),
+            "the data root path is too long for Unix sockets; they go in a private temporary \
+             directory instead",
+        );
+    }
+    let sandbox = check_sandbox();
+    // The sandbox trampoline is this binary, run as `doozers sandbox-exec`.
+    let giles_exe = std::env::current_exe().context("cannot find the giles binary")?;
+    // The database, the blob store, and every component the configuration names.
+    let config = Arc::new(config);
+    let runtime = Runtime::start(root.clone(), config.clone()).await?;
+    // Every toolset, registered now with its cached tools (so resumed turns see them) and started
+    // in the background.
+    let toolsets = Arc::new(
+        ToolsetHost::start(
+            ToolsetLauncher::new(
+                root.clone(),
+                config.core.secret_key_file.clone(),
+                runtime.secrets.clone(),
+                giles_exe.clone(),
+                sandbox.clone().map(drop),
+                runtime.blobs.clone(),
+            ),
+            &runtime.registry,
+        )
+        .await,
+    );
+    // The toolsets stored in the database, validated and added beside the ones of `giles.toml`.
+    // One that fails isn't started and shows as failed; startup never fails on one. The manager is
+    // also what changes them while Giles runs. A rename rewrites agents' files, so it holds the
+    // lock that the agent manager holds for a change to an agent.
+    let agent_lock = Arc::new(tokio::sync::Mutex::new(()));
+    let toolset_manager = ToolsetManager::start(ToolsetManagerOptions {
+        store: runtime.store.clone(),
+        root: root.clone(),
+        secrets: runtime.secrets.clone(),
+        config: runtime.registry.live_config().clone(),
+        host: toolsets.clone(),
+        agent_lock: agent_lock.clone(),
+    })
+    .await
+    .context("cannot read the stored toolsets")?;
+    runtime.registry.log_summary();
+
+    let listener = http::bind(config.core.http_listen).await?;
+    let http_addr = listener
+        .local_addr()
+        .context("cannot read the HTTP listener's address")?;
+    // Login links point at the address actually bound (`http_listen` may say port 0).
+    #[cfg(feature = "channel-web")]
+    if let Some(web) = runtime.registry.web_channel() {
+        web.set_listen_addr(http_addr);
+    }
+    // The web channel's pages and its trusted-proxy listener, if `giles.toml` configures them.
+    #[cfg(feature = "channel-web")]
+    let web = doozers_core::channels::web::WebApp::from_runtime(&runtime, shutdown.clone());
+    #[cfg(feature = "channel-web")]
+    let proxy = match &web {
+        Some(web) => match web.bind_proxy(&root).await? {
+            Some(listener) => {
+                info!(at = %listener.describe(), "trusted-proxy listener open");
+                Some((listener, web.clone()))
+            }
+            None => None,
+        },
+        None => None,
+    };
+    // A fresh admin token and the admin socket (a stale one is safe to replace: we hold the lock).
+    let admin_listener = AdminListener::bind(&root, &lock)?;
+    // The outbox's sender: drops the approval prompts the previous process left (their approvals
+    // died with it), then delivers proactive sends as their channels come up.
+    runtime.start_outbox(shutdown.clone()).await?;
+    // Startup recovery, then every registered channel's events. The last step that can fail:
+    // recovery changes state and resumed turns run, so nothing may abort startup after it.
+    // Approval prompts get buttons in web chats and are sent as text everywhere else.
+    let approvals = Arc::new(ApprovalBoard::new(Arc::new(ChannelPresenter::new(
+        runtime.registry.clone(),
+    ))));
+    let runner = Arc::new(AgentLoop::from_runtime(&runtime, approvals.clone()));
+    let sessions = runtime
+        .start_sessions(runner.clone(), approvals, shutdown.clone())
+        .await?;
+    // Config and runtime jobs; their replies and approval prompts go through the outbox.
+    let scheduler = runtime.start_scheduler(sessions.clone(), runner, shutdown.clone());
+    // Removal of blobs nothing references any more, first a minute from now.
+    let blob_sweep = runtime.start_blob_sweep(shutdown.clone());
+    // Environment workspaces: idle ones stopped, abandoned ones deleted, and each plugin
+    // reconciled as it connects. It calls the plugins, so it stops before them.
+    let workspace_sweep = runtime.start_workspace_sweep(shutdown.clone());
+    // Plugin supervision (started below) and the admin service, built before the HTTP application:
+    // the web admin pages call the same service the admin socket serves.
+    let wiring = ChannelWiring {
+        registry: runtime.registry.clone(),
+        sessions: sessions.clone(),
+        blobs: runtime.blobs.clone(),
+    };
+    let plugins = Arc::new(PluginHost::new(
+        Launcher::new(root.clone(), giles_exe, sandbox.clone().map(drop)),
+        wiring,
+    ));
+    // Login links come from the built-in web channel, if one is configured.
+    #[cfg(feature = "channel-web")]
+    let login_links = runtime
+        .registry
+        .web_channel()
+        .map(|web| web as Arc<dyn doozers_core::admin::LoginLinks>);
+    #[cfg(not(feature = "channel-web"))]
+    let login_links = None;
+    let admin = Arc::new(AdminService::new(AdminOptions {
+        config: runtime.registry.live_config().clone(),
+        root: root.clone(),
+        blobs: runtime.blobs.clone(),
+        store: runtime.store.clone(),
+        sandbox,
+        started_at,
+        channels: Arc::new(sessions.clone()),
+        // The plugin host's channel plugins, the toolset host's toolsets, and the stored toolsets
+        // that failed to start, as one.
+        plugins: Some(Arc::new(MergedControl::new(vec![
+            plugins.clone() as Arc<dyn PluginControl>,
+            toolsets.clone() as Arc<dyn PluginControl>,
+            toolset_manager.clone() as Arc<dyn PluginControl>,
+        ]))),
+        login_links,
+        // Every toolset RPC goes through the manager, as the web pages do.
+        toolsets: Some(toolset_manager.clone() as Arc<dyn ToolsetAdmin>),
+        clock: Arc::new(SystemClock),
+    }));
+    let builder = http::RouterBuilder::new();
+    // The web channel's pages, with deleting a chat (refused while the session manager is working
+    // in it; it deletes the chat's workspaces), the admin pages over the admin service, the agent
+    // pages, which create, edit, and remove agents in the running configuration (the registry's,
+    // which the web app also reads), the route pages, which change the routes the router reads, and
+    // the toolset pages, which change the stored toolsets through the manager and show how each is
+    // doing from the admin service, and the workspaces page, which lists, stops, and deletes
+    // environment workspaces.
+    #[cfg(feature = "channel-web")]
+    let builder = match &web {
+        Some(web) => {
+            let manager = Arc::new(doozers_core::agents::AgentManager::new(
+                doozers_core::agents::AgentManagerOptions {
+                    registry: runtime.registry.clone(),
+                    store: runtime.store.clone(),
+                    memory_dbs: runtime.memory_dbs.clone(),
+                    routes: runtime.routes.clone(),
+                    jobs: runtime.jobs.clone(),
+                    activity: Arc::new(doozers_core::agents::DaemonActivity {
+                        sessions: sessions.clone(),
+                        scheduler: scheduler.clone(),
+                    }),
+                    lock: agent_lock.clone(),
+                },
+            ));
+            let builder = web.install_chat_deletion(
+                web.install(builder),
+                Arc::new(sessions.clone()),
+                runtime.workspaces.clone(),
+            );
+            let builder = web.install_agents(web.install_admin(builder, admin.clone()), manager);
+            let builder = web.install_routes(builder, runtime.routes.clone());
+            let builder = web.install_connections(builder, toolset_manager.clone());
+            let builder = web.install_toolsets(
+                builder,
+                toolset_manager.clone(),
+                admin.clone(),
+                runtime.registry.clone(),
+            );
+            web.install_workspaces(builder, runtime.workspaces.clone())
+        }
+        None => builder,
+    };
+    let app = builder.build();
+    // One task serves every listener. It returns when all have stopped (on shutdown), or at the
+    // first failure.
+    #[cfg(feature = "channel-web")]
+    let proxy_server = {
+        let (app, shutdown) = (app.clone(), shutdown.clone());
+        async move {
+            match proxy {
+                Some((listener, web)) => listener
+                    .serve(web.proxy_app(app), shutdown)
+                    .await
+                    .context("the trusted-proxy listener failed"),
+                None => Ok(()),
+            }
+        }
+    };
+    #[cfg(not(feature = "channel-web"))]
+    let proxy_server = async { anyhow::Ok(()) };
+    let main_server = {
+        let shutdown = shutdown.clone();
+        async move {
+            http::serve(listener, app, shutdown)
+                .await
+                .context("the HTTP server failed")
+        }
+    };
+    let mut http_server =
+        tokio::spawn(async move { tokio::try_join!(main_server, proxy_server).map(|_| ()) });
+    let admin_server = tokio::spawn(admin_listener.serve(admin, shutdown.clone()));
+    // Every configured plugin channel and environment, supervised: a channel is registered and
+    // attached to the sessions as it comes up, an environment is registered once it has answered
+    // `Info`, and both are relaunched with backoff when they fail. Startup waits for each first
+    // attempt and for the first start of each toolset of `giles.toml` (a failed toolset retries in
+    // the background; stored toolsets start in the background); a shutdown during startup stops
+    // waiting, and `stop_all` abandons the launches still running (killing their plugins).
+    tokio::select! {
+        _ = async { tokio::join!(plugins.start(&config), toolsets.started()) } => {}
+        () = shutdown.cancelled() => {}
+    }
+
+    info!(
+        version = env!("CARGO_PKG_VERSION"),
+        root = %root.root().display(),
+        admin_socket = %root.admin_socket().display(),
+        http = %format_args!("http://{http_addr}/"),
+        agents = config.agents.len(),
+        providers = config.providers.len(),
+        channels = config.channels.len(),
+        environments = config.environments.len(),
+        toolsets = runtime.registry.config().toolsets.len(),
+        "giles started",
+    );
+
+    // `biased`: once the token is cancelled the server returns promptly, so both branches can be
+    // ready together; that is a normal stop, not an early exit.
+    let early_exit = tokio::select! {
+        biased;
+        () = shutdown.cancelled() => None,
+        result = &mut http_server => Some(result),
+    };
+    if let Some(result) = early_exit {
+        // The server only returns on shutdown; stop everything else with it.
+        shutdown.cancel();
+        workspace_sweep.closed().await;
+        plugins.stop_all().await;
+        toolsets.stop().await;
+        stop_admin(admin_server).await;
+        result.context("the HTTP server panicked")??;
+        anyhow::bail!("the HTTP server stopped unexpectedly");
+    }
+    http_server.await.context("the HTTP server panicked")??;
+    // Running turns and job runs are cancelled with the token; wait for them, the channel pumps,
+    // the outbox's sender, the blob sweep, and the workspace sweep (which calls the environment
+    // plugins), then stop the plugins and their supervision, and the toolsets.
+    scheduler.closed().await;
+    sessions.closed().await;
+    runtime.outbox.closed().await;
+    blob_sweep.closed().await;
+    workspace_sweep.closed().await;
+    plugins.stop_all().await;
+    toolsets.stop().await;
+    stop_admin(admin_server).await;
+    info!("giles stopped");
+    // Held until here, so a new core can't start while this one still runs plugins.
+    drop(lock);
+    Ok(())
+}
+
+/// Waits for the admin server, which stops with the shutdown token (and removes its socket and
+/// token file). A failure only gets logged: the core is stopping anyway.
+async fn stop_admin(server: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>) {
+    match server.await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => warn!(error = %err, "the admin server failed"),
+        Err(err) => warn!(error = %err, "the admin server panicked"),
+    }
+}
+
+/// Checks and logs whether this host can sandbox plugins (PLAN section 12.1). Only a warning:
+/// unsandboxed instances still start, and the plugin host refuses each sandboxed one with this
+/// error. The admin service's `Status` reports the result.
+fn check_sandbox() -> Result<HostReport, String> {
+    match sandbox::check_host() {
+        Ok(report) => {
+            info!(%report, "plugin sandbox available");
+            Ok(report)
+        }
+        Err(err) => {
+            warn!(
+                error = %err,
+                "plugin sandbox unavailable on this host; sandboxed plugins will not start",
+            );
+            Err(err.to_string())
+        }
+    }
+}

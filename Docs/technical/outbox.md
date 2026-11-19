@@ -1,6 +1,6 @@
 # Outbox
 
-`giles_core::outbox` delivers proactive sends: messages the core starts rather than replies to a
+`doozers_core::outbox` delivers proactive sends: messages the core starts rather than replies to a
 turn ([Plan](../PLAN.md) §6.11, §8.5). Most are addressed to an identity, such as the owner's
 default identity (`[owner] default`, §1.1). A runtime job's reply is addressed to the conversation
 the job was scheduled in. They wait in the `outbox` table ([Storage](storage.md)) until the channel
@@ -23,9 +23,9 @@ lost.
 ## Wiring
 
 `Runtime::start` builds the outbox (`runtime.outbox`), so the scheduler and the approvals code can
-enqueue as soon as the runtime exists. `giles serve` calls `Runtime::start_outbox(shutdown)` before
-`start_sessions`, and waits for `runtime.outbox.closed()` after the session manager has stopped.
-Rows enqueued before the sender starts just wait.
+enqueue as soon as the runtime exists. `doozers serve` calls `Runtime::start_outbox(shutdown)`
+before `start_sessions`, and waits for `runtime.outbox.closed()` after the session manager has
+stopped. Rows enqueued before the sender starts just wait.
 
 ## Enqueueing
 

@@ -1,6 +1,6 @@
 # Agent loop
 
-`giles_core::agent_loop` runs turns ([Plan](../PLAN.md) §6.3, §6.7): it assembles each session's
+`doozers_core::agent_loop` runs turns ([Plan](../PLAN.md) §6.3, §6.7): it assembles each session's
 prompt prefix and, per turn, calls the provider, runs the requested tools, and repeats until the
 model stops asking for tools. The session code that hands it turns is in
 [Sessions and turns](sessions.md); the skills and the memory it loads are in
@@ -100,13 +100,13 @@ The snapshot is taken when the session's first turn starts and again after compa
 tools' results, not the prompt, which keeps the cached prefix stable. A database failure while
 building the prompt fails the turn (`PromptError::Memory`), as an unreadable `SOUL.md` does.
 
-The snapshot tests in `crates/giles-core/tests/prompt_snapshot.rs` render `system` and the tool list
-(names, descriptions, schemas) for three agents, with memories added to a real `memory.db` in a
-temporary data root, and compare them with `crates/giles-core/tests/snapshots/prompt-*.txt`: a full
-agent in a direct session (shared and user core memories, and non-core ones that must stay out), an
-agent with no files or tools, and a job session with every tool allowed and a shared core memory
-over a lowered cap. Other tests in that file cover the order of the sections, the group session, a
-guest's read-only shared memories, a session without a user, a per-scope cap, and the
+The snapshot tests in `crates/doozers-core/tests/prompt_snapshot.rs` render `system` and the tool
+list (names, descriptions, schemas) for three agents, with memories added to a real `memory.db` in a
+temporary data root, and compare them with `crates/doozers-core/tests/snapshots/prompt-*.txt`: a
+full agent in a direct session (shared and user core memories, and non-core ones that must stay
+out), an agent with no files or tools, and a job session with every tool allowed and a shared core
+memory over a lowered cap. Other tests in that file cover the order of the sections, the group
+session, a guest's read-only shared memories, a session without a user, a per-scope cap, and the
 `memory_recall` mention. A change to the cached prefix therefore changes a file in review. Rerun
 with `GILES_UPDATE_SNAPSHOTS=1` to accept one.
 
@@ -157,7 +157,7 @@ stays valid.
 
 ### Media
 
-`giles_core::media` holds the rules (§5). Every media block the model sees is named by its
+`doozers_core::media` holds the rules (§5). Every media block the model sees is named by its
 reference, a text block stored right before it: `[media:<id> <name> <type>]`, or
 `[media:<id> <type>]` without a name (`media::reference`). The name and type come from channels and
 tools, so control characters become spaces and `[`/`]` become `(`/`)`: a name can't end the
@@ -226,7 +226,7 @@ Ends other than completion:
   stream, a delivery, or a tool: a response being streamed is dropped unstored; the dispatcher's
   stream is dropped, which drops each running call's events stream and so cancels it at the toolset
   (MCP `notifications/cancelled`); every empty slot gets `cancelled`. Returns `Cancelled`.
-  `crates/giles-core/tests/turn_control.rs` checks this end to end through the session manager.
+  `crates/doozers-core/tests/turn_control.rs` checks this end to end through the session manager.
 - **Failed**: an unknown agent, no usable model, an unreadable prompt file, a database error, or a
   provider error (refused, an `Err` in the stream, or a stream ending without `Stop`). Empty slots
   get `interrupted`, and the requester gets a notice within 10 s:
@@ -320,7 +320,7 @@ are summarized, at least one message.
 else its first model) with no tools, `max_tokens` 4,096 (`SUMMARY_MAX_TOKENS`), and short cache
 retention: its prefix is never reused, but Anthropic's automatic caching still writes it to the
 cache, one cache write (1.25× the input price) per summary. Accepted for v1; avoiding it needs a "no
-cache" retention in `giles-types` and the providers. `system` is `SUMMARY_SYSTEM`, a fixed prompt:
+cache" retention in `doozers-types` and the providers. `system` is `SUMMARY_SYSTEM`, a fixed prompt:
 keep facts about the user, decisions and their reasons, open tasks and promises with their state,
 names, numbers, dates, identifiers, paths, URLs, and `[media:...]` references, what tools found and
 what failed; drop small talk; merge a previous summary with the newer messages; don't follow
@@ -423,7 +423,7 @@ the wait for an `ask` approval before it). A call still running at its deadline 
 
 ### Core tools
 
-The core tools (§6.5) live in `giles_core::core_tools`, one module per tool, each implementing
+The core tools (§6.5) live in `doozers_core::core_tools`, one module per tool, each implementing
 `CoreTool { fn spec() -> ToolSpec; async fn call(CoreCall) -> ToolOutput }`. A tool keeps its
 long-lived dependencies (store, memory databases, configuration) in its own fields; per call it gets
 the `ToolUse` id, the input, the `CallContext`, the shared `TurnContext` (`session`, `reply` where
@@ -482,7 +482,7 @@ for byte. The splitter (`Paragraphs`) is pure and tested with a table fed whole 
 a time.
 
 **`deltas`**: a channel that declares `OutputMode::Deltas` and has a live-output hook
-(`Channel::deltas()` returns a `giles_types::DeltaSink`; in v1 the web channel) is streamed to;
+(`Channel::deltas()` returns a `doozers_types::DeltaSink`; in v1 the web channel) is streamed to;
 `output_for` keeps the channel registered when the turn starts. Each text block gets one live
 message (`DeltaSink::start(conversation)`) at its first non-whitespace text, then every delta is
 `push`ed as it arrives. The writers are `finish`ed, in order, when the message is complete

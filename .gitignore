@@ -4,4 +4,4 @@
 /giles-home/
 /.env
 /compose.override.yaml
-/giles-environment-docker.toml
+/doozers-environment-docker.toml

@@ -1,7 +1,7 @@
 # Sessions and turns
 
-`giles_core::sessions` takes every channel event from the stream to a turn ([Plan](../PLAN.md) §4.5,
-§6.2, §6.3, §8.5): classify, store, ack, then act. It owns the per-session turn queue, `/new`,
+`doozers_core::sessions` takes every channel event from the stream to a turn ([Plan](../PLAN.md)
+§4.5, §6.2, §6.3, §8.5): classify, store, ack, then act. It owns the per-session turn queue, `/new`,
 `/stop`, `/env reset`, `idle_reset`, startup recovery, dedupe-key pruning, and the latest status of
 each channel. The agent loop plugs in as a `TurnRunner`; the decision before anything is stored is
 [Identity and routing](identity-and-routing.md); the tables are in [Storage](storage.md).
@@ -23,7 +23,7 @@ each channel. The agent loop plugs in as a `TurnRunner`; the decision before any
 
 ## Wiring
 
-`giles serve` calls `Runtime::start_sessions(runner, approvals, shutdown)` after `Runtime::start`
+`doozers serve` calls `Runtime::start_sessions(runner, approvals, shutdown)` after `Runtime::start`
 and binding the HTTP listener: it's the last startup step that can fail, since recovery changes
 state and resumed turns start running. It builds the `Router` from `[owner]` and the routes
 `Runtime::start` loaded (`Runtime::routes`), passes the registry's `LiveConfig` as the
@@ -170,7 +170,7 @@ never pruned.
 ## Channel status
 
 The latest `ChannelEvent::Status` of each instance is kept in memory with the time it arrived, for
-`giles status` and the admin pages: `Sessions::channel_status(instance)` and
+`doozers status` and the admin pages: `Sessions::channel_status(instance)` and
 `Sessions::channel_statuses()`. Nothing is stored; a restarted channel reports its state again.
 
 ## Time and tests

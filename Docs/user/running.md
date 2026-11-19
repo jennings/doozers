@@ -11,17 +11,17 @@ repository asks for.
 ```sh
 git clone https://github.com/jennings/giles
 cd giles
-cargo install --locked --path crates/giles
+cargo install --locked --path crates/doozers
 ```
 
-This puts the `giles` binary in `~/.cargo/bin/`. You can also
+This puts the `doozers` binary in `~/.cargo/bin/`. You can also
 [run Giles in a Linux container](container.md).
 
 ## The data root
 
 Giles keeps everything in one directory, the data root. It uses the first of these that's set:
 
-1. `--home <DIR>`, accepted by every subcommand: `giles serve --home /srv/giles`.
+1. `--home <DIR>`, accepted by every subcommand: `doozers serve --home /srv/giles`.
 2. The `GILES_HOME` environment variable.
 3. `~/.giles`.
 
@@ -44,7 +44,7 @@ The data root looks like this:
   cache/            caches Giles can rebuild
 ```
 
-[Backups](backups.md) explains `giles backup` and the snapshot Giles takes before an upgrade.
+[Backups](backups.md) explains `doozers backup` and the snapshot Giles takes before an upgrade.
 
 Giles regularly deletes stored attachments that nothing refers to anymore. Attachments in your
 conversations are never removed this way.
@@ -56,10 +56,10 @@ commands the same data root path so they find it.
 ## Running the daemon
 
 ```sh
-giles serve
+doozers serve
 ```
 
-`giles serve` runs in the foreground and logs to standard error. It reads its
+`doozers serve` runs in the foreground and logs to standard error. It reads its
 [configuration](configuration.md) from `giles.toml` and every `agents/<agent>/agent.toml`. The
 smallest valid `giles.toml` declares the owner:
 
@@ -77,7 +77,7 @@ reason, and retried with a growing delay of up to 5 minutes. Some failures can't
 retrying, such as rejected credentials or a host that can't sandbox. Those are logged once, and the
 toolset isn't retried until you restart it on the [admin page](web.md#admin-pages) or restart Giles.
 
-Only one `giles serve` can use a data root at a time. A second one exits at once with
+Only one `doozers serve` can use a data root at a time. A second one exits at once with
 `giles is already running with the data root ... as pid <pid>`. To run more than one Giles on a
 machine, give each its own data root.
 
@@ -93,7 +93,7 @@ still waiting for an answer are answered after the restart.
 
 ## The web interface
 
-`giles serve` also runs a web server, by default on `http://127.0.0.1:8080/`. The `giles started`
+`doozers serve` also runs a web server, by default on `http://127.0.0.1:8080/`. The `giles started`
 log line shows the address, for example `http=http://127.0.0.1:8080/`. To change it, set
 [`core.http_listen`](configuration.md#core) in `giles.toml`:
 
@@ -103,20 +103,20 @@ http_listen = "127.0.0.1:9090"
 ```
 
 The default only accepts connections from the same machine. If the address is already in use,
-`giles serve` fails at startup with `cannot listen for HTTP on <address>`.
+`doozers serve` fails at startup with `cannot listen for HTTP on <address>`.
 
 The web interface does not handle TLS, and Giles is very new software.
 **Do not expose it to the public Internet**. Using [Tailscale](https://www.tailscale.com) to make it
 available to your network is recommended.
 
 With a [web channel](web.md) configured, the home page is your list of chats. The
-[admin pages](web.md#admin-pages) at `/admin` show what `giles status` shows, including the QR code
-of a channel waiting to be linked. Without a web channel, the server only shows that Giles is
+[admin pages](web.md#admin-pages) at `/admin` show what `doozers status` shows, including the QR
+code of a channel waiting to be linked. Without a web channel, the server only shows that Giles is
 running.
 
 ## Plugins
 
-`giles serve` starts every channel plugin and restarts one that exits or stops answering, with a
+`doozers serve` starts every channel plugin and restarts one that exits or stops answering, with a
 growing delay of up to 5 minutes.
 
 Restarting doesn't help with some failures:
@@ -139,7 +139,8 @@ sandbox needs:
 - **macOS:** `/usr/bin/sandbox-exec`, able to apply a sandbox profile. It can't when Giles itself
   runs inside another sandbox that forbids it.
 
-`giles serve` checks this at startup and logs the result. Check the second line of `giles status`:
+`doozers serve` checks this at startup and logs the result. Check the second line of
+`doozers status`:
 
 ```text
 Plugin sandbox: Landlock ABI 6 and seccomp filters
@@ -161,8 +162,8 @@ To run a plugin without a sandbox, set `channel.<name>.unsandboxed = true` in `g
 Giles logs at the `info` level by default. To change that, set `GILES_LOG` to a filter:
 
 ```sh
-GILES_LOG=debug giles serve
-GILES_LOG=info,giles=debug giles serve
+GILES_LOG=debug doozers serve
+GILES_LOG=info,doozers=debug doozers serve
 ```
 
 `RUST_LOG` works too, but `GILES_LOG` wins. The filter syntax is that of `tracing-subscriber`'s

@@ -5,8 +5,8 @@ plugin is the gRPC server on its end, inherited as fd 3; the core is the client 
 socket is ever bound or listened on, and there is exactly one HTTP/2 connection per plugin launch.
 
 This page records how that works with `tonic`, as established by the transport spike. The regression
-test `crates/giles-core/tests/grpc_socketpair.rs` pins every behavior described here; if an upgrade
-changes one, that test fails and this page needs updating.
+test `crates/doozers-core/tests/grpc_socketpair.rs` pins every behavior described here; if an
+upgrade changes one, that test fails and this page needs updating.
 
 Versions verified: `tonic` 0.14.6 (with `tonic-health` and `tonic-prost` 0.14.6), `hyper` 1,
 `hyper-util` 0.1.21, `tokio` 1.54, on macOS arm64 and Linux arm64 (kernel 6.12).

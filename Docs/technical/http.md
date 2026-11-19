@@ -1,14 +1,14 @@
 # HTTP server
 
 The core runs one HTTP server (PLAN section 9) for web chat, the admin pages, and the login flow. It
-lives in `giles_core::http`, is built on `axum`, renders pages with `askama` templates compiled into
-the binary, and ships its JavaScript (`htmx`, its SSE extension, and one small script of our own for
-the new-agent form) inside the binary too. There is no build step. TLS is terminated by a reverse
-proxy, never by Giles.
+lives in `doozers_core::http`, is built on `axum`, renders pages with `askama` templates compiled
+into the binary, and ships its JavaScript (`htmx`, its SSE extension, and one small script of our
+own for the new-agent form) inside the binary too. There is no build step. TLS is terminated by a
+reverse proxy, never by Giles.
 
 ## Lifecycle
 
-`giles serve` (see [The `giles` Binary](daemon.md#giles-serve-lifecycle)):
+`doozers serve` (see [The `giles` Binary](daemon.md#doozers-serve-lifecycle)):
 
 1. `http::bind(config.core.http_listen)` opens the listener before `giles started` is logged, so a
    busy or forbidden address is a startup error: `cannot listen for HTTP on <addr>` with the OS
@@ -57,8 +57,8 @@ Rules for a module's `routes(..) -> axum::Router`:
 
 ## Pages and templates
 
-Templates live in `crates/giles-core/templates/` (askama's default directory) and are compiled into
-the binary by `#[derive(askama::Template)]`; a template error is a compile error.
+Templates live in `crates/doozers-core/templates/` (askama's default directory) and are compiled
+into the binary by `#[derive(askama::Template)]`; a template error is a compile error.
 
 `layout.html` is the base every page extends. It has four blocks:
 
@@ -208,8 +208,8 @@ How handlers interact with the layer:
 
 ## Tests
 
-`crates/giles-core/src/http/tests.rs` (router-level with `tower::ServiceExt::oneshot`, plus real
-servers on `127.0.0.1:0`) and `crates/giles/tests/serve.rs` (the daemon end to end):
+`crates/doozers-core/src/http/tests.rs` (router-level with `tower::ServiceExt::oneshot`, plus real
+servers on `127.0.0.1:0`) and `crates/doozers/tests/serve.rs` (the daemon end to end):
 
 - Every response has every header: pages, assets, `HEAD`, 404s (including unknown `/static/` paths),
   405s, and merged routes; a merged handler's own policy is kept next to the base and its
@@ -222,5 +222,5 @@ servers on `127.0.0.1:0`) and `crates/giles/tests/serve.rs` (the daemon end to e
 - A real server answers over TCP and returns once the token is cancelled; a request that never
   finishes doesn't hold shutdown past the drain deadline; a busy address fails `bind` with the
   address in the message.
-- `giles serve` answers on `core.http_listen`, stops listening when it exits, and fails at startup
+- `doozers serve` answers on `core.http_listen`, stops listening when it exits, and fails at startup
   when the address is taken.

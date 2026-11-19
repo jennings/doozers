@@ -1,6 +1,6 @@
 # Discord channel
 
-The design of `giles-channel-discord`, the Discord channel plugin (PLAN sections 3.3, 8.5, and 10;
+The design of `doozers-channel-discord`, the Discord channel plugin (PLAN sections 3.3, 8.5, and 10;
 tracked in [issue #12](https://github.com/jennings/giles/issues/12)). A bot account receives direct
 messages (DMs) over the Discord Gateway and sends over the REST API, as a separate process on the
 plugin SDK ([Plugin SDK](plugin-sdk.md)).
@@ -47,7 +47,7 @@ crate outside the repository, for `x86_64-unknown-linux-gnu`, normal (non-dev) d
 | Repository activity | `current` (the 0.12 line): last commit 2026-05-13. `next` (an unreleased, breaking 0.13): commits up to 2026-10-24 | `main`: commits up to 2026-10-20, 83 since the 0.17.1 tag | `tokio-tungstenite` pushed 2026-10-24 |
 | MSRV | 1.74 | 1.89 | 1.85 |
 | Licence of the crates | ISC | ISC | MIT (and the repo's existing tree) |
-| TLS | `rustls_backend`: `reqwest` 0.12 on `ring`, plus `tokio-tungstenite` 0.21 on **rustls 0.22** and `rustls-webpki` 0.102 | `rustls` 0.23 with `webpki-roots`; needs a process-wide crypto provider | Whatever `giles_plugin_sdk::tls` builds: bundled roots, `aws-lc-rs` |
+| TLS | `rustls_backend`: `reqwest` 0.12 on `ring`, plus `tokio-tungstenite` 0.21 on **rustls 0.22** and `rustls-webpki` 0.102 | `rustls` 0.23 with `webpki-roots`; needs a process-wide crypto provider | Whatever `doozers_plugin_sdk::tls` builds: bundled roots, `aws-lc-rs` |
 | Crates in the tree | 153 (27 not already in `Cargo.lock`) | 88 (11 new) | 127 (5 new, two of them `tungstenite` and `tokio-tungstenite`) |
 | Cold dev build of the dependencies | 24 s | 17 s | 16 s |
 | Gateway work done for us | Identify, heartbeat, resume, rate limit, close-code policy, in a `Client` that owns the loop and the event handler | The same, in `Shard`, a plain `Stream` | None: all of it is ours |
@@ -91,7 +91,7 @@ What twilight costs, and how it is contained:
   pass a `ClientConfig`), and `twilight-http` takes `webpki-roots`, not `webpki-root-certs`. Both
   are the Mozilla root program compiled in (CDLA-Permissive-2.0, a licence already in the tree),
   never the OS store, so the property that matters, "bundled roots, the same on every host", holds;
-  only the crate that carries the list differs from `giles_plugin_sdk::tls`.
+  only the crate that carries the list differs from `doozers_plugin_sdk::tls`.
 - **Crypto provider.** With default features off, `rustls` needs a process-default provider, and the
   lock holds both `ring` and `aws-lc-rs`, so rustls would refuse to guess (`Connector::new()` panics
   without a default provider). The plugin's `main` installs
@@ -108,7 +108,7 @@ What twilight costs, and how it is contained:
   versioned (API v10, which the plugin pins) and does not change underneath it.
 - **A second HTTP client.** `twilight-http` is not a general HTTP client, so downloading a CDN
   attachment ([Attachments](#attachments)) uses `reqwest`, already a workspace dependency, with
-  `tls_certs_only` and the SDK's roots like `giles_core::net::tls_client_builder`. The CDN is not
+  `tls_certs_only` and the SDK's roots like `doozers_core::net::tls_client_builder`. The CDN is not
   the API, so it has no bucket to rate limit.
 - **Strict models.** `twilight-model` fails a whole event it can't deserialize. A MESSAGE_CREATE
   that doesn't parse is logged by event type only (never the body) and costs the live copy of one
@@ -117,8 +117,8 @@ What twilight costs, and how it is contained:
   is fetched again later: the channel's mark moves on with the next message, and the channel id of a
   live event that doesn't parse isn't known to re-fetch it ([Catch-up](#catch-up)).
 
-Feature set (one manifest, `plugins/giles-channel-discord`; nothing joins `[workspace.dependencies]`
-except what a second crate would share):
+Feature set (one manifest, `plugins/doozers-channel-discord`; nothing joins
+`[workspace.dependencies]` except what a second crate would share):
 
 ```toml
 twilight-gateway = { version = "0.17.1", default-features = false, features = [
@@ -627,7 +627,7 @@ Gateway, and the CDN are all HTTPS or secure WebSocket on that port), plus its d
 
 ## Packaging
 
-The binary is in the container image: `giles-channel-discord` is in the `bins` list of the
+The binary is in the container image: `doozers-channel-discord` is in the `bins` list of the
 `Dockerfile`, and the image smoke test checks that the file is there
 ([Container image](container-image.md), [Continuous integration](ci.md)). No image-level change is
 needed beyond that, because of how plugins start:
@@ -636,7 +636,7 @@ needed beyond that, because of how plugins start:
   `component = "discord"`, [Plugin host](plugin-host.md)), so an image with no Discord instance
   never starts the plugin and never contacts Discord. The CI smoke test configures none.
 - The plugin has no configuration of its own outside `giles.toml`: a missing or malformed `token`
-  fails `Configure` and the instance stays down with the message in the log and in `giles status`.
+  fails `Configure` and the instance stays down with the message in the log and in `doozers status`.
 - Its one file, `discord-state.json`, lives in the instance's data directory
   (`data/channel/<instance>/`, which is on the `/data` volume), next to the SDK's own state
   (`giles-sdk/`).
@@ -728,7 +728,7 @@ What issues #15 to #18 built: the crate, the configuration, the Gateway connecti
 conversation or to a user, and the handling of a rejected token (#17); and attachments in both
 directions (#18). Issue #19 packaged and documented the plugin ([Packaging](#packaging)).
 
-`plugins/giles-channel-discord` is a library and a binary (`publish = false`, `MIT OR Apache-2.0`
+`plugins/doozers-channel-discord` is a library and a binary (`publish = false`, `MIT OR Apache-2.0`
 like the workspace; the new dependencies are listed under [Dependencies](#dependencies)). The
 library exists so that the integration tests in `tests/` can reach the channel and the fake client,
 as the IRC plugin's do; nothing in it is an API for anyone else.
@@ -1125,7 +1125,7 @@ for the plugin, no `ring` in its tree, and no duplicate of anything heavy (the d
 ### Running the tests
 
 ```sh
-cargo test -p giles-channel-discord
+cargo test -p doozers-channel-discord
 ```
 
 No test contacts Discord, and none needs a token or a network beyond loopback.

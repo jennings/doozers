@@ -1,10 +1,10 @@
 # Writing a plugin
 
-This page shows how to write a channel plugin in Rust with the `giles-plugin-sdk` crate.
+This page shows how to write a channel plugin in Rust with the `doozers-plugin-sdk` crate.
 
 Channels other than the built-in web chat are plugins. A channel plugin is a binary named
-`giles-channel-<name>`, found in `<GILES_HOME>/plugins/` or on `PATH`. Giles starts one process for
-each configured instance.
+`doozers-channel-<name>`, found in `<GILES_HOME>/plugins/` or on `PATH`. Giles starts one process
+for each configured instance.
 
 Model providers are built in for now. Toolsets are ordinary MCP servers and need no SDK.
 
@@ -17,7 +17,7 @@ Giles sends the plugin the instance's `config` table with secrets already filled
 reads `giles.toml` or `secrets.toml`, and never listens on a socket.
 
 The SDK handles the connection to Giles. You write a type that implements the `Channel` trait from
-`giles-types`. It says what the channel can do, produces inbound events, takes acks, and sends
+`doozers-types`. It says what the channel can do, produces inbound events, takes acks, and sends
 messages.
 
 ## A minimal channel
@@ -26,13 +26,13 @@ messages.
 
 ```toml
 [package]
-name = "giles-channel-example"
+name = "doozers-channel-example"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 futures = "0.3"
-giles-plugin-sdk = "0.1"
+doozers-plugin-sdk = "0.1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -43,10 +43,10 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 use std::process::ExitCode;
 
 use futures::stream::{self, BoxStream, StreamExt as _};
-use giles_plugin_sdk::giles_types::{
+use doozers_plugin_sdk::doozers_types::{
     Channel, ChannelEvent, ChannelInfo, EventId, MessageId, OutboundMessage, OutputMode, Result,
 };
-use giles_plugin_sdk::{ChannelPlugin, Configure, async_trait};
+use doozers_plugin_sdk::{ChannelPlugin, Configure, async_trait};
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -111,14 +111,14 @@ that it's a Giles plugin and exits. An operator can also run it as a
 ## The pieces
 
 `ChannelPlugin::new(name, version)` describes the plugin. `name` is the `<name>` in
-`giles-channel-<name>`. Its builder methods are:
+`doozers-channel-<name>`. Its builder methods are:
 
 - `output`: `Blocks` for chat services without message edits, `Deltas` for live streaming. For now,
   plugin channels get `blocks` output either way, and only the built-in web channel streams.
 - `can_initiate`: whether the channel can message an identity that hasn't written first. Scheduled
   jobs and login codes need it.
-- `requested_grants`: sandbox grants to suggest to the operator. They're shown in `giles status` and
-  never applied by themselves.
+- `requested_grants`: sandbox grants to suggest to the operator. They're shown in `doozers status`
+  and never applied by themselves.
 
 Call `run(configure)` first thing in `main` and return its exit code. `configure` runs when Giles
 sends the instance config.
@@ -150,8 +150,8 @@ Report the connection's state with `ChannelEvent::Status`:
 
 - `Connected`
 - `Error`
-- `NeedsAuth`, with a QR code, pair code, or URL that `giles status` and the admin pages show to the
-  operator
+- `NeedsAuth`, with a QR code, pair code, or URL that `doozers status` and the admin pages show to
+  the operator
 
 ## Attachments
 
@@ -200,8 +200,8 @@ and discards anything written to stdout. A line that starts with a timestamp and
 The same channel can run on another machine. You start it yourself, and Giles connects to it over
 the network as a [remote plugin](configuration.md#remote-plugins).
 
-A plugin built with `run` already does this: `giles-channel-example serve` takes its listen address,
-data directory, TLS files, and token from flags or a file, as
+A plugin built with `run` already does this: `doozers-channel-example serve` takes its listen
+address, data directory, TLS files, and token from flags or a file, as
 [Running a plugin on another machine](remote-plugins.md) describes. The plugin's own settings still
 come from the instance's `config` in `giles.toml`.
 
@@ -209,7 +209,7 @@ For your own command line, call `serve_remote` instead of `run`. The rest of `sr
 above, and `tokio` needs its `net` feature:
 
 ```rust
-use giles_plugin_sdk::{RemoteAuth, RemoteServer, tls};
+use doozers_plugin_sdk::{RemoteAuth, RemoteServer, tls};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {

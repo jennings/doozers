@@ -1,15 +1,15 @@
 # Web channel
 
-The built-in web channel (PLAN sections 9 and 10) is `giles_core::channels::web`, behind the Cargo
-feature `channel-web` (default on, forwarded by the `giles` crate). It has two halves:
+The built-in web channel (PLAN sections 9 and 10) is `doozers_core::channels::web`, behind the Cargo
+feature `channel-web` (default on, forwarded by the `doozers` crate). It has two halves:
 
-- `WebChannel` implements `giles_types::Channel` with
+- `WebChannel` implements `doozers_types::Channel` with
   `ChannelInfo { identity_namespace: "web", output: Deltas, can_initiate: false }`. It's built by
   the registry's built-in channel builder (`WebChannel::from_instance`, see
   [Registry and startup](registry.md)), registered like any channel, and attached to the session
   manager by `Runtime::start_sessions` with the other registered channels. At most one instance may
   use the component.
-- `WebApp` is its HTTP side on the core's server ([HTTP Server](http.md)): `giles serve` builds it
+- `WebApp` is its HTTP side on the core's server ([HTTP Server](http.md)): `doozers serve` builds it
   with `WebApp::from_runtime(&runtime, shutdown)` (from `Registry::web_channel()`, the typed handle;
   it also spawns the hourly expired-session cleanup) and `web.install(RouterBuilder::new())`, which
   replaces the placeholder `/` with the chat list and merges the other routes, all behind the
@@ -152,7 +152,7 @@ scrubbed of secrets):
 ### Login links
 
 `WebChannel::create_login_link(&UserId, now) -> Result<LoginLink { url, expires_at }, LoginLinkError>`
-is what `giles admin login-link --user` calls over the admin service (2.24; the registry's
+is what `doozers admin login-link --user` calls over the admin service (2.24; the registry's
 `web_channel()` gives the typed channel). It refuses anyone but the owner (`UnknownUser`) and an
 owner without a `web:<user>` identity (`NoWebIdentity`: the router would drop their messages). The
 link is `<link base>/login/<token>`, 256 random bits as 64 hex digits, valid for `LOGIN_LINK_TTL`
@@ -196,8 +196,8 @@ there.
   `check_socket_dir`, then `DataRoot::proxy_socket()` (`run/proxy.sock` or the `$TMPDIR` fallback).
   An existing socket that accepts a connection is `InUse` (another Giles); a stale one is removed;
   anything that isn't a socket is `NotASocket` and left alone. The new socket is chmod 0600 (the
-  directory is 0700 already). For TCP, a plain bind. `giles serve` binds it before `start_sessions`,
-  so a failure stops startup, and logs `trusted-proxy listener open at=<where>`.
+  directory is 0700 already). For TCP, a plain bind. `doozers serve` binds it before
+  `start_sessions`, so a failure stops startup, and logs `trusted-proxy listener open at=<where>`.
 - `WebApp::proxy_app(app)` wraps the main listener's whole application: the Unix socket marks every
   request; TCP first compares the SHA-256 of the secret header with the configured secret's and
   answers a bare 403 (logged) on a mismatch. `ProxyListener::serve(app, shutdown)` serves it like
@@ -250,8 +250,8 @@ open event stream, no live message, no unanswered prompt, no `Arc` held elsewher
 in use, not every chat since the start.
 
 - `Channel::send(OutboundMessage)` appends a whole message: the Markdown through
-  `giles_plugin_sdk::render::html` with `is_local_image` (raw HTML escaped, remote images dropped),
-  then the attachments (raster images inline from `/blobs/<id>`, anything else as a link).
+  `doozers_plugin_sdk::render::html` with `is_local_image` (raw HTML escaped, remote images
+  dropped), then the attachments (raster images inline from `/blobs/<id>`, anything else as a link).
   `SendTarget::Recipient` is `InvalidRequest`: the channel can't start conversations.
 - `Channel::deltas()` returns the channel itself as a `DeltaSink` (the contract is in
   [Message Model and Traits](message-model.md#channel)). `start(conversation)` appends an empty live
@@ -474,9 +474,9 @@ but change only in `agent.toml` ([Scheduler](scheduler.md)).
 ## Admin pages
 
 PLAN sections 8.7 and 10; code in `admin.rs` (pages) and `qr.rs` (QR codes). The admin pages are a
-client of the admin service ([Admin service](admin.md)), like `giles status`, but in-process:
+client of the admin service ([Admin service](admin.md)), like `doozers status`, but in-process:
 `WebApp::install_admin(builder, admin: Arc<dyn AdminService>)` takes the generated `giles.admin.v1`
-server trait, and `giles serve` passes the same `Arc<AdminService>` it serves on the admin socket
+server trait, and `doozers serve` passes the same `Arc<AdminService>` it serves on the admin socket
 (`AdminListener::serve` takes the `Arc`). So the pages show exactly what the CLI shows, and there's
 no token to handle: the socket's token keeps local processes (plugins included) out of the service,
 and these routes are guarded by the web login instead. Tests pass a fake implementation of the
@@ -519,7 +519,7 @@ features: no image crate) and draws the modules itself as one `<path>` of rectan
 horizontal run of dark modules, on a white square with the four-module quiet zone, so it scans on a
 dark page too. The `<svg>` is inlined in the page (not an `<img>`: it's the code the page was
 rendered with), and uses presentation attributes only, which the CSP allows. The payload never
-appears in the markup; a payload too long for a QR code shows a note pointing at `giles status`,
+appears in the markup; a payload too long for a QR code shows a note pointing at `doozers status`,
 which prints it.
 
 Escaping: every string from the admin service (plugin errors, versions, channel errors, pair codes,
@@ -534,7 +534,7 @@ In `agents.rs`: `web.install_agents(builder, Arc<agents::AgentManager>)`, which 
 `LiveConfig`, offers a new agent at once). Like the admin pages: the same authentication middleware,
 `may_administer` (the owner only; a guest gets 403, no login 401) on every route including the POST
 (except the memory page's, see [Memory page](#memory-page)), `no-store` on every answer, and
-`check_csrf` on the POST. Unlike them, they call the core directly (`giles_core::agents`) rather
+`check_csrf` on the POST. Unlike them, they call the core directly (`doozers_core::agents`) rather
 than the admin service: there are no agent RPCs yet (PLAN section 8.7).
 
 - The list reads the running configuration: id, label (`Name (id)`), models, and links to the page
@@ -814,7 +814,7 @@ handlers don't assume it, and a test signs in as another user.
   to `/admin/agents/<agent>/memory?done=added|saved|forgotten[#memory-<id>]`; the page maps the
   fixed `done` codes to a notice and ignores any other value, so a link can't put text on the page.
 - **Refusals** re-render the page (nothing was written) with a status and a message, mapped from
-  `giles_store::Error`: `UnknownMemory` 404 (the same for an id that is invisible or gone),
+  `doozers_store::Error`: `UnknownMemory` 404 (the same for an id that is invisible or gone),
   `SharedWriteForbidden` 403, `MemoryTooLong` and `InvalidRequest` 400, `StaleMemory` and
   `CoreCapExceeded` 409; any other error is a logged 500. An add keeps what was typed in the form;
   an edit shows what was typed in a `<pre>`. `CoreCapExceeded` says how far over the cap the scope
@@ -1019,7 +1019,7 @@ answer is `no-store`.
 
 ## Templates and styles
 
-Templates are in `crates/giles-core/templates/web/`, and the design they follow is in
+Templates are in `crates/doozers-core/templates/web/`, and the design they follow is in
 [Web interface design](web-ui.md). Every page for a signed-in user extends `app.html`, which extends
 `layout.html` and adds the sidebar, the top bar of narrow screens, and the navigation `<dialog>`
 (opened by an invoker button, `command="show-modal"`, so it needs no script). `nav.html` is the
@@ -1042,7 +1042,7 @@ Every form also works as a plain form post. Styles are classes in `assets/giles.
 
 ## Tests
 
-`crates/giles-core/src/channels/web/tests.rs` (router-level with `tower::ServiceExt::oneshot`, a
+`crates/doozers-core/src/channels/web/tests.rs` (router-level with `tower::ServiceExt::oneshot`, a
 temporary store; the chat tests inject a `WebUser`, the login tests go through the real middleware),
 plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `links.rs`,
 `proxy.rs`, `admin.rs`, `qr.rs`:
@@ -1094,8 +1094,8 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
 - Proxy: the identity header ignored on the main listener and honored on the proxy app, unknown
   identities refused, posts carry the header's identity and need its CSRF token; a TCP listener
   needs the exact secret; binding (socket mode 0600, `InUse`, stale socket replaced, non-socket left
-  alone). `crates/giles/tests/serve.rs` runs the daemon with a proxy socket and checks it over real
-  connections, and that the socket is gone after exit.
+  alone). `crates/doozers/tests/serve.rs` runs the daemon with a proxy socket and checks it over
+  real connections, and that the socket is gone after exit.
 - Admin pages (`tests/admin.rs`, over a fake admin service): anonymous requests get 401 and a
   non-owner 403 on every admin route, with nothing restarted; the status page shows the fake state
   with plugin strings escaped and no reload; a `NeedsAuth` QR channel gets an `<svg>` (a new
@@ -1105,7 +1105,7 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   status summary has the tool count; restarting needs the CSRF token (field or header), works for a
   toolset, and shows the service's `NOT_FOUND` escaped; every admin answer, refusals and redirects
   included, is `no-store`. `qr.rs` checks that the SVG draws exactly the code's dark modules inside
-  the quiet zone, and that an oversized payload is an error. `crates/giles/tests/serve.rs` checks
+  the quiet zone, and that an oversized payload is an error. `crates/doozers/tests/serve.rs` checks
   that the daemon serves `/admin` from its own admin service, behind the login.
 - Route pages (`tests/routes.rs`, over the test configuration): anonymous requests get 401 and a
   non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF

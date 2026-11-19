@@ -59,9 +59,9 @@ v1 channels:
 | Channel  | Packaging                | Receive                   | Send |
 | -------- | ------------------------ | ------------------------- | ---- |
 | Web      | Built-in                 | HTTP and server-sent events | Same |
-| IRC      | `giles-channel-irc`      | IRC connection            | IRC  |
-| Email    | `giles-channel-email`    | IMAP with IDLE            | SMTP |
-| WhatsApp | `giles-channel-whatsapp` | WhatsApp Web multi-device | Same |
+| IRC      | `doozers-channel-irc`      | IRC connection            | IRC  |
+| Email    | `doozers-channel-email`    | IMAP with IDLE            | SMTP |
+| WhatsApp | `doozers-channel-whatsapp` | WhatsApp Web multi-device | Same |
 
 - Other services (Telegram and so on) are added later as channel plugins.
 - The agent writes Markdown. Each channel renders it into its own format.
@@ -175,8 +175,8 @@ Plugins come in three kinds with little overlap. One plugin never mixes kinds.
 
 | Kind     | What it is                          | Protocol |
 | -------- | ----------------------------------- | -------- |
-| Provider | `giles-provider-<name>` binary      | gRPC     |
-| Channel  | `giles-channel-<name>` binary       | gRPC     |
+| Provider | `doozers-provider-<name>` binary      | gRPC     |
+| Channel  | `doozers-channel-<name>` binary       | gRPC     |
 | Toolset  | Any MCP server, by `command` or URL | MCP      |
 
 gRPC plugins:
@@ -191,7 +191,7 @@ gRPC plugins:
 - Remote plugins run elsewhere, managed by the user. The core connects over TCP, with TLS
   recommended over a network, and authenticates with a bearer token or OAuth client credentials.
 - Proto packages are versioned, and changes within a major version are additive only.
-- A plugin SDK (`giles-plugin-sdk`) handles the plugin side for plugins written in Rust.
+- A plugin SDK (`doozers-plugin-sdk`) handles the plugin side for plugins written in Rust.
 
 ## Feature: sandboxing
 

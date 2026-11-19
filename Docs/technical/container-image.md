@@ -22,21 +22,21 @@ only when the pin changes. Protobuf code generation uses the vendored `protoc` (
 [Cargo workspace](workspace.md)); no system `protoc` is installed.
 
 It then copies the context and runs `cargo build --release --locked` for the binaries the image
-ships: `giles`, `giles-channel-irc`, `giles-channel-email`, `giles-channel-whatsapp`,
-`giles-channel-discord`, and `giles-environment-docker`. `giles-channel-echo` is a test-only plugin
-and stays out. The list is the `bins` variable in that `RUN` step; a new first-party plugin is added
-there.
+ships: `giles`, `doozers-channel-irc`, `doozers-channel-email`, `doozers-channel-whatsapp`,
+`doozers-channel-discord`, and `doozers-environment-docker`. `doozers-channel-echo` is a test-only
+plugin and stays out. The list is the `bins` variable in that `RUN` step; a new first-party plugin
+is added there.
 
-The same step builds `giles-workspace-helper`, the static Linux helper that the Docker environment
+The same step builds `doozers-workspace-helper`, the static Linux helper that the Docker environment
 plugin copies into the containers it creates ([Docker environment](environment-docker.md)). The
 plugin needs one built for the architecture of the engine it talks to. The engine isn't known at
 build time, and the plugin in this image reaches an engine on another machine as a remote plugin, so
 the image carries the helper for its own architecture. The step builds it for
 `$(uname -m)-unknown-linux-musl` (`x86_64` or `aarch64`), a statically linked binary that runs in
-any container image, and installs it as `giles-workspace-helper-<arch>`. The musl targets come from
-`rust-toolchain.toml`, and `.cargo/config.toml` (which `.dockerignore` lets into the context) links
-them with `rust-lld`, so the build stage needs no cross C toolchain. The helper's name doesn't start
-with `giles-environment-`, which keeps plugin discovery from taking it for a plugin.
+any container image, and installs it as `doozers-workspace-helper-<arch>`. The musl targets come
+from `rust-toolchain.toml`, and `.cargo/config.toml` (which `.dockerignore` lets into the context)
+links them with `rust-lld`, so the build stage needs no cross C toolchain. The helper's name doesn't
+start with `doozers-environment-`, which keeps plugin discovery from taking it for a plugin.
 
 Three BuildKit cache mounts keep rebuilds incremental: the Cargo registry and git checkouts
 (`/usr/local/cargo/registry` and `/usr/local/cargo/git`) and `target/`. Each has a fixed `id` and
@@ -92,12 +92,12 @@ configured instance keeps its catch-up state (`discord-state.json`) in
 
 `EXPOSE 8080` documents the web port; `giles.toml` must still set `http_listen = "0.0.0.0:8080"`,
 since the default listens on loopback only. The entrypoint is `tini -- giles` with `serve` as the
-default command, so the container runs `giles serve`, and arguments after the image name replace the
-subcommand (`docker run --rm <image> --version`).
+default command, so the container runs `doozers serve`, and arguments after the image name replace
+the subcommand (`docker run --rm <image> --version`).
 
 The OCI labels name the source repository (which links a GitHub Container Registry package to it),
 the title, a description, and the license: `(MIT OR Apache-2.0) AND AGPL-3.0-only`. The repository
-is `MIT OR Apache-2.0`, except `plugins/giles-channel-whatsapp`, which is `AGPL-3.0-only`
+is `MIT OR Apache-2.0`, except `plugins/doozers-channel-whatsapp`, which is `AGPL-3.0-only`
 ([Licensing](whatsapp.md#licensing)); the image ships that binary, so its label names both. The CI
 label override in `ci.yml` sets the same expression, since GitHub's own repository license detection
 would otherwise replace it.
@@ -106,24 +106,24 @@ would otherwise replace it.
 (`LICENSE-AGPL-3.0`), and `THIRD-PARTY`, which names the AGPL component of the WhatsApp plugin and
 is the source offer for its binary: the repository at the image's commit (the
 `org.opencontainers.image.revision` label, set by the CI metadata step) and the pinned
-`whatsapp-rust` revision. The files come from the repository (`plugins/giles-channel-whatsapp/` for
-the last two), and the smoke test checks that they're in the image.
+`whatsapp-rust` revision. The files come from the repository (`plugins/doozers-channel-whatsapp/`
+for the last two), and the smoke test checks that they're in the image.
 
 ## The Docker environment image
 
-`plugins/giles-environment-docker/Dockerfile` builds a second image,
-`ghcr.io/jennings/giles-environment-docker`, with the same build context. It runs the Docker
+`plugins/doozers-environment-docker/Dockerfile` builds a second image,
+`ghcr.io/jennings/doozers-environment-docker`, with the same build context. It runs the Docker
 environment plugin in `serve` mode ([Plugin SDK](plugin-sdk.md)) for a Giles core to reach with
 `address`, so the engine socket is mounted into the plugin's container and never into Giles's.
 
 - **Build stage.** The same Rust base and pinned toolchain. It builds only
-  `giles-environment-docker` and `giles-workspace-helper`, the helper for both `x86_64` and
+  `doozers-environment-docker` and `doozers-workspace-helper`, the helper for both `x86_64` and
   `aarch64` (`<arch>-unknown-linux-musl`, linked by `rust-lld`). The plugin picks the helper for the
   engine's architecture, which can differ from the image's: the published amd64 image runs under
   emulation on an arm64 Docker Desktop. Its `target/` cache mount has its own id, so the two builds
   don't queue on one lock.
 - **Runtime stage.** `debian:bookworm-slim` with `tini`, the binaries in `/usr/local/bin/`, and the
-  licenses. The entrypoint is `giles-environment-docker serve --listen 0.0.0.0:7443 --data /data`;
+  licenses. The entrypoint is `doozers-environment-docker serve --listen 0.0.0.0:7443 --data /data`;
   arguments such as `--config <file>` are appended, and flags win over the file's `listen` and
   `data`. The token comes from `GILES_ENVIRONMENT_DOCKER_TOKEN` or `token_file`.
 - **Root.** The process runs as root. Its power comes from the mounted socket, and an unprivileged
@@ -139,7 +139,7 @@ The `.dockerignore` keeps this Dockerfile out of the context, so editing it does
 ## Compose file
 
 `compose.yaml` at the repository root runs both images as the services `giles` and
-`giles-environment-docker` on the project's default network, where Giles reaches the plugin by its
+`doozers-environment-docker` on the project's default network, where Giles reaches the plugin by its
 service name over plain HTTP
 ([Running in a container](../user/container.md#run-giles-with-docker-compose)).
 Each service names its published image and the Dockerfile that builds it, so `docker compose up`
@@ -153,7 +153,7 @@ pulls the images and `--build` builds them from the checkout, tagged with the pu
 - **SELinux.** The plugin's service sets `label=disable`, which the socket needs on SELinux hosts
   and other hosts ignore.
 - **Data root.** `./giles-home` is bind-mounted at `/data`. It, `.env`, `compose.override.yaml`, and
-  `giles-environment-docker.toml` are in `.gitignore`.
+  `doozers-environment-docker.toml` are in `.gitignore`.
 
 ## The sandbox in a container
 

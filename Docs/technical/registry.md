@@ -1,22 +1,22 @@
 # Registry and startup
 
-`giles_core::registry` maps configured instance names to the trait objects that serve them (PLAN
+`doozers_core::registry` maps configured instance names to the trait objects that serve them (PLAN
 sections 4.1, 7.2, and 13.3), and holds the prefixed tool index, the per-agent skill index, and
-model resolution. `giles_core::runtime` builds it at startup together with the stores.
+model resolution. `doozers_core::runtime` builds it at startup together with the stores.
 
 ## Startup
 
 `Runtime::start(root, Arc<Config>)` runs after the configuration is loaded and the sandbox host
-check has run ([The `giles` Binary](daemon.md#giles-serve-lifecycle)):
+check has run ([The `giles` Binary](daemon.md#doozers-serve-lifecycle)):
 
-1. Open the database, `data/giles.db` (`giles_store::Store::open_with`, which migrates it) in the
+1. Open the database, `data/giles.db` (`doozers_store::Store::open_with`, which migrates it) in the
    configured `[core] journal_mode`, with the pre-migration backup hook
    ([Storage](storage.md#journal-modes)).
 2. Open the blob store, `data/blobs` (`BlobStore::open`).
 3. `MemoryDbs::new(root, journal_mode)`, the registry of the per-agent memory databases
    (`agents/<agent>/memory.db`). Nothing is opened here: each database opens on first use, in the
    same journal mode ([Skills and Memory](skills-and-memory.md#memorydbs)).
-4. `Registry::from_config(root, config, media)` with `media` a `giles_core::blobs::BlobMedia` over
+4. `Registry::from_config(root, config, media)` with `media` a `doozers_core::blobs::BlobMedia` over
    the blob store.
 
 `serve` then registers the toolsets (the [toolset host](toolsets.md#lifecycle)) and calls
@@ -27,7 +27,7 @@ check has run ([The `giles` Binary](daemon.md#giles-serve-lifecycle)):
 `outbox` (built here, its sender started by `start_outbox`; [Outbox](outbox.md)), and `workspaces`
 (the [workspace service](environments.md); `start` settles what the previous process left with
 `Workspaces::recover`, and its sweep starts with `start_workspace_sweep`). Errors are a `StartError`
-(`Store`, `Blobs`, `Registry`, `Workspaces`, and later `Sessions`, `Outbox`); `giles serve` prints
+(`Store`, `Blobs`, `Registry`, `Workspaces`, and later `Sessions`, `Outbox`); `doozers serve` prints
 it and exits.
 
 ## The running configuration
@@ -206,7 +206,7 @@ model.
 
 ## Blob media
 
-`giles_core::blobs::BlobMedia` implements `providers::MediaSource` over the blob store. A read opens
-the blob (`NotFound` if it isn't stored), reads at most one byte more than its recorded size (enough
-to reach end of file, where the reader checks the SHA-256, without reading an unbounded amount), and
-fails unless it got exactly the recorded size.
+`doozers_core::blobs::BlobMedia` implements `providers::MediaSource` over the blob store. A read
+opens the blob (`NotFound` if it isn't stored), reads at most one byte more than its recorded size
+(enough to reach end of file, where the reader checks the SHA-256, without reading an unbounded
+amount), and fails unless it got exactly the recorded size.

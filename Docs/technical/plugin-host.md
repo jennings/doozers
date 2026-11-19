@@ -1,9 +1,9 @@
 # Plugin host
 
-Code: `crates/giles-core/src/plugin_host/` (`giles_core::plugin_host`). Design: PLAN sections 4.3,
-7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 8.3, 8.5, 11.6, 12.1, 12.4, and 13.4. The plugin side of the same
-steps is the [Plugin SDK](plugin-sdk.md); the wire setup is [Plugin transport](plugin-transport.md);
-the trampoline is the [Plugin sandbox](sandbox.md).
+Code: `crates/doozers-core/src/plugin_host/` (`doozers_core::plugin_host`). Design: PLAN sections
+4.3, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 8.3, 8.5, 11.6, 12.1, 12.4, and 13.4. The plugin side of the
+same steps is the [Plugin SDK](plugin-sdk.md); the wire setup is
+[Plugin transport](plugin-transport.md); the trampoline is the [Plugin sandbox](sandbox.md).
 
 The plugin host launches gRPC channel plugins (provider plugins aren't supported in v1). It takes a
 configured `[channel.<instance>]` without `address` from its binary to a configured plugin, wraps
@@ -38,7 +38,7 @@ process group before the error returns.
 6. A per-launch token: 32 bytes from the OS (`getrandom`), as 64 hex digits.
 7. The spawn (below). The token is written to stdin as one line, and stdin stays open.
 8. The handshake line: one line of at most 256 bytes from stdout within 10 s, parsed with
-   `giles_proto::handshake::HandshakeLine::parse`; the protocol it names must be one the core
+   `doozers_proto::handshake::HandshakeLine::parse`; the protocol it names must be one the core
    offered. After the line, a task drains stdout and ignores it.
 9. The gRPC connection over the core's end of the socket pair (below).
 10. `Describe` (10 s): `core_protocol_minor` 0 and no `core_features` (v1 has no optional features
@@ -92,10 +92,10 @@ inherits the core's environment and builds the plugin's scrubbed one itself. Wit
 level on every launch, and runs `<binary> socket` itself with exactly the environment the trampoline
 would give it (`sandbox::scrubbed_env`) and the data directory as working directory.
 
-`socket` (`giles_proto::handshake::SOCKET_COMMAND`) is the plugin's only argument. It tells a plugin
-built on `ChannelPlugin::run` that the core launched it and that fd 3 is its socket; the same binary
-run with `serve` is a [remote plugin](#remote-plugins). A plugin built before `run` ignores the
-argument ([Plugin SDK](plugin-sdk.md#version-skew)).
+`socket` (`doozers_proto::handshake::SOCKET_COMMAND`) is the plugin's only argument. It tells a
+plugin built on `ChannelPlugin::run` that the core launched it and that fd 3 is its socket; the same
+binary run with `serve` is a [remote plugin](#remote-plugins). A plugin built before `run` ignores
+the argument ([Plugin SDK](plugin-sdk.md#version-skew)).
 
 In the child, between `fork` and `exec` (`pre_exec`, async-signal-safe calls only):
 
@@ -130,12 +130,12 @@ whole directory. The trampoline adds `GILES_PLUGIN_DATA`, `HOME`, `TMPDIR`, `PAT
 `PluginProcess` owns the child, its stdin, its pid file, and the stderr task:
 
 - stderr is read line by line (lines cut at 4 KiB), scrubbed, and logged with target
-  `giles_core::plugin_host::stderr` under the launch's span, so the target marks the line as the
+  `doozers_core::plugin_host::stderr` under the launch's span, so the target marks the line as the
   plugin's text. A line that starts with a timestamp and a level
-  (`2026-10-29T16:04:17.522027Z  WARN giles_core::x: text`) is logged at that level with the
+  (`2026-10-29T16:04:17.522027Z  WARN doozers_core::x: text`) is logged at that level with the
   timestamp dropped, e.g.
-  `WARN channel{name=irc}:launch: giles_core::plugin_host::stderr: giles_core::x: text`. Any other
-  line is logged at `info`. The last 20 lines are kept for error messages (`stderr_tail`).
+  `WARN channel{name=irc}:launch: doozers_core::plugin_host::stderr: doozers_core::x: text`. Any
+  other line is logged at `info`. The last 20 lines are kept for error messages (`stderr_tail`).
 - `wait()` and `exit_status()`: when the plugin has exited, `SIGKILL` to the rest of its process
   group, then reap it. Children can outlive the plugin, and this is the only moment the group can be
   signalled safely after the plugin is gone: the exit is observed without reaping (`waitid` with
@@ -295,7 +295,7 @@ registers its new `RemoteChannel` and attaches it to the session manager. The di
 - Every failure is retried with backoff (1 s doubling to 5 min), whatever `is_retryable` says: the
   core can't see the plugin being started, upgraded, or restarted with another config, so it never
   waits in `Failed`. While it's down, the instance has no channel registered (or a stale one that
-  fails every call), and `giles status` shows `backing off` with the last error.
+  fails every call), and `doozers status` shows `backing off` with the last error.
 - A crash is the connection closing (`the plugin disconnected`); a failed health check stops
   (disconnects) and reconnects the same way.
 - Stopping, at shutdown or for a restart request, is `RemotePlugin::stop`.
@@ -303,17 +303,17 @@ registers its new `RemoteChannel` and attaches it to the session manager. The di
 ## RemoteChannel
 
 `RemoteChannel::new(&LaunchedPlugin, BlobStore, max_blob)` (or `from_remote(&RemotePlugin, ...)`)
-implements `giles_types::Channel` over the plugin's `ChannelService` (PLAN sections 4.3, 8.3, 8.5).
-One is built per launch or connection. Conversions are `giles_plugin_sdk::convert`, the SDK's own
-rules, so the two sides can't disagree (`giles-core` depends on `giles-plugin-sdk` with only its
-`tls` feature); they move fields rather than clone.
+implements `doozers_types::Channel` over the plugin's `ChannelService` (PLAN sections 4.3, 8.3,
+8.5). One is built per launch or connection. Conversions are `doozers_plugin_sdk::convert`, the
+SDK's own rules, so the two sides can't disagree (`doozers-core` depends on `doozers-plugin-sdk`
+with only its `tls` feature); they move fields rather than clone.
 
 - `info()`: the identity namespace from `Configure`, `output` and `can_initiate` from the `Describe`
   capabilities.
 - `events()` opens `Events`. Its request half carries the acks: `ack(id)` sends `EventAck` on the
   newest stream, which the session manager calls only after storing the event (see
   [Sessions](sessions.md)). Status events pass through as `ChannelEvent::Status`, which the session
-  manager records for `giles status`.
+  manager records for `doozers status`.
 - An event that fails conversion, including one with an unknown variant (a newer protocol's `oneof`
   decodes as none), is logged, acked by its `event_id`, and skipped (PLAN section 7.8), and its
   attachments are released unfetched. A response with no event at all has no id to ack and is
@@ -404,7 +404,7 @@ interrupts any wait at once.
 
 ### Status
 
-`PluginHost::statuses()` and `status(instance)` return `PluginStatus`, for `giles status` and the
+`PluginHost::statuses()` and `status(instance)` return `PluginStatus`, for `doozers status` and the
 admin service:
 
 ```rust
@@ -439,7 +439,7 @@ channel (`false` for any other kind: the host supervises channels only). `serve`
 the binary's SHA-256, the instance's config hash (`ChannelInstance::config_hash`, taken before
 secrets are resolved), and the answer with its version. Each launch rewrites it. Before each launch,
 and at each binary check, supervision looks up the entry for the binary and config at hand and shows
-it in `PluginStatus::describe` (with `describe_cached`) until the plugin is up, so `giles status`
+it in `PluginStatus::describe` (with `describe_cached`) until the plugin is up, so `doozers status`
 can show the requested grants of a plugin that is failing or backing off. The lookup can't know the
 version before a launch, so it matches the binary and the config and returns the version recorded
 with them. A damaged file is a miss. The cache keeps one directory per kind, so instances of
@@ -449,7 +449,7 @@ different kinds with one name never share a file.
 
 `PluginHost::new(launcher, ChannelWiring { registry, sessions, blobs })` and then `start(&config)`
 start supervising every plugin channel after the sessions start, and return once each has had its
-first launch attempt, before `giles started` (see [The `giles` binary](daemon.md)). Each launched
+first launch attempt, before `giles started` (see [The `doozers` binary](daemon.md)). Each launched
 plugin is wired at once by `ChannelWiring::attach(&plugin, max_blob)` (a remote one by
 `attach_remote`): its `RemoteChannel` is registered with `Registry::register_channel` (so replies
 and `Registry::pending` see it) and attached with
@@ -469,12 +469,12 @@ and the health check is of `giles.environment.v1.EnvironmentService`. `PluginHos
 the kind.
 
 `EnvironmentAttach` wraps the plugin in a `RemoteEnvironment`, which implements
-`giles_types::Environment` with the SDK's conversions. It calls `Info` (10 s) after each successful
-`Configure` and then `Registry::register_environment(instance, client, info)`. A failed `Info` fails
-the launch, retried if the error is `Unavailable`. When a plugin ends (shutdown, restart, crash, or
-a failed check), supervision calls `Launch::ended`, which calls `Registry::unregister_environment`,
-so an environment is reachable only while its plugin is. Dropping the stream `exec` returns drops
-the gRPC call, which cancels it.
+`doozers_types::Environment` with the SDK's conversions. It calls `Info` (10 s) after each
+successful `Configure` and then `Registry::register_environment(instance, client, info)`. A failed
+`Info` fails the launch, retried if the error is `Unavailable`. When a plugin ends (shutdown,
+restart, crash, or a failed check), supervision calls `Launch::ended`, which calls
+`Registry::unregister_environment`, so an environment is reachable only while its plugin is.
+Dropping the stream `exec` returns drops the gRPC call, which cancels it.
 
 The registry exposes `environment(name)` and `environments()` as `EnvironmentEntry` (name,
 description, `stop_after`, `delete_after`, `options_schema`, `connections`, `client`,
@@ -507,36 +507,36 @@ description, `stop_after`, `delete_after`, `options_schema`, `connections`, `cli
   plugin and during a backoff, and the `Describe` cache shown while the plugin is down (only for the
   binary it came from). `describe_cache.rs` unit tests: matching on binary and config, rewriting,
   mode 0600, a damaged file.
-- `crates/giles-core/tests/plugin_host.rs`: shell scripts as plugins (and as a fake trampoline):
+- `crates/doozers-core/tests/plugin_host.rs`: shell scripts as plugins (and as a fake trampoline):
   handshake timeout, malformed line, unoffered protocol, exit 76, an early exit with scrubbed stderr
   under the instance span and exactly the scrubbed environment, a trampoline exiting 125 (and the
   spec file it got), the host check refusing sandboxed instances, a missing binary, a group kill
   after a failed `Describe`, and orphan cleanup that spares an unrelated process.
-- `plugins/giles-channel-echo/tests/host.rs`: the echo plugin end to end, unsandboxed: `Describe`,
+- `plugins/doozers-channel-echo/tests/host.rs`: the echo plugin end to end, unsandboxed: `Describe`,
   `Configure` with a resolved secret, the data directory and pid file, health over the connection,
   `stop`, a rejected config (scrubbed), a binary installed under another name, and stdin
   end-of-file.
-- `plugins/giles-channel-echo/tests/remote_channel.rs`: the echo plugin as a channel of a running
+- `plugins/doozers-channel-echo/tests/remote_channel.rs`: the echo plugin as a channel of a running
   core (runtime, sessions with a recording turn runner, `PluginHost`): an injected message becomes a
   turn, is acked (the SDK's spool empties), and the reply reaches `Send`; a status event is
   recorded; attachments both ways (two events sharing bytes, released afterwards; `PutBlob` read
   back by the plugin); an attachment over `max_blob` left out with a note; registration clears
   `pending()`, and `stop_all` stops everything.
-- `plugins/giles-channel-echo/tests/supervision.rs`: a plugin killed with `SIGKILL` is relaunched
+- `plugins/doozers-channel-echo/tests/supervision.rs`: a plugin killed with `SIGKILL` is relaunched
   and its new channel carries messages both ways; a restart request does the same; a plugin exiting
   76 is `Failed` until a restart request finds a working binary; the `Describe` cache is written and
   shown (`describe_cached`) when the same binary and config then fail to start; the admin service
   (over `run/admin.sock`) shows the running plugin's state, pid, version, binary, and requested
   grants, and `RestartPlugin` relaunches it.
-- `plugins/giles-channel-echo/tests/host_sandbox.rs`: the echo plugin through the trampoline (the
-  test binary acting as `giles sandbox-exec`, since Cargo gives that package no path to `giles`): a
-  working sandboxed launch where the host can sandbox (macOS, Linux with Landlock); on a Linux
+- `plugins/doozers-channel-echo/tests/host_sandbox.rs`: the echo plugin through the trampoline (the
+  test binary acting as `doozers sandbox-exec`, since Cargo gives that package no path to `giles`):
+  a working sandboxed launch where the host can sandbox (macOS, Linux with Landlock); on a Linux
   kernel without Landlock, a clean non-retryable failure with the trampoline's message.
-- `crates/giles/tests/serve.rs`: `giles serve` with plugins that fail to launch (one through the
+- `crates/doozers/tests/serve.rs`: `doozers serve` with plugins that fail to launch (one through the
   real trampoline, refused by `min_abi = 1000` on Linux and by its missing `/bin/sh` grant on macOS)
   keeps running, logs the retryable one's backoff and the other as waiting for a new binary, and
   stops cleanly; a shutdown signal while a plugin launches exits at once and kills the plugin.
-- `plugins/giles-channel-echo/tests/remote.rs`: the echo binary as a remote plugin on `127.0.0.1`
+- `plugins/doozers-channel-echo/tests/remote.rs`: the echo binary as a remote plugin on `127.0.0.1`
   (`serve --listen`) of a running core: a bearer token, messages both ways, `Running` without a pid
   or binary; stopping the core leaves the plugin running, and the next core (configuring it again)
   gets the message that arrived in between; a wrong token backing off with `UNAUTHENTICATED`; an

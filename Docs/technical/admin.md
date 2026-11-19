@@ -1,15 +1,15 @@
 # Admin service
 
-`giles_core::admin` serves `giles.admin.v1.AdminService` (PLAN section 8.7,
-[gRPC Protocols](protocols.md)) on the admin socket. The `giles` CLI is its client over the socket;
-the web admin pages are another, calling the same `Arc<AdminService>` in-process behind the web
-login ([Web Channel](web-channel.md#admin-pages)).
+`doozers_core::admin` serves `giles.admin.v1.AdminService` (PLAN section 8.7,
+[gRPC Protocols](protocols.md)) on the admin socket. The `doozers` CLI is its client over the
+socket; the web admin pages are another, calling the same `Arc<AdminService>` in-process behind the
+web login ([Web Channel](web-channel.md#admin-pages)).
 
 ## One core per data root
 
-`giles serve` takes `InstanceLock::acquire` right after creating the data root's layout, before it
+`doozers serve` takes `InstanceLock::acquire` right after creating the data root's layout, before it
 loads the configuration: an exclusive, non-blocking `flock` on `run/giles.lock` (mode 0600), into
-which it then writes its pid. A second `giles serve` on the same data root fails at once with
+which it then writes its pid. A second `doozers serve` on the same data root fails at once with
 `giles is already running with the data root <root> as pid <pid> ...` and touches nothing beyond
 creating the layout: not the database, not the plugins' pid files, not the socket.
 
@@ -106,15 +106,15 @@ The manager stores only remote servers. A spec without `url` (a stdio server, wh
 
 `RenameToolset` takes `old` and `new`. `old` matches ignoring case, and `NOT_FOUND` and
 `FAILED_PRECONDITION` (a toolset of `giles.toml`) are about it. For a toolset of `giles.toml` the
-message says to stop Giles first and run `giles toolset rename <old> <new>`, which renames it
+message says to stop Giles first and run `doozers toolset rename <old> <new>`, which renames it
 offline ([Instance rename](instance-rename.md#renaming-while-giles-runs)). The manager's checks and
 steps, and the undo of a failed step, are in [Toolsets](toolsets.md#stored-toolsets). The response's
 agents are the manager's `ToolsetRenamed::agents`, ordered by agent id, and its `old` is
 `ToolsetRenamed::from`, the name the toolset had as stored.
 
-### `giles toolset`
+### `doozers toolset`
 
-The CLI (`crates/giles/src/toolset.rs`) is a client of these RPCs. `show` prints the spec after an
+The CLI (`crates/doozers/src/toolset.rs`) is a client of these RPCs. `show` prints the spec after an
 `# updated_at = <RFC 3339 time>` comment. `set` reads that comment from the file, wherever it is,
 and sends the time as `expected_updated_at`, so editing what `show` wrote can't overwrite a change
 made meanwhile. A file without the comment replaces whatever is there, or creates the toolset. When
@@ -169,7 +169,7 @@ pub struct PluginRuntime {
     pub restarts: u32,
     pub last_error: Option<String>,
     pub version: Option<String>,
-    pub requested_grants: Option<giles_proto::plugin::v1::SandboxGrants>,
+    pub requested_grants: Option<doozers_proto::plugin::v1::SandboxGrants>,
     pub tool_count: Option<u32>, // toolsets only
 }
 

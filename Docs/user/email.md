@@ -1,6 +1,6 @@
 # Email
 
-The email channel, `giles-channel-email`, gives an agent a mailbox. It watches one IMAP folder for
+The email channel, `doozers-channel-email`, gives an agent a mailbox. It watches one IMAP folder for
 new mail and answers by SMTP, in the same thread.
 
 ## Adding an instance
@@ -153,8 +153,8 @@ sends in a Sent folder.
 
 ## Troubleshooting
 
-When the IMAP server can't be reached, refuses the login, or keeps failing a command, `giles status`
-shows the error. Giles keeps trying to connect.
+When the IMAP server can't be reached, refuses the login, or keeps failing a command,
+`doozers status` shows the error. Giles keeps trying to connect.
 
 If the error mentions `IDLE`, the server advertises IDLE but doesn't support it properly. Set
 `imap.idle = false` to check for mail every `imap.poll_interval` instead.
@@ -162,7 +162,7 @@ If the error mentions `IDLE`, the server advertises IDLE but doesn't support it 
 ### A message that can't be fetched
 
 Giles never skips a message because the server failed to hand it over. One damaged message holds up
-the mail behind it. `giles status` and the log then show:
+the mail behind it. `doozers status` and the log then show:
 
 ```text
 IMAP UID FETCH of message 4711 returned nothing, but the message exists

@@ -1,8 +1,8 @@
 # IRC channel
 
-`plugins/giles-channel-irc` (`publish = false`) is the IRC channel plugin: a library crate (so tests
-drive the channel directly) and a binary that serves it with the plugin SDK. User-facing behavior
-and settings are in [IRC](../user/irc.md).
+`plugins/doozers-channel-irc` (`publish = false`) is the IRC channel plugin: a library crate (so
+tests drive the channel directly) and a binary that serves it with the plugin SDK. User-facing
+behavior and settings are in [IRC](../user/irc.md).
 
 ## Libraries
 
@@ -15,7 +15,7 @@ No Rust IRC client library fits, so the client is written on `tokio`, with two l
   2025), with one dependency (`thiserror` 1). Its tokio codec is off: the plugin frames lines
   itself.
 - **`tokio-rustls` 0.26** (default features off) carries the connection over TLS with the client
-  config built from `giles_plugin_sdk::tls::root_store()` (bundled Mozilla roots) and the
+  config built from `doozers_plugin_sdk::tls::root_store()` (bundled Mozilla roots) and the
   `aws-lc-rs` provider, the same trust store and crypto as the rest of Giles. No native-tls or
   OpenSSL.
 
