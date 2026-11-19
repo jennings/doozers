@@ -137,7 +137,7 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 10)
+## Schema (version 11)
 
 The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
 table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`, and
@@ -601,7 +601,7 @@ model can be told when and why, and are pruned after the instance's `delete_afte
 
 Because the table is in `giles.db`, a [backup](backups.md) holds it, but not the workspaces'
 contents, which live in the plugin's backend. After a restore the next reconciliation marks the rows
-whose workspaces are gone `deleted` (`removed_outside_giles`) and deletes the plugin's workspaces
+whose workspaces are gone `deleted` (`removed_outside_doozers`) and deletes the plugin's workspaces
 that no row names.
 
 ## Blob store
