@@ -74,15 +74,18 @@ jobs:
         run: buf format --diff --exit-code
       # Pull requests compare against the base branch; pushes to main compare against the previous
       # tip of main, covering every commit in the push. A base without buf.yaml (before the first
-      # contracts landed, or a new branch) has nothing to compare against.
+      # contracts landed, or a new branch) has nothing to compare against. A commit in the range
+      # with the trailer `Protobuf-Breaking: allow` skips the comparison for an intended break.
       - name: Check for breaking changes
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if [ -n "${BASE}" ] && git cat-file -e "${BASE}:buf.yaml" 2>/dev/null; then
-            buf breaking --against ".git#ref=${BASE}"
-          else
+          if [ -z "${BASE}" ] || ! git cat-file -e "${BASE}:buf.yaml" 2>/dev/null; then
             echo "::notice::No buf module at base ${BASE}; skipping buf breaking."
+          elif git log --format=%B "${BASE}..HEAD" | grep -qx 'Protobuf-Breaking: allow'; then
+            echo "::notice::A commit since ${BASE} has Protobuf-Breaking: allow; skipping buf breaking."
+          else
+            buf breaking --against ".git#ref=${BASE}"
           fi
 
   # Builds the container image, smoke-tests it, and publishes it to the GitHub Container Registry.

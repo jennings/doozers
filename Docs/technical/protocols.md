@@ -215,6 +215,9 @@ buf breaking --against '<base>' # e.g. a directory or '.git#ref=<commit>'
 CI runs all three in the Protobuf job, comparing each pull request against its base and each push to
 `main` against the previous tip of `main` (see [Continuous integration](ci.md)).
 
+A deliberate break that can't be a new major version, such as renaming every package, carries the
+commit trailer `Protobuf-Breaking: allow`, and CI skips `buf breaking` for it.
+
 ## Deviations from the PLAN snippets
 
 The PLAN's Protobuf snippets (sections 8.2 to 8.7) were written before `buf` lint; they're updated
