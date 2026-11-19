@@ -1,7 +1,7 @@
 # Plugin sandbox
 
-Code: `crates/giles-core/src/sandbox/` (`giles_core::sandbox`) and the `sandbox-exec` subcommand in
-`crates/giles/src/sandbox_exec.rs`. Design: PLAN section 12.
+Code: `crates/doozers-core/src/sandbox/` (`doozers_core::sandbox`) and the `sandbox-exec` subcommand
+in `crates/doozers/src/sandbox_exec.rs`. Design: PLAN section 12.
 
 The core never sandboxes its own multi-threaded process: Landlock and seccomp restrict only the
 calling thread. It launches every plugin (gRPC plugins and stdio MCP toolsets) through a trampoline,
@@ -9,7 +9,7 @@ a fresh single-threaded `giles` process that applies the sandbox and then `exec`
 place:
 
 ```text
-giles sandbox-exec <spec> -- <command> [args...]
+doozers sandbox-exec <spec> -- <command> [args...]
 ```
 
 ## Backends
@@ -25,7 +25,7 @@ command; it never pretends to sandbox. The only way to run a command without one
 
 ## Steps
 
-`giles_core::sandbox::exec(spec, command)`, called by the subcommand:
+`doozers_core::sandbox::exec(spec, command)`, called by the subcommand:
 
 1. Load the spec (`Spec::load`): parse the JSON (unknown fields are errors) and validate it.
 2. Check the command: it must be an absolute path. The core resolves it first (the toolset launcher
@@ -52,7 +52,7 @@ and the `tracing` subscriber writes to stderr synchronously. Keep it that way.
 
 Like `env(1)` and `chroot(1)`, so the [plugin host](plugin-host.md) and its supervision can tell the
 trampoline's failures from the plugin's own exits without parsing stderr. The codes are constants in
-`giles_core::sandbox`, and `SandboxError::exit_code` maps an error to its code.
+`doozers_core::sandbox`, and `SandboxError::exit_code` maps an error to its code.
 
 | Status | Constant                 | Meaning                                                      |
 | ------ | ------------------------ | ------------------------------------------------------------ |
@@ -91,8 +91,8 @@ plugin writes to it, reads stdin, and writes to stdout and stderr.
 
 ## Spec format
 
-`giles_core::sandbox::Spec`, serialized as one JSON object. The spec is a file, not an argument, so
-it isn't limited by `ARG_MAX` or visible in `ps`. The plugin host writes it with `Spec::to_json`
+`doozers_core::sandbox::Spec`, serialized as one JSON object. The spec is a file, not an argument,
+so it isn't limited by `ARG_MAX` or visible in `ps`. The plugin host writes it with `Spec::to_json`
 (which validates first) to `run/sandbox/<kind>/<instance>.json`, mode 0600, outside every plugin's
 grants, and passes its path ([Plugin Host](plugin-host.md#the-sandbox-spec)).
 
@@ -206,9 +206,9 @@ Backend-specific failures become new `SandboxError` variants (the enum is `#[non
 
 Code: `sandbox/macos.rs` (backend, host check), `sandbox/macos/profile.rs` (the rules),
 `sandbox/macos/paths.rs` (real paths), and `sandbox/roots.rs` (the writable roots, shared with
-Linux). Tests: unit tests there, and `crates/giles/tests/sandbox_macos.rs`, which runs probes
+Linux). Tests: unit tests there, and `crates/doozers/tests/sandbox_macos.rs`, which runs probes
 (`/bin/sh`, `/bin/cat`, `/usr/bin/nc`, and the test binary itself as a Rust program) under the real
-`giles sandbox-exec` and checks each grant from both sides.
+`doozers sandbox-exec` and checks each grant from both sides.
 
 `apply` checks the command (see [Exit status](#exit-status)), generates a profile for the spec, and
 returns `/usr/bin/sandbox-exec -p <profile> <program> <args>`. `sandbox-exec` applies the profile to
@@ -296,8 +296,8 @@ The profile is `(version 1)`, `(deny default)`, then these rules, in this order 
 over an earlier one). Every rule except `process-fork` has filters, and a rule whose filter list
 would be empty (no `unix` grants, network off) is left out, because an `(allow <operation>)` without
 filters allows it everywhere. Each system entry was kept only if a probe (`/bin/sh`, Homebrew Python
-and Node, the `giles` binary) failed without it, or because PLAN section 12.4 lists it as a default;
-the reason is next to each.
+and Node, the `doozers` binary) failed without it, or because PLAN section 12.4 lists it as a
+default; the reason is next to each.
 
 | Rule | Allows | Why |
 | ---- | ------ | --- |
@@ -351,20 +351,20 @@ Worth knowing, compared with Linux:
 - `unix` grants are enforced per path, where Linux below Landlock ABI 9 only allows or denies
   `AF_UNIX` as a whole.
 
-The smoke check for this backend was Homebrew Python and Node under `giles sandbox-exec` with `read`
-and `execute` set to `/opt/homebrew` and `network = true`: TLS context with certificates, the local
-time zone, `os.cpu_count`, name resolution through mDNSResponder (`<host>.local`) and `/etc/hosts`
-(`localhost`), a TCP connection to a local listener, SQLite and `tempfile` in the data directory,
-and a subprocess all worked, and reading a file in the home directory was denied.
+The smoke check for this backend was Homebrew Python and Node under `doozers sandbox-exec` with
+`read` and `execute` set to `/opt/homebrew` and `network = true`: TLS context with certificates, the
+local time zone, `os.cpu_count`, name resolution through mDNSResponder (`<host>.local`) and
+`/etc/hosts` (`localhost`), a TCP connection to a local listener, SQLite and `tempfile` in the data
+directory, and a subprocess all worked, and reading a file in the home directory was denied.
 
 ## Linux: Landlock and seccomp
 
 Code: `sandbox/linux.rs` (backend, ABI handling, host check), `sandbox/linux/ruleset.rs` (the
 Landlock rules), `sandbox/linux/paths.rs` (opening grants), `sandbox/linux/seccomp.rs` (the filter),
 `sandbox/linux/syscalls.rs` (Docker's allowlist, generated), and `sandbox/roots.rs` (the writable
-roots, shared with macOS). Tests: unit tests there, and `crates/giles/tests/sandbox_linux.rs`, which
-runs probes (`/bin/sh` and coreutils, `perl`, and the test binary itself as a Rust program) under
-the real `giles sandbox-exec` and checks each grant from both sides.
+roots, shared with macOS). Tests: unit tests there, and `crates/doozers/tests/sandbox_linux.rs`,
+which runs probes (`/bin/sh` and coreutils, `perl`, and the test binary itself as a Rust program)
+under the real `doozers sandbox-exec` and checks each grant from both sides.
 
 Done natively in the trampoline with the `landlock` and `seccompiler` crates: no namespaces, no
 helper binary. `apply`, right before `exec`:
@@ -551,7 +551,7 @@ itself, whose probe checks each answer.
 
 ### Testing without Landlock
 
-The sandbox tests in `crates/giles/tests/sandbox_linux.rs` need Landlock. On a kernel without it
+The sandbox tests in `crates/doozers/tests/sandbox_linux.rs` need Landlock. On a kernel without it
 each test prints `skipping: the Linux sandbox can't run on this kernel (...)` and passes, except
 `without_landlock_nothing_runs`, which runs only there and checks the launch fails with 125. With
 `GILES_REQUIRE_LANDLOCK=1`, set in CI's Ubuntu job, a missing Landlock fails them instead, as it
@@ -564,7 +564,7 @@ locally, build the same kernel version with it: take its configuration from `/pr
 
 ## Host check
 
-`giles_core::sandbox::check_host() -> Result<HostReport, HostError>` (backed by
+`doozers_core::sandbox::check_host() -> Result<HostReport, HostError>` (backed by
 `SandboxBackend::check_host`) tells whether this host can apply the sandbox at all, so a broken host
 produces one clear error instead of every plugin failing (PLAN section 12.1). The probes are real
 now; they change nothing and cost a few syscalls.
@@ -593,8 +593,8 @@ when Giles itself runs inside a sandbox that forbids applying another; the error
 `sandbox-exec`'s status and stderr). That one process spawn is the only cost. The report is
 `HostReport::Macos { sandbox_exec }`.
 
-`giles serve` runs the check at startup, before `giles started`, and logs `plugin sandbox available`
-with the report, or a warning
+`doozers serve` runs the check at startup, before `giles started`, and logs
+`plugin sandbox available` with the report, or a warning
 `plugin sandbox unavailable on this host; sandboxed plugins will not start` with the error. It's
 only a warning because unsandboxed instances can still start. `serve` hands the result to the
 [plugin host](plugin-host.md), which refuses each sandboxed instance with this one error rather than

@@ -1,7 +1,7 @@
 # Storage
 
-The crate `giles-store` owns the SQLite database, `data/giles.db` (PLAN section 11.4), and the blob
-store under `data/blobs/` (PLAN 11.5). The core opens the database once with
+The crate `doozers-store` owns the SQLite database, `data/giles.db` (PLAN section 11.4), and the
+blob store under `data/blobs/` (PLAN 11.5). The core opens the database once with
 `Store::open_with(data_root.database_file(), options)` and calls typed methods on the cloneable
 `Store` handle (`Store::open(path)` is the same with default options, WAL); no other crate writes
 SQL.
@@ -108,8 +108,8 @@ writer exclude each other:
 
 ## Migrations
 
-Migrations are SQL files in `crates/giles-store/src/migrations/`, embedded with `include_str!`. The
-schema version is the length of the list and lives in SQLite's `user_version` (a fresh file is
+Migrations are SQL files in `crates/doozers-store/src/migrations/`, embedded with `include_str!`.
+The schema version is the length of the list and lives in SQLite's `user_version` (a fresh file is
 version 0). Opening:
 
 1. refuses a database whose version is newer than the binary's (`Error::SchemaTooNew`), so an older
@@ -131,7 +131,7 @@ rules apply, and `before_migrate` receives that file's plan.
 ## Conventions
 
 - Times are Unix milliseconds in `INTEGER` columns. They sort and compare in SQL without parsing,
-  and `giles_types::Timestamp` converts both ways; values come back truncated to the millisecond.
+  and `doozers_types::Timestamp` converts both ways; values come back truncated to the millisecond.
   Methods that depend on the current time take it as a `now` argument, so tests control the clock.
 - Tables are `STRICT`. JSON columns are `TEXT` holding the `serde_json` form of the domain type.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
@@ -139,7 +139,7 @@ rules apply, and `before_migrate` receives that file's plan.
 
 ## Schema (version 10)
 
-The files in `crates/giles-store/src/migrations/` are the authority. `0001_initial.sql` has every
+The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
 table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`, and
 `archived_conversations`, which `0002_blobs.sql`, `0003_routes.sql`, `0004_toolsets.sql`,
 `0005_workspaces.sql`, `0007_secrets.sql`, and `0009_archived_conversations.sql` add. This is their
@@ -170,7 +170,7 @@ outline.
 yet.
 
 Deleting a session cascades to its messages and summaries and clears `session_id` in `inbox` and
-`usage`, which keeps `giles user forget` (PLAN 11.4) a matter of deleting rows.
+`usage`, which keeps `doozers user forget` (PLAN 11.4) a matter of deleting rows.
 
 ## Sessions
 
@@ -194,8 +194,8 @@ instance, conversation id). Isolated job runs get keyless `job` sessions.
 ## Messages and tool-result slots
 
 Each message is one `messages` row: its `seq` (1, 2, ... per session), role, `content` as the JSON
-array of `giles_types::Block`, `meta` as JSON `MessageMeta`, and `created_at = meta.at`. Message ids
-in the API are `StoredMessageId`.
+array of `doozers_types::Block`, `meta` as JSON `MessageMeta`, and `created_at = meta.at`. Message
+ids in the API are `StoredMessageId`.
 
 The transcript invariant (every `ToolUse` has a `ToolResult`, PLAN 6.3) is kept with **slots**: a
 slot is a `User` message row reserved for one `ToolUse` result, with `tool_use_id` set and `content`
@@ -243,9 +243,9 @@ None has an index of its own: they scan `sessions` (small: one row per conversat
 `search` is an FTS5 table over messages for `memory_search` (PLAN 6.7). It holds the top-level
 `Text` blocks of each message, joined by newlines; tool inputs and results, reasoning, and media are
 left out. Three triggers on `messages` maintain it on insert, on update of `content` (so a tombstone
-from `giles user forget` replaces the old text), and on delete (including deletes that cascade from
-a session). The extraction runs in SQL (`json_each` over `content`), so no code path can forget to
-update the index. The tokenizer is `porter unicode61 remove_diacritics 2`: English stemming, case
+from `doozers user forget` replaces the old text), and on delete (including deletes that cascade
+from a session). The extraction runs in SQL (`json_each` over `content`), so no code path can forget
+to update the index. The tokenizer is `porter unicode61 remove_diacritics 2`: English stemming, case
 and accent folding.
 
 `Store::search(scope, query, limit)`:
@@ -261,12 +261,12 @@ and accent folding.
 
 ## Memory database
 
-Each agent has its own database, `agents/<agent>/memory.db`, owned by `giles-store`.
+Each agent has its own database, `agents/<agent>/memory.db`, owned by `doozers-store`.
 `MemoryStore::open(path, options)` opens it through the same connection machinery as `giles.db` (one
 writer, a pool of readers, the journal mode from `OpenOptions`, the `before_migrate` hook), but it
-is a separate file with its own migration list, `crates/giles-store/src/memory_migrations/`, and its
-own `user_version` (`MEMORY_SCHEMA_VERSION`, independent of `SCHEMA_VERSION`). `MemoryStore` wraps
-the handle and exposes only the memory methods, never `giles.db`'s. `MemoryStore::path()` and
+is a separate file with its own migration list, `crates/doozers-store/src/memory_migrations/`, and
+its own `user_version` (`MEMORY_SCHEMA_VERSION`, independent of `SCHEMA_VERSION`). `MemoryStore`
+wraps the handle and exposes only the memory methods, never `giles.db`'s. `MemoryStore::path()` and
 `MemoryStore::vacuum_into(dest)` (the same `VACUUM INTO` as `Store::vacuum_into`) are for the backup
 code.
 
@@ -428,11 +428,11 @@ keyed by agent and `JobKey`: `Config(id)` is stored as `config:<id>` and `Runtim
 ## Usage
 
 `record_usage` stores one row per provider request (PLAN 11.7): time, provider instance, model,
-agent, user, session, the four token counts of `giles_types::Usage`, and the fallback flag.
+agent, user, session, the four token counts of `doozers_types::Usage`, and the fallback flag.
 `usage_by_agent(since)` sums requests, fallbacks, and tokens per agent;
 `usage_by_model(since, until)` per agent, provider instance, and model (`since` inclusive, `until`
 exclusive; the admin `UsageReport`). The prompt cache hit rate,
-`giles_types::Usage::cache_hit_rate`, is cache-read tokens over all input tokens (uncached input +
+`doozers_types::Usage::cache_hit_rate`, is cache-read tokens over all input tokens (uncached input +
 cache reads + cache writes), since `input_tokens` excludes cached tokens. Token counts above
 `i64::MAX` are rejected, not truncated.
 
@@ -460,7 +460,7 @@ pruned yet still holds its environment's name. It's what the rename commands rea
 have data. It leaves `routes.channel` out on purpose: routes are settings, not data, and a route to
 a removed instance is kept (the routes page flags it), so counting it would keep that name from
 being given to another instance. `instance_routes` returns, per channel instance, how many routes
-name it; `giles channel rename` reads it to see that a name is used.
+name it; `doozers channel rename` reads it to see that a name is used.
 
 `rename_instance(kind, old, new, hook)` moves the kind's places to the new name in one `IMMEDIATE`
 transaction, runs `hook` inside it after the updates and before the commit, and returns the number
@@ -513,7 +513,7 @@ empty, says the import happened. A config with no `[[routes]]` still records the
 `toolsets` holds the MCP toolsets that the web UI creates and edits: one row per toolset, `spec`
 being the JSON of its definition. The store keeps the spec as the text it was given and checks
 nothing about it; parsing it and validating it (the command, the sandbox, the secrets) is the core's
-business (`giles_core::config`), done before it writes. `name` is the primary key with
+business (`doozers_core::config`), done before it writes. `name` is the primary key with
 `COLLATE NOCASE`, so `Files` and `files` can't both exist and every lookup by name ignores ASCII
 case; the row keeps the spelling it was written with. Because the table is in `giles.db`, a
 [backup](backups.md) covers the toolsets with no extra step, and a restore brings them back.
@@ -547,7 +547,7 @@ wrong.
 
 `secrets` and `secret_key` are the rows of the [local secret store](secret-store.md). The store
 keeps sealed values and checks nothing about them. Validating paths, sealing, and opening are the
-core's business (`giles_core::secrets`), so no plaintext value ever reaches `giles-store`.
+core's business (`doozers_core::secrets`), so no plaintext value ever reaches `doozers-store`.
 
 | Method                                    | Contract                                                         |
 | ----------------------------------------- | ---------------------------------------------------------------- |

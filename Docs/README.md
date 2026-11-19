@@ -22,7 +22,7 @@ Giles is under construction. Chapters are added as the features they describe la
 ## License
 
 Giles is licensed under `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`), except
-`plugins/giles-channel-whatsapp`, which is `AGPL-3.0-only` because it links AGPL-licensed code
+`plugins/doozers-channel-whatsapp`, which is `AGPL-3.0-only` because it links AGPL-licensed code
 ([Licensing](technical/whatsapp.md#licensing)). The plugin is a separate process, and nothing else
 in the repository depends on it.
 

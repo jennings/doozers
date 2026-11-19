@@ -1,9 +1,10 @@
 # Backups
 
-`giles_core::backup` writes the snapshots of PLAN section 11.4, for two callers: the admin service's
-`Backup` RPC (`giles backup <dir>`) and the core's own startup, before schema migrations. The
-database halves are `giles_store::Store::vacuum_into` ([Storage](storage.md)), for `giles.db` and,
-through `MemoryStore`, for each agent's `memory.db` (see [Memory databases](#memory-databases)).
+`doozers_core::backup` writes the snapshots of PLAN section 11.4, for two callers: the admin
+service's `Backup` RPC (`doozers backup <dir>`) and the core's own startup, before schema
+migrations. The database halves are `doozers_store::Store::vacuum_into` ([Storage](storage.md)), for
+`giles.db` and, through `MemoryStore`, for each agent's `memory.db` (see
+[Memory databases](#memory-databases)).
 
 ## Anatomy of a snapshot
 
@@ -67,8 +68,8 @@ Every entry, including `giles.toml` and the four tree roots, goes through `Walk:
 
 The snapshot's own two files are skipped by **device and inode**, recorded from the reserved files
 before the walk, not by path. The backup directory can be spelled differently from the data root's
-paths (a symlinked `~/.giles`, `giles backup .` from a `getcwd` that resolved links, a `..`), and a
-path comparison then misses the archive being written, which would read itself and grow until the
+paths (a symlinked `~/.giles`, `doozers backup .` from a `getcwd` that resolved links, a `..`), and
+a path comparison then misses the archive being written, which would read itself and grow until the
 disk was full (a test backs up into `link/agents` where `link` points at the data root). So a backup
 directory inside an archived tree is fine. Earlier backups there are ordinary files and are
 archived.
@@ -85,7 +86,7 @@ sweep between the two steps and checks that it waits and that the archive has th
 ### Memory databases
 
 Each agent's memories live in `agents/<agent>/memory.db`, a SQLite file with its own schema
-(`giles_store::MemoryStore`). It is under `agents/`, so the walk would otherwise archive it as a
+(`doozers_store::MemoryStore`). It is under `agents/`, so the walk would otherwise archive it as a
 plain file, and for a live WAL database that is the wrong thing to copy. So the walk never copies
 `memory.db`, `memory.db-wal`, `memory.db-shm` or `memory.db-journal` in an agent's directory
 (`Walk::is_memory_file`), and archives a snapshot in the live file's place.
@@ -125,7 +126,7 @@ migrated by being snapshotted.
 
 ## The `Backup` RPC
 
-`BackupRequest.dir` must be an absolute path to an existing directory (`giles backup` makes a
+`BackupRequest.dir` must be an absolute path to an existing directory (`doozers backup` makes a
 relative argument absolute against its own working directory, since the core resolves the path in
 its own). The service answers:
 
@@ -138,8 +139,8 @@ its own). The service answers:
 | `INTERNAL`            | Anything else, with the cause in the message; it's logged too.    |
 
 `create` runs the whole backup in its own Tokio task and the handler awaits its handle. When the
-client hangs up (Ctrl-C on `giles backup`), hyper drops the handler's future, but not the task: the
-backup finishes with the sweep hold kept for the whole walk, or fails and removes its files, the
+client hangs up (Ctrl-C on `doozers backup`), hyper drops the handler's future, but not the task:
+the backup finishes with the sweep hold kept for the whole walk, or fails and removes its files, the
 same as if the client had waited. Without that, the blocking steps would outlive the future,
 unguarded and uncleaned, and leave a complete `.db` next to an empty `.tar`. The client simply
 doesn't see the paths; the files are there (and logged). A test drops the caller mid-backup and
@@ -163,11 +164,11 @@ transaction, so:
 
 The hook writes a snapshot to `backups/` named `<stem>-pre-migration-v<from>` (the schema version it
 holds), through `MigrationPlan::vacuum_into` on the connection the migration will use. A failure
-returns an error, the store's open fails with `Error::BeforeMigrate`, and `giles serve` stops with
+returns an error, the store's open fails with `Error::BeforeMigrate`, and `doozers serve` stops with
 the cause: an upgrade that can't be undone doesn't run, and the database is untouched (a test checks
 the schema version is unchanged).
 
-The snapshot also holds the memory databases, taken the same way as for `giles backup`
+The snapshot also holds the memory databases, taken the same way as for `doozers backup`
 (`MemorySnapshots::take`, staged under `cache/` and archived as `agents/<agent>/memory.db`). The
 hook is synchronous and runs on a thread of Tokio's blocking pool, where `MemoryStore` (async) is
 driven with `Handle::block_on`; the memory databases are separate files, so nothing waits on
@@ -180,7 +181,7 @@ the `giles.db` snapshot that is the old schema.
 After a successful snapshot, `prune_pre_migration` keeps the newest `KEEP_PRE_MIGRATION` (5)
 pre-migration snapshots and deletes the files of older stems. Only names the module makes
 (`giles-<16-character time>-pre-migration-v<digits>` with `.db` or `.tar`) are candidates, so
-snapshots from `giles backup`, even in `backups/`, and anything else the operator put there are
+snapshots from `doozers backup`, even in `backups/`, and anything else the operator put there are
 never deleted. Failing to prune is logged, not an error. Five is a handful of upgrades back; the
 snapshots hold whole databases, so an unbounded count would eat the disk.
 
@@ -206,4 +207,4 @@ snapshots hold whole databases, so an unbounded count would eat the disk.
   pre-migration archive carrying them; and a symlinked `memory.db` skipped with one warning.
 
 `admin/tests.rs` covers the RPC (the token is required like every RPC, and the argument errors), and
-`crates/giles/tests/serve.rs` runs `giles backup` against a real daemon.
+`crates/doozers/tests/serve.rs` runs `doozers backup` against a real daemon.

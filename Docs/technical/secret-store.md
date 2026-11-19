@@ -1,6 +1,6 @@
 # Secret store
 
-Code: `crates/giles-core/src/secrets/` (`giles_core::secrets`), with its rows in `giles-store`
+Code: `crates/doozers-core/src/secrets/` (`doozers_core::secrets`), with its rows in `doozers-store`
 ([Storage](storage.md#secrets)). Design: PLAN section 7.7 and the decisions on
 [#29 Secrets storage](https://github.com/jennings/giles/issues/29).
 
@@ -125,7 +125,7 @@ new key over it.
   ([Plugin sandbox](sandbox.md)). A configured key file anywhere else is protected the same way: no
   grant may be it or contain it, and the instance's own data directory is no exception
   ([Configuration](config.md#sandbox-grants)).
-- `giles backup` copies only an explicit list of files, which leaves out `secret.key`
+- `doozers backup` copies only an explicit list of files, which leaves out `secret.key`
   ([Backups](backups.md)). A backup carries ciphertext only.
 - With the default key file, theft of the whole disk exposes the secrets. A TPM-bound
   `systemd-creds` credential, a passphrase, or full-disk encryption covers that.

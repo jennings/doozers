@@ -1,7 +1,7 @@
-# The `giles` binary
+# The `doozers` binary
 
-`crates/giles` holds the command-line interface and the daemon's process lifecycle. Everything else
-lives in library crates.
+`crates/doozers` holds the command-line interface and the daemon's process lifecycle. Everything
+else lives in library crates.
 
 ## Command line
 
@@ -17,12 +17,12 @@ does the same offline rename; if a core holds it, the command asks the core's ad
 subcommands (`pair`) are added as variants with their own argument structs and modules, dispatched
 from `main`.
 
-`giles sandbox-exec <SPEC> -- <COMMAND>...` is the internal plugin sandbox trampoline (see
+`doozers sandbox-exec <SPEC> -- <COMMAND>...` is the internal plugin sandbox trampoline (see
 [Plugin sandbox](sandbox.md)); `--home` is accepted there but unused. Its failures exit 125 to 127
 like `env(1)` instead of 1 (see [Exit status](sandbox.md#exit-status)).
 
 `--home <DIR>` is global, so it is accepted before or after the subcommand. It is not tied to
-`GILES_HOME` through `clap`; `giles_core::paths::resolve_root` applies the precedence (flag, then
+`GILES_HOME` through `clap`; `doozers_core::paths::resolve_root` applies the precedence (flag, then
 `GILES_HOME`, then `$HOME/.giles`) so it can be tested as a pure function (see
 [Data root](data-root.md)).
 
@@ -43,32 +43,33 @@ Spans name the instance a line is about. A plugin's supervisor logs under `chann
 and each launch adds a `launch` span inside it. A toolset's supervisor logs under
 `toolset{name=<name>}`. Each MCP connection and tool call logs under `mcp{toolset=<name>}`, since
 calls run outside the supervisor's span. The lines a plugin or MCP server writes to stderr are
-logged under these spans with target `giles_core::plugin_host::stderr` or `giles_core::mcp::stderr`,
-which marks them as the child's text.
+logged under these spans with target `doozers_core::plugin_host::stderr` or
+`doozers_core::mcp::stderr`, which marks them as the child's text.
 
-## `giles serve` lifecycle
+## `doozers serve` lifecycle
 
 1. Resolve the data root (`DataRoot::from_env`) and create its layout (`create_layout`), then take
-   the single-instance lock on `run/giles.lock` (`giles_core::admin::InstanceLock`,
-   [Admin Service](admin.md#one-core-per-data-root)). A second `giles serve` on the same data root
+   the single-instance lock on `run/giles.lock` (`doozers_core::admin::InstanceLock`,
+   [Admin Service](admin.md#one-core-per-data-root)). A second `doozers serve` on the same data root
    fails here.
-2. Load and validate the configuration (`giles_core::config::Config::load`,
+2. Load and validate the configuration (`doozers_core::config::Config::load`,
    [Configuration](config.md)). Any error ends the process here, before the runtime exists.
 3. Build the runtime.
 4. Install the SIGINT and SIGTERM handlers (`shutdown::cancel_on_signal`). This happens before
    anything is logged, so a signal sent after the `giles started` line always takes the graceful
    path instead of killing the process.
-5. Check that the host can sandbox plugins (`giles_core::sandbox::check_host`, see
+5. Check that the host can sandbox plugins (`doozers_core::sandbox::check_host`, see
    [Plugin Sandbox](sandbox.md#host-check)) and log the result; a failure is a warning, and the
-   plugin host refuses sandboxed instances with it. Find the `giles` binary itself, the sandbox
+   plugin host refuses sandboxed instances with it. Find the `doozers` binary itself, the sandbox
    trampoline (`std::env::current_exe`).
-6. Start the core runtime (`giles_core::runtime::Runtime::start`, [Registry](registry.md)): open the
-   database, then open the blob store and build the registry from the configuration. Any error ends
-   the process. Then register every toolset (`ToolsetHost::start`, [Toolsets](toolsets.md)), each
-   offering its cached tools, with its first start running in the background. Then load the stored
-   toolsets (`ToolsetManager::start`, [Toolsets](toolsets.md#stored-toolsets)): each is validated
-   and added beside them, one that fails is logged and kept as failed, and only a database error
-   ends the process. Log what is registered (`registry ready`) and each instance still pending.
+6. Start the core runtime (`doozers_core::runtime::Runtime::start`, [Registry](registry.md)): open
+   the database, then open the blob store and build the registry from the configuration. Any error
+   ends the process. Then register every toolset (`ToolsetHost::start`, [Toolsets](toolsets.md)),
+   each offering its cached tools, with its first start running in the background. Then load the
+   stored toolsets (`ToolsetManager::start`, [Toolsets](toolsets.md#stored-toolsets)): each is
+   validated and added beside them, one that fails is logged and kept as failed, and only a database
+   error ends the process. Log what is registered (`registry ready`) and each instance still
+   pending.
 7. Bind the HTTP listener on `core.http_listen` (a busy address fails startup here). Then write a
    fresh admin token and bind the admin socket (`AdminListener::bind`, removing one a crash left).
 8. Start the outbox's sender (`Runtime::start_outbox`, [Outbox](outbox.md)): drop the approval
@@ -89,14 +90,14 @@ which marks them as the child's text.
    reports plugin and toolset supervision through one `admin::PluginControl` (`admin::MergedControl`
    over the plugin host, the toolset host, and the toolset manager, which reports the stored
    toolsets that failed to start). The scheduler and the blob sweep (`Runtime::start_blob_sweep`,
-   `giles_core::blobs::BlobSweep`) start just before them. The sweep waits 60 seconds, so recovery
+   `doozers_core::blobs::BlobSweep`) start just before them. The sweep waits 60 seconds, so recovery
    and the first turns finish first, then runs `BlobStore::sweep` ([Storage](storage.md#sweep))
    every six hours, with the 48-hour grace period (constants `SWEEP_FIRST_DELAY` and
    `SWEEP_INTERVAL`; the interval is measured from the end of one sweep to the start of the next).
    Each run logs one `info` line (`blob sweep removed unreferenced blobs`, with `blobs`,
    `orphan_files`, and `bytes`) when it removed something, a `debug` line when it didn't, and a
    `warn` when it failed, in which case it removed nothing and the next run is on schedule. The
-   workspace sweep (`Runtime::start_workspace_sweep`, `giles_core::workspaces::WorkspaceSweep`,
+   workspace sweep (`Runtime::start_workspace_sweep`, `doozers_core::workspaces::WorkspaceSweep`,
    [Environment workspaces](environments.md)) starts beside them: the first run a minute in, then
    every five minutes, plus a reconciliation each time an environment plugin connects. (Before that,
    `Runtime::start` settled the workspaces the previous process left: `Workspaces::recover`.)

@@ -88,7 +88,7 @@ message InboundMessage {
   optional string message_id = 10;
 }
 
-// A channel's connection state. Shown in giles status, ListPlugins, and the admin pages.
+// A channel's connection state. Shown in doozers status, ListPlugins, and the admin pages.
 message ChannelStatus {
   oneof state {
     // Connected and working.

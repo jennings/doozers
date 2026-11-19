@@ -23,7 +23,7 @@ flowchart LR
   AgentLoop --> Channels
   AgentLoop --> Providers[Provider trait]
   AgentLoop --> Toolsets[Toolset trait]
-  PluginHost -. supervises .-> Plugins[giles-channel-* / giles-provider-*]
+  PluginHost -. supervises .-> Plugins[doozers-channel-* / doozers-provider-*]
   PluginHost -. supervises .-> MCP[MCP servers]
   Plugins -. gRPC adapters .-> Channels & Providers
   MCP -. MCP client .-> Toolsets
@@ -43,7 +43,7 @@ several users and group chats are the design for later; v1 builds this subset of
   are dropped and logged. Sender authenticity (section 3.3) still applies to the owner's identities.
 - Group chats: not supported. Channels report the conversation kind, and the core ignores group
   conversations: no turn, no reply, nothing stored.
-- Web login: only the `giles admin login-link` one-time URL and the trusted-proxy header.
+- Web login: only the `doozers admin login-link` one-time URL and the trusted-proxy header.
 - Tool approvals: answered by the owner.
 - Models: each agent uses the first model in `models`, with no fallback.
 - Config: read at startup; changes need a restart, except agents created, edited, and removed in the
@@ -60,8 +60,8 @@ Deferred decisions, each with what v1 does meanwhile and when to revisit it, are
 
 | Part     | What it is                                       | Where it comes from                            |
 | -------- | ------------------------------------------------ | ---------------------------------------------- |
-| Channel  | A transport users talk through                   | Built-in, or a `giles-channel-<name>` plugin   |
-| Provider | An LLM API client                                | Built-in, or a `giles-provider-<name>` plugin  |
+| Channel  | A transport users talk through                   | Built-in, or a `doozers-channel-<name>` plugin   |
+| Provider | An LLM API client                                | Built-in, or a `doozers-provider-<name>` plugin  |
 | Toolset  | A set of tools and skills from one source        | Built-in (core tools), or an MCP server        |
 | Agent    | A personality: config, soul, memory, permissions | Core only (config and storage)                 |
 | User     | A person: identity links, role, profile          | Core only                                      |
@@ -99,7 +99,7 @@ An identity is (namespace, native identifier), e.g. `whatsapp:+15551234567`, `em
 or `irc:libera.chat:account:stephen`. The namespace is reported by the channel in its
 `ConfigureResponse` (section 8.2), not taken from the instance name, so instances in one namespace
 share identities: an address declared once covers every mailbox. The core accepts only a namespace
-that starts with the channel component's own name (`irc:` from `giles-channel-irc`), so a plugin
+that starts with the channel component's own name (`irc:` from `doozers-channel-irc`), so a plugin
 can't claim another channel's identities.
 
 A channel may report other ids for the same sender in `InboundMessage.sender_aliases`; WhatsApp
@@ -176,8 +176,8 @@ Channels also drop messages that must never start a turn: echoes of the agent's 
   (`run/proxy.sock`, mode 0600) or a TCP listener that also requires a shared-secret header the
   proxy adds. Never by source address: any local process, including network-enabled plugins, can
   connect from loopback.
-- Bootstrap: `giles admin login-link --user <user>` prints a one-time URL valid for 10 minutes, for
-  the first login before any channel is linked.
+- Bootstrap: `doozers admin login-link --user <user>` prints a one-time URL valid for 10 minutes,
+  for the first login before any channel is linked.
 - Passkeys: later.
 
 ## 4. Components and traits
@@ -191,7 +191,7 @@ For each kind there is:
 3. An adapter in the core that implements the trait for an out-of-process component: `Remote*`
    adapters over gRPC for providers and channels, and an MCP client adapter for toolsets (section
    7.10).
-4. A plugin SDK (`giles-plugin-sdk`) that serves a channel implementation as a plugin binary.
+4. A plugin SDK (`doozers-plugin-sdk`) that serves a channel implementation as a plugin binary.
 
 v1 doesn't promise that one component can ship either built-in or as a plugin; each component is one
 or the other. Provider plugins are deferred: both v1 providers are built in, and Ollama uses the
@@ -205,24 +205,24 @@ OpenAI-compatible client. The `Provider` trait stays, so provider plugins can be
 | Anthropic provider                    | Built-in, feature `provider-anthropic` | Plain HTTP client                      |
 | Web channel                           | Built-in, feature `channel-web`        | Shares the core HTTP server            |
 | Core tools (memory, skills, schedule) | Built-in                               | Operate on core state                  |
-| IRC channel                           | `giles-channel-irc`                    | Long-lived connection, crash isolation |
-| Email channel                         | `giles-channel-email`                  | Long-lived connection, protocol libs   |
-| WhatsApp channel                      | `giles-channel-whatsapp`               | Protocol library, crash isolation      |
-| Discord channel                       | `giles-channel-discord`                | Long-lived connection, crash isolation |
+| IRC channel                           | `doozers-channel-irc`                    | Long-lived connection, crash isolation |
+| Email channel                         | `doozers-channel-email`                  | Long-lived connection, protocol libs   |
+| WhatsApp channel                      | `doozers-channel-whatsapp`               | Protocol library, crash isolation      |
+| Discord channel                       | `doozers-channel-discord`                | Long-lived connection, crash isolation |
 | Toolsets                              | MCP servers, one per instance          | Any MCP server works unchanged         |
 
 Built-in components run unsandboxed in the core process. Sandboxing applies to plugins only.
 
 ### 4.3 Types
 
-Traits use hand-written domain types from the `giles-types` crate. `prost`-generated types appear
-only in `giles-proto`, the `Remote*` adapters, and the plugin SDK, which convert at the gRPC
+Traits use hand-written domain types from the `doozers-types` crate. `prost`-generated types appear
+only in `doozers-proto`, the `Remote*` adapters, and the plugin SDK, which convert at the gRPC
 boundary by moving fields rather than cloning.
 
 Traits are used as `dyn` objects, so async methods go through `#[async_trait]` (one boxed future per
 call).
 
-Public enums in `giles-types` and the SDK (`Block`, `CompletionEvent`, `ChannelEvent`,
+Public enums in `doozers-types` and the SDK (`Block`, `CompletionEvent`, `ChannelEvent`,
 `ToolCallEvent`, ...) are `#[non_exhaustive]`, so adding a variant isn't a breaking change for
 third-party plugin code.
 
@@ -581,7 +581,7 @@ everything after it
 - The Anthropic provider uses automatic caching plus one breakpoint at the end of `system`, with a
   1-hour cache TTL for human-paced sessions and 5 minutes for job runs.
 - A snapshot test of the rendered `system` and tool list catches changes to the prefix (section
-  14.1), and `giles usage` shows the cache hit rate (section 11.7).
+  14.1), and `doozers usage` shows the cache hit rate (section 11.7).
 
 Memories are rows in a per-agent SQLite database, `agents/<agent>/memory.db` (section 11.3). Only
 core memories are loaded into the prompt; the agent finds the rest with `memory_recall`. So the cap
@@ -740,9 +740,9 @@ its channel instance (`SendRequest.conversation_id`, which works on channels tha
 
 | Kind       | What it is                                                     | Protocol                 |
 | ---------- | -------------------------------------------------------------- | ------------------------ |
-| `provider` | `giles-provider-<name>` binary                                  | gRPC `ProviderService`   |
-| `channel`  | `giles-channel-<name>` binary                                   | gRPC `ChannelService`    |
-| `environment` | `giles-environment-<name>` binary                            | gRPC `EnvironmentService` |
+| `provider` | `doozers-provider-<name>` binary                                  | gRPC `ProviderService`   |
+| `channel`  | `doozers-channel-<name>` binary                                   | gRPC `ChannelService`    |
+| `environment` | `doozers-environment-<name>` binary                            | gRPC `EnvironmentService` |
 | `toolset`  | Any MCP server: a stdio command or an HTTP URL                  | MCP (section 7.10)       |
 
 A first-party toolset is a stdio MCP server configured with `command` like any other: toolsets have
@@ -753,7 +753,7 @@ name, and refuses the plugin otherwise.
 
 ### 7.2 Instances
 
-One process per configured instance. Two IRC networks are two `giles-channel-irc` processes, each
+One process per configured instance. Two IRC networks are two `doozers-channel-irc` processes, each
 with its own config and sandbox grants. RPCs carry no instance id. Instance config is described in
 section 11.2.
 
@@ -766,9 +766,9 @@ config alone would orphan all of that, so `giles <kind> rename <old> <new>` does
 `environment`, `provider`, or `toolset`), with the core stopped: it migrates the database rows,
 renames the directories, and renames the instance's config (in the current layout, the
 `[<kind>.<old>]` table in `giles.toml`, section 11.2). The command's kind says which instance is
-renamed; it only touches that kind's rows, directories, and table. `giles toolset rename` also works
-with the core running, for a toolset stored in the database. Giles doesn't check for a rename done
-in the config alone: the renamed instance starts with no data, and the old name's rows and
+renamed; it only touches that kind's rows, directories, and table. `doozers toolset rename` also
+works with the core running, for a toolset stored in the database. Giles doesn't check for a rename
+done in the config alone: the renamed instance starts with no data, and the old name's rows and
 directories stay where they are, unused. The command finishes such a hand-rename only before the
 renamed instance has started: launching it creates `data/<kind>/<new>/`, and then `<new>` has data
 and the command refuses. Renaming a provider, channel, or environment that has no `component` key
@@ -778,7 +778,7 @@ name. A toolset has no component. Renaming an environment also rewrites the name
 
 ### 7.3 Discovery and enablement
 
-The core looks for `giles-<type>-<name>` in `<root>/plugins/`, then on `$PATH`. Only configured
+The core looks for `doozers-<type>-<name>` in `<root>/plugins/`, then on `$PATH`. Only configured
 instances run; installing a binary does nothing by itself. A future registry installs into
 `<root>/plugins/`.
 
@@ -830,7 +830,7 @@ sandboxed plugin could otherwise use: the admin socket, other plugins, D-Bus, sy
 from kernel 7.1 (ABI 9).
 
 After the handshake line, stdout is drained and ignored. Stderr is captured line by line into the
-core log under the instance's span. `giles-plugin-sdk` does the plugin side of all this.
+core log under the instance's span. `doozers-plugin-sdk` does the plugin side of all this.
 
 Failures:
 
@@ -844,7 +844,7 @@ clean up:
 
 - stdin: the core holds each plugin's stdin pipe open after writing the token. When it reaches
   end-of-file, the core is gone and the plugin exits. This is the only case in which a plugin exits
-  on its own. `giles-plugin-sdk` does it automatically; plugins in other languages must implement
+  on its own. `doozers-plugin-sdk` does it automatically; plugins in other languages must implement
   it.
 - pid files: the core records each launched plugin in `run/pids/<kind>/<instance>.pid`, outside
   every plugin's writable directories. At startup, before launching an instance, it kills any
@@ -874,13 +874,13 @@ User-run plugins reached over TCP, with optional TLS and a bearer token or OAuth
 - The core only calls `Shutdown` (optionally) and disconnects; it never manages the process.
 - OAuth authorization code grant: not in v1.
 - Remote plugins manage their own state.
-- Every shipped channel plugin is runnable this way: `giles-channel-<name> serve [--config <file>]`
-  binds TCP, with TLS if given a certificate, and checks a static bearer token. The SDK parses its
-  transport settings (`listen`, `data`, `tls_cert`, `tls_key`, `token_file`; each also a flag),
-  which are the same for every plugin. The token is `GILES_<KIND>_<NAME>_TOKEN` or `token_file`
-  (refused if group or others can read it), and `serve` won't start without one unless `--no-auth`
-  says to accept anyone. OAuth verification isn't part of it: a plugin that wants it calls
-  `serve_remote` itself.
+- Every shipped channel plugin is runnable this way:
+  `doozers-channel-<name> serve [--config <file>]` binds TCP, with TLS if given a certificate, and
+  checks a static bearer token. The SDK parses its transport settings (`listen`, `data`, `tls_cert`,
+  `tls_key`, `token_file`; each also a flag), which are the same for every plugin. The token is
+  `GILES_<KIND>_<NAME>_TOKEN` or `token_file` (refused if group or others can read it), and `serve`
+  won't start without one unless `--no-auth` says to accept anyone. OAuth verification isn't part of
+  it: a plugin that wants it calls `serve_remote` itself.
 - The plugin's own settings (a Discord bot token, an IRC server) come from the instance's `config`
   in the core's `giles.toml`, as for a launched plugin (section 7.7), so they cross the network to
   the plugin. A remote plugin builds its channel from the first `Configure` it gets and refuses a
@@ -902,10 +902,10 @@ User-run plugins reached over TCP, with optional TLS and a bearer token or OAuth
   come from the environment with `{ env = "NAME" }`. The core resolves references before
   `Configure`; plugins receive plain values and never read either source.
 - The core refuses to start if `secrets.toml` is readable by group or others.
-- The local secret store (`giles_core::secrets`) replaces `secrets.toml` in steps: values sealed
+- The local secret store (`doozers_core::secrets`) replaces `secrets.toml` in steps: values sealed
   with AES-256-GCM in `giles.db`, under a data key wrapped by the key in `<root>/secret.key`, behind
   a `SecretProvider` trait that Vault and `giles-secret-*` plugins will also implement (#29).
-- Validation errors, logs, and `giles status` never show a value at a secret path; they show the
+- Validation errors, logs, and `doozers status` never show a value at a secret path; they show the
   path and `<redacted>`.
 
 ### 7.8 Versioning
@@ -948,7 +948,7 @@ Each toolset instance is one MCP server. Where it is configured depends on wheth
   `command` (an absolute path or a name on the operator's `PATH`) with `args` and `env`, launched by
   the core through the sandbox trampoline (section 12), one sandbox per server.
 - Remote: a streamable HTTP `url`, with `auth = { bearer = { secret = ... } }`, stored in the
-  database and managed in the web UI (Admin → MCP servers), the admin RPCs, and `giles toolset`
+  database and managed in the web UI (Admin → MCP servers), the admin RPCs, and `doozers toolset`
   (section 8.7), while Giles runs. The deprecated HTTP+SSE transport is not supported, and `rmcp` no
   longer ships a client for it. Remote servers run elsewhere and aren't sandboxed by the core.
 
@@ -1037,9 +1037,9 @@ message DescribeResponse {
   reserved 4, 12;                // 4: config schema, deferred (plugins validate in Configure);
                                  // 12: toolset capabilities
   PluginKind kind = 1;
-  string name = 2;               // <name> from giles-<type>-<name>
+  string name = 2;               // <name> from doozers-<type>-<name>
   string version = 3;            // the plugin's own version
-  SandboxGrants requested_grants = 5; // section 12.4; advisory, shown in `giles status`, never applied
+  SandboxGrants requested_grants = 5; // section 12.4; advisory, shown in `doozers status`, never applied
   oneof capabilities {
     giles.provider.v1.ProviderCapabilities provider = 10;
     giles.channel.v1.ChannelCapabilities channel = 11;
@@ -1188,7 +1188,7 @@ message InboundMessage {
   optional string message_id = 10; // the message's own id, for reply_to; may differ from event_id
 }
 
-// Shown in `giles status`, ListPlugins, and an admin page that renders QR codes.
+// Shown in `doozers status`, ListPlugins, and an admin page that renders QR codes.
 message ChannelStatus {
   oneof state {
     Connected connected = 1;
@@ -1293,8 +1293,8 @@ decides how to run a command or a search.
 
 Errors are gRPC statuses whose messages the core may show the model: `INVALID_ARGUMENT` for a
 refused request, `NOT_FOUND` for a missing workspace or path, `UNAVAILABLE` when the plugin's
-backend can't be reached. In `giles-types` the service is the `Environment` trait, which the plugin
-SDK serves and the core's gRPC adapter implements, so core tests can use fakes.
+backend can't be reached. In `doozers-types` the service is the `Environment` trait, which the
+plugin SDK serves and the core's gRPC adapter implements, so core tests can use fakes.
 
 ## 9. HTTP and web
 
@@ -1321,10 +1321,10 @@ SDK serves and the core's gRPC adapter implements, so core tests can use fakes.
 | Channel  | Packaging                | Receive                   | Send | Conversation id                         |
 | -------- | ------------------------ | ------------------------- | ---- | --------------------------------------- |
 | Web      | Built-in                 | HTTP + SSE                | SSE  | Web chat id                             |
-| IRC      | `giles-channel-irc`      | IRC connection            | IRC  | Channel name, or nick for DMs           |
-| Email    | `giles-channel-email`    | IMAP with IDLE            | SMTP | Sender + thread root (`Message-ID`/`References`) |
-| WhatsApp | `giles-channel-whatsapp` | WhatsApp Web multi-device | Same | Chat JID                                |
-| Discord  | `giles-channel-discord`  | Gateway (WebSocket)       | REST | DM channel id                           |
+| IRC      | `doozers-channel-irc`      | IRC connection            | IRC  | Channel name, or nick for DMs           |
+| Email    | `doozers-channel-email`    | IMAP with IDLE            | SMTP | Sender + thread root (`Message-ID`/`References`) |
+| WhatsApp | `doozers-channel-whatsapp` | WhatsApp Web multi-device | Same | Chat JID                                |
+| Discord  | `doozers-channel-discord`  | Gateway (WebSocket)       | REST | DM channel id                           |
 
 Rendering CommonMark:
 
@@ -1336,13 +1336,13 @@ Rendering CommonMark:
 | WhatsApp | WhatsApp markup (`*bold*`, `_italic_`, `` ``` `` blocks)                                   |
 | Discord  | Discord Markdown (`**bold**`, `` ``` `` blocks); tables as code blocks; 2000-char messages |
 
-`giles-plugin-sdk` provides these renderers (on `pulldown-cmark`) so Rust plugins share them.
+`doozers-plugin-sdk` provides these renderers (on `pulldown-cmark`) so Rust plugins share them.
 
 WhatsApp uses the unofficial multi-device protocol as a linked device, written in Rust on
 `whatsapp-rust`. If that library proves unreliable, the fallback is a Go plugin on `whatsmeow`; only
 this plugin changes. Its session store lives in the plugin's data directory. Linking (QR code or
 pair code) and later logouts are reported as `ChannelStatus` (section 8.5), so the operator can link
-from the admin page or `giles status`.
+from the admin page or `doozers status`.
 
 Discord uses a bot account on Discord's official bot API (the Gateway for receiving, REST for
 sending), written in Rust on `twilight`. v1 handles direct messages only: the plugin asks for the
@@ -1370,7 +1370,7 @@ Everything lives under `GILES_HOME`, default `~/.giles`.
   data/giles.db                 # section 11.4
   data/blobs/sha256/ab/<hash>   # section 11.5
   data/<kind>/<instance>/       # section 11.6; <kind> is channel, provider, or toolset
-  backups/                      # `giles backup` output and pre-migration snapshots
+  backups/                      # `doozers backup` output and pre-migration snapshots
   trash/agents/<agent>-<time>/  # agents removed in the web UI (made at the first removal)
   run/admin.sock
   run/admin.token               # mode 0600; required by the admin service
@@ -1409,7 +1409,7 @@ Giles creates and edits them:
   (section 6.1). Routing rules are the first of these built: they're stored in SQLite and edited in
   the web UI.
 - Remote MCP servers (toolsets with `url`): stored in SQLite and managed in the web UI, the admin
-  RPCs, and `giles toolset` (section 7.10). A `[toolset.<instance>]` table with `url` in
+  RPCs, and `doozers toolset` (section 7.10). A `[toolset.<instance>]` table with `url` in
   `giles.toml` is ignored with a warning at every start, and nothing is migrated from it.
 - Provider and channel instances that launch no program are headed for the web UI too, within the
   limits `giles.toml` sets; how they're managed there is not designed yet.
@@ -1440,7 +1440,7 @@ journal_mode = "wal"          # SQLite journal mode: wal (default), delete, trun
 
 # Instances: [<kind>.<instance>]. A provider's or channel's `component` defaults to the instance
 # name. The core uses a built-in component with that name if there is one, else the plugin
-# giles-<kind>-<component>.
+# doozers-<kind>-<component>.
 [provider.anthropic]
 config = { api_key = { secret = "anthropic" } }
 
@@ -1528,7 +1528,7 @@ default_channel = "whatsapp"
 Reload (reopened: _Deferred, D28_): the core watches these files and `secrets.toml`. After changes
 settle (500 ms), it parses and validates the whole config.
 
-- Invalid: keep running the previous config, log the error, and report it in `giles status`.
+- Invalid: keep running the previous config, log the error, and report it in `doozers status`.
 - Valid: apply the difference. Roles, agents, and users apply to the next turn (routes already
   change at runtime in the web UI and aren't read from these files). A changed instance is restarted
   with its new config; a removed one is stopped; a new one is started.
@@ -1588,10 +1588,10 @@ is `FULL`. Main tables:
 
 Per-user operations:
 
-- `giles user export <user>`: an archive of the user's DM sessions, their messages in group
+- `doozers user export <user>`: an archive of the user's DM sessions, their messages in group
   sessions, the blobs those reference, their private memories in each agent's `memory.db`,
   `USER.md`, identity links, and runtime jobs.
-- `giles user forget <user>`, every table and file that holds the user's data:
+- `doozers user forget <user>`, every table and file that holds the user's data:
   - Deleted: DM sessions and their summaries, their private memories, `USER.md`, identity links,
     pairings, web sessions, runtime jobs, pending approvals, and their `inbox` and `outbox` rows.
   - In group sessions: the content of their messages is replaced with a tombstone, and summaries
@@ -1601,11 +1601,11 @@ Per-user operations:
   - `user.toml` is listed for the operator to delete; the core doesn't delete TOML files.
 
 Backups: copying a live SQLite file can capture a broken state (in WAL mode the main file is behind
-the WAL), so `giles backup <dir>` is the supported way: `VACUUM INTO` for the database and for each
-agent's `memory.db`, plus a tar of the TOML, Markdown, and blobs. Before applying schema migrations,
-the core writes the same snapshot to `backups/`, so a bad upgrade can be undone by restoring it with
-the old binary. In a rollback-journal mode the snapshot runs on the writer connection, so writes
-wait for it.
+the WAL), so `doozers backup <dir>` is the supported way: `VACUUM INTO` for the database and for
+each agent's `memory.db`, plus a tar of the TOML, Markdown, and blobs. Before applying schema
+migrations, the core writes the same snapshot to `backups/`, so a bad upgrade can be undone by
+restoring it with the old binary. In a rollback-journal mode the snapshot runs on the writer
+connection, so writes wait for it.
 
 ### 11.5 Blob store
 
@@ -1625,7 +1625,8 @@ different kinds never share a directory, even with the same name.
 
 One `usage` row per provider request: time, provider instance, model, agent, user (if any), session,
 input, output, cache-read and cache-write tokens, and whether it was a fallback. Recorded only; no
-budgets or limits in v1. `giles usage` summarizes it, including the prompt cache hit rate per agent.
+budgets or limits in v1. `doozers usage` summarizes it, including the prompt cache hit rate per
+agent.
 
 ## 12. Platforms and sandboxing
 
@@ -1640,7 +1641,7 @@ core and remote plugins run elsewhere, so neither is sandboxed by the core.
 ### 12.1 Applying it
 
 The core never sets up a sandbox inside its own multi-threaded process. It spawns the plugin through
-a trampoline, `giles sandbox-exec <spec> -- <plugin>`: a fresh single-threaded process that builds
+a trampoline, `doozers sandbox-exec <spec> -- <plugin>`: a fresh single-threaded process that builds
 the Landlock ruleset (Linux) or Seatbelt profile (macOS), applies it and the seccomp filter, and
 then `exec`s the plugin. The fds from section 7.4 pass through unchanged. The spec is the file
 `run/sandbox/<kind>/<instance>.json`, which the core rewrites at each launch.
@@ -1657,7 +1658,7 @@ unprivileged user namespaces. Requires kernel 5.13 or later.
 
 Landlock restricts the filesystem, using the newest ABI the kernel offers. Lower ABIs lose
 guarantees, so the core logs the effective ABI and what it lacks at each launch and in
-`giles status`, and an instance can require a minimum with `sandbox.min_abi`:
+`doozers status`, and an instance can require a minimum with `sandbox.min_abi`:
 
 | ABI | Kernel | Adds                                                                  |
 | --- | ------ | --------------------------------------------------------------------- |
@@ -1718,7 +1719,7 @@ sandbox = { network = ["tcp:443"], read = ["/opt/homebrew"], write = [] }
 - Config validation rejects any `read` or `write` grant that overlaps `GILES_HOME` (other than the
   instance's own data directory) or the plugin directories. Otherwise a file-writing tool could edit
   `giles.toml` (e.g. set `unsandboxed = true`) or read `secrets.toml`.
-- `Describe` may list `requested_grants`. They're shown in `giles status` to help the operator and
+- `Describe` may list `requested_grants`. They're shown in `doozers status` to help the operator and
   never applied automatically.
 
 Defaults:
@@ -1739,13 +1740,13 @@ Provisional; can be refactored freely.
 
 | Path                          | Contents                                       |
 | ----------------------------- | ---------------------------------------------- |
-| `crates/giles`                | Binary and CLI                                 |
-| `crates/giles-core`           | Orchestration, agent loop, routing, scheduling |
-| `crates/giles-types`          | Domain types and component traits              |
-| `crates/giles-proto`          | Generated gRPC code                            |
-| `crates/giles-plugin-sdk`     | Serves a trait implementation as a plugin      |
-| `crates/giles-store`          | SQLite and file access                         |
-| `plugins/giles-<type>-<name>` | First-party plugins                            |
+| `crates/doozers`                | Binary and CLI                                 |
+| `crates/doozers-core`           | Orchestration, agent loop, routing, scheduling |
+| `crates/doozers-types`          | Domain types and component traits              |
+| `crates/doozers-proto`          | Generated gRPC code                            |
+| `crates/doozers-plugin-sdk`     | Serves a trait implementation as a plugin      |
+| `crates/doozers-store`          | SQLite and file access                         |
+| `plugins/doozers-<type>-<name>` | First-party plugins                            |
 | `proto/giles/<package>/v1/`   | `.proto` sources                               |
 | `Dockerfile`                  | Container image (section 14.2)                 |
 
@@ -1777,7 +1778,7 @@ plugins are built.
 | `blobs`       | Content-addressed store and plugin transfer                              |
 | `store`       | SQLite and file access                                                   |
 | `http`        | Web channel, admin pages, login                                          |
-| `sandbox`     | The `giles sandbox-exec` trampoline: Landlock, seccomp, Seatbelt          |
+| `sandbox`     | The `doozers sandbox-exec` trampoline: Landlock, seccomp, Seatbelt          |
 | `admin`       | `giles.admin.v1` service                                                 |
 
 ### 13.4 Logging
@@ -1793,9 +1794,10 @@ Cargo builds the whole repository: one workspace containing the core crates and 
 plugins. (Bazel may be added later.)
 
 - Toolchain pinned to a stable release in `rust-toolchain.toml`; `Cargo.lock` committed.
-- Protobuf code is generated by a `build.rs` in `giles-proto` using `tonic-build`. It takes `protoc`
-  from `PROTOC` if set, else from a vendored `protoc` crate, so building needs no system `protoc`.
-- `giles-plugin-sdk` is publishable to crates.io for third-party plugin authors.
+- Protobuf code is generated by a `build.rs` in `doozers-proto` using `tonic-build`. It takes
+  `protoc` from `PROTOC` if set, else from a vendored `protoc` crate, so building needs no system
+  `protoc`.
+- `doozers-plugin-sdk` is publishable to crates.io for third-party plugin authors.
 - CI runs `cargo fmt --check`, `cargo clippy`, `cargo test --workspace`, and `buf lint` and
   `buf breaking` against the main branch. After the `buf` checks pass, alongside the Rust checks, it
   also builds the container image (section 14.2) and publishes it to the GitHub Container Registry.
@@ -1813,7 +1815,7 @@ meant for real use (the test-only echo channel plugin is left out).
 - `GILES_HOME=/data`, declared as a volume. Runs as a non-root `giles` user (uid and gid 10001).
 - Exposes port 8080. `giles.toml` must set `http_listen = "0.0.0.0:8080"` for the port to be
   reachable.
-- Entrypoint: `tini -- giles`, with `CMD ["serve"]`, so the container runs `giles serve` and
+- Entrypoint: `tini -- giles`, with `CMD ["serve"]`, so the container runs `doozers serve` and
   arguments after the image name replace the subcommand. `tini` is PID 1: it forwards signals to
   `giles` and reaps plugin descendants reparented to PID 1 when Giles kills a plugin's process
   group, which `giles` as PID 1 wouldn't.
@@ -1831,8 +1833,8 @@ CI publishes the image to `ghcr.io/jennings/giles` from every push to the main b
 `latest`, and from every pull request in the repository (not from forks), tagged `pr-<number>`. It
 builds for `linux/amd64` only (an arm64 build under QEMU emulation is too slow; a native arm64
 runner can add it later). Before pushing, it smoke-tests the image: the binaries run, and
-`giles serve` starts on a fresh `/data` volume with the HTTP port reachable and the sandbox startup
-check passing (section 12.1).
+`doozers serve` starts on a fresh `/data` volume with the HTTP port reachable and the sandbox
+startup check passing (section 12.1).
 
 The plugin sandbox works inside the container: Docker's default seccomp profile allows the
 `landlock_*` and `seccomp` syscalls (checked in `moby/profiles` `seccomp/default.json`). The host

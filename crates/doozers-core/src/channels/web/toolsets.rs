@@ -1,0 +1,1353 @@
+//! The toolset pages: every toolset, one toolset's settings and tools, and the forms that add,
+//! edit, rename, and remove a stored toolset while the core runs. Next to the admin pages
+//! (`admin.rs`), the agent pages (`agents.rs`), and the route pages (`routes.rs`), and like them:
+//! behind the login, the owner only, every answer `no-store`, every change a CSRF-checked form
+//! post.
+//!
+//! A change is made by the [`ToolsetManager`], which validates it, stores it, and starts, restarts,
+//! or stops the server. What the pages say about a toolset's state and tool count comes from the
+//! admin service, as it does on the plugins page. The tools listed on a toolset's page are the ones
+//! new conversations get now.
+//!
+//! The form adds and edits remote MCP servers only, as the manager stores nothing else: a server
+//! Giles runs on the host is configured in `giles.toml`, and the pages list it read-only.
+//!
+//! No page shows a secret value. A bearer token or an OAuth client secret is typed into a
+//! write-only field, which the manager stores in the secret store; the pages only say whether one
+//! is stored, and an edit that leaves the field blank keeps it. A server with OAuth signs each user
+//! in on the Connections page (`connections.rs`); its page shows the callback URL to register with
+//! the server.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use askama::Template;
+use axum::Router;
+use axum::extract::{Form, Path, Query, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::{from_fn_with_state, map_response};
+use axum::response::{IntoResponse, Redirect, Response};
+use axum::routing::{get, post};
+use doozers_proto::admin::v1 as pb;
+use doozers_proto::admin::v1::admin_service_server::AdminService as AdminRpc;
+use doozers_types::{AgentId, Timestamp, UserId};
+use serde_json::{Map, Value};
+use tonic::Request;
+use tracing::error;
+
+use super::WebChannel;
+use super::admin::{PluginRow, call_failed, forbidden, may_administer, plugin_row};
+use super::auth::{WebUser, check_csrf};
+use super::connections::callback_path;
+use super::pages::{WebApp, agent_label, error_page, no_store};
+use super::shell::{Nav, Shell};
+use crate::config::{
+    Config, InstanceName, KeyPath, LiveConfig, ToolsetError, ToolsetInstance, ToolsetSpec,
+    ToolsetTransport,
+};
+use crate::http::{self, RouterBuilder};
+use crate::registry::{Registry, ToolTarget};
+use crate::toolsets::credentials;
+use crate::toolsets::{
+    AgentGlobChange, RESERVED_TOOLSET_NAME, ToolsetManager, ToolsetManagerError, ToolsetSource,
+    ToolsetView,
+};
+
+/// The toolset pages' state.
+#[derive(Clone)]
+struct ToolsetPages {
+    manager: Arc<ToolsetManager>,
+    admin: Arc<dyn AdminRpc>,
+    registry: Arc<Registry>,
+    config: LiveConfig,
+    channel: Arc<WebChannel>,
+}
+
+impl ToolsetPages {
+    /// The toolsets the admin service reports, by instance name.
+    async fn plugins(&self) -> Result<HashMap<String, PluginRow>, Box<Response>> {
+        match self
+            .admin
+            .list_plugins(Request::new(pb::ListPluginsRequest {}))
+            .await
+        {
+            Ok(listed) => Ok(listed
+                .get_ref()
+                .plugins
+                .iter()
+                .filter(|plugin| plugin.kind() == pb::InstanceKind::Toolset)
+                .map(|plugin| (plugin.instance.clone(), plugin_row(plugin)))
+                .collect()),
+            Err(status) => Err(Box::new(call_failed(
+                "ListPlugins",
+                "MCP servers unavailable",
+                &status,
+            ))),
+        }
+    }
+}
+
+impl WebApp {
+    /// Adds the toolset pages to `builder`, changing toolsets with `manager`, behind the same
+    /// authentication middleware as the chat pages. `admin` (in `doozers serve`, the
+    /// [`AdminService`](crate::admin::AdminService)) says how each toolset is doing, and
+    /// `registry` holds the tools new conversations get. The pages read this app's running
+    /// configuration, which should be the one `manager` changes. Every answer on these routes is
+    /// `no-store`.
+    pub fn install_toolsets(
+        &self,
+        builder: RouterBuilder,
+        manager: Arc<ToolsetManager>,
+        admin: Arc<dyn AdminRpc>,
+        registry: Arc<Registry>,
+    ) -> RouterBuilder {
+        let auth = from_fn_with_state(self.clone(), super::login::authenticate);
+        let pages = ToolsetPages {
+            manager,
+            admin,
+            registry,
+            config: self.inner.agents.clone(),
+            channel: self.inner.channel.clone(),
+        };
+        builder.merge(
+            Router::new()
+                .route("/admin/mcp-servers", get(list_page).post(create))
+                .route("/admin/mcp-servers/new", get(new_page))
+                .route("/admin/mcp-servers/{name}", get(detail_page))
+                .route(
+                    "/admin/mcp-servers/{name}/edit",
+                    get(edit_page).post(update),
+                )
+                .route(
+                    "/admin/mcp-servers/{name}/rename",
+                    get(rename_page).post(rename),
+                )
+                .route(
+                    "/admin/mcp-servers/{name}/remove",
+                    get(remove_page).post(remove),
+                )
+                .route("/admin/mcp-servers/{name}/restart", post(restart))
+                .with_state(pages)
+                .route_layer(auth)
+                .route_layer(map_response(async |response: Response| no_store(response))),
+        )
+    }
+}
+
+/// The page for a failed read, or a change that has no form to show: 404 for a toolset that is
+/// gone, the reason as a 409 for what the owner can act on, a logged 500 for anything else.
+fn failed(err: &ToolsetManagerError, title: &str) -> Response {
+    match err {
+        ToolsetManagerError::NotFound => error_page(
+            StatusCode::NOT_FOUND,
+            "No such MCP server",
+            "That MCP server no longer exists. It may have been removed on another page. Go back to the list of MCP servers.",
+        ),
+        err if err.is_invalid_input() => error_page(StatusCode::CONFLICT, title, &err.to_string()),
+        err => {
+            error!(error = %err, "changing the toolsets failed");
+            error_page(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Something went wrong",
+                "Giles couldn't use its MCP servers. The error is in its log.",
+            )
+        }
+    }
+}
+
+/// A time on the pages, in UTC.
+pub(super) fn when(at: Timestamp) -> String {
+    at.strftime("%Y-%m-%d %H:%M:%S UTC").to_string()
+}
+
+/// How a toolset runs, as the list says it, and where.
+fn describe_spec(spec: &ToolsetSpec) -> (&'static str, String) {
+    match (&spec.url, &spec.command) {
+        (Some(url), _) => ("remote URL", url.clone()),
+        (None, Some(command)) => ("command", command.clone()),
+        (None, None) => ("unknown", String::new()),
+    }
+}
+
+/// [`describe_spec`] for a toolset of `giles.toml`.
+fn describe_instance(toolset: &ToolsetInstance) -> (&'static str, String) {
+    match &toolset.transport {
+        ToolsetTransport::Http(remote) => ("remote URL", remote.url.to_string()),
+        ToolsetTransport::Stdio(server) => ("command", server.command.clone()),
+    }
+}
+
+/// How `view` runs and where: from its spec if it has one, else from the running configuration.
+fn describe(view: &ToolsetView, config: &Config) -> (&'static str, String) {
+    if let Some(spec) = &view.spec {
+        return describe_spec(spec);
+    }
+    match config
+        .toolsets
+        .values()
+        .find(|toolset| toolset.name.as_str() == view.name)
+    {
+        Some(toolset) => describe_instance(toolset),
+        None => ("unknown", String::new()),
+    }
+}
+
+/// A toolset in the list.
+struct ToolsetRow {
+    name: String,
+    /// Configured in `giles.toml`, so shown read-only.
+    from_file: bool,
+    transport: &'static str,
+    location: String,
+    state: String,
+    class: &'static str,
+    tools: Option<u32>,
+    error: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "web/admin_toolsets.html")]
+struct ToolsetsPage {
+    shell: Shell,
+    toolsets: Vec<ToolsetRow>,
+}
+
+/// `GET /admin/mcp-servers`: every toolset with how it runs, its state, its tool count, and its last
+/// error. Toolsets of `giles.toml` are listed without Edit and Remove.
+async fn list_page(State(pages): State<ToolsetPages>, user: WebUser) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    let views = match pages.manager.list().await {
+        Ok(views) => views,
+        Err(err) => return failed(&err, "MCP servers unavailable"),
+    };
+    let mut plugins = match pages.plugins().await {
+        Ok(plugins) => plugins,
+        Err(response) => return *response,
+    };
+    let config = pages.config.get();
+    let toolsets = views
+        .into_iter()
+        .map(|view| {
+            let (transport, location) = describe(&view, &config);
+            let plugin = plugins.remove(&view.name);
+            let (state, class, tools, error) = match plugin {
+                Some(plugin) => (
+                    plugin.state_word.to_owned(),
+                    plugin.class,
+                    plugin.tools,
+                    plugin.error,
+                ),
+                None => ("unknown".to_owned(), "unknown", None, None),
+            };
+            ToolsetRow {
+                from_file: view.source == ToolsetSource::File,
+                name: view.name,
+                transport,
+                location,
+                state,
+                class,
+                tools,
+                error: error.or(view.failure),
+            }
+        })
+        .collect();
+    http::render(&ToolsetsPage {
+        shell: Shell::new(&user, Nav::McpServers),
+        toolsets,
+    })
+}
+
+/// One row of a toolset's settings: a label and what it is set to, one value per line.
+struct Setting {
+    label: &'static str,
+    values: Vec<String>,
+}
+
+/// A tool in the toolset's tool list.
+struct ToolRow {
+    name: String,
+    description: String,
+}
+
+/// The tools `user`'s new conversations get from the toolset `name`, by name.
+async fn tools_of(registry: &Registry, user: &UserId, name: &str) -> Vec<ToolRow> {
+    registry
+        .tools_for(Some(user))
+        .await
+        .tools()
+        .iter()
+        .filter(|tool| {
+            matches!(&tool.target, ToolTarget::Toolset { instance, .. } if instance.as_str() == name)
+        })
+        .map(|tool| ToolRow {
+            name: tool.spec.name.clone(),
+            description: tool.spec.description.clone(),
+        })
+        .collect()
+}
+
+#[derive(Template)]
+#[template(path = "web/admin_toolset.html")]
+struct ToolsetPage<'a> {
+    shell: Shell,
+    csrf: &'a str,
+    name: String,
+    /// Stored in Giles, so it can be edited and removed.
+    stored: bool,
+    created: Option<String>,
+    updated: Option<String>,
+    transport: &'static str,
+    plugin: Option<PluginRow>,
+    error: Option<String>,
+    restartable: bool,
+    settings: Vec<Setting>,
+    /// The sign-in callback URL to register with the server, if it signs users in.
+    callback: Option<String>,
+    tools: Vec<ToolRow>,
+}
+
+/// `GET /admin/mcp-servers/<name>`: the settings (references by name), how it is doing, the tools it
+/// offers now with their descriptions, and the buttons.
+async fn detail_page(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    Path(name): Path<String>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    let view = match pages.manager.get(&name).await {
+        Ok(view) => view,
+        Err(err) => return failed(&err, "MCP server unavailable"),
+    };
+    let mut plugins = match pages.plugins().await {
+        Ok(plugins) => plugins,
+        Err(response) => return *response,
+    };
+    let plugin = plugins.remove(&view.name);
+    let (transport, _) = describe(&view, &pages.config.get());
+    let (stored, created, updated) = match view.source {
+        ToolsetSource::Stored {
+            created_at,
+            updated_at,
+        } => (true, Some(when(created_at)), Some(when(updated_at))),
+        ToolsetSource::File => (false, None, None),
+    };
+    let form = view
+        .spec
+        .as_ref()
+        .map(|spec| ToolsetForm::from_spec(&view.name, spec, None));
+    let settings = form.as_ref().map(settings).unwrap_or_default();
+    let callback = form
+        .as_ref()
+        .filter(|form| form.auth == "oauth")
+        .map(|form| format!("{}{}", pages.channel.link_base(), callback_path(&form.name)));
+    let error = plugin
+        .as_ref()
+        .and_then(|plugin| plugin.error.clone())
+        .or_else(|| view.failure.clone());
+    let tools = tools_of(&pages.registry, &user.user, &view.name).await;
+    http::render(&ToolsetPage {
+        shell: Shell::new(&user, Nav::McpServers),
+        csrf: &user.csrf,
+        restartable: plugin.as_ref().is_some_and(|plugin| plugin.restartable),
+        tools,
+        name: view.name,
+        stored,
+        created,
+        updated,
+        transport,
+        plugin,
+        error,
+        settings,
+        callback,
+    })
+}
+
+/// The form's fields, as posted (and shown again after an error), and as a stored spec fills them
+/// in. Everything is the text the owner typed; [`spec`](Self::spec) turns it into a
+/// [`ToolsetSpec`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ToolsetForm {
+    /// The `updated_at` the form was filled from, to refuse an edit of a toolset that changed.
+    updated_at: String,
+    name: String,
+    url: String,
+    insecure: bool,
+    /// `none`, `token`, or `oauth`.
+    auth: String,
+    /// The token as typed. Never filled in from a stored toolset, and never shown again.
+    bearer_token: String,
+    /// Whether the toolset has a token stored, which a blank `bearer_token` keeps.
+    bearer_stored: bool,
+    /// The OAuth client id; blank to register a client dynamically.
+    oauth_client_id: String,
+    /// The OAuth client secret as typed, like `bearer_token`.
+    oauth_client_secret: String,
+    /// Whether the toolset has a client secret stored, which a blank `oauth_client_secret` keeps.
+    oauth_secret_stored: bool,
+    /// The OAuth scopes, separated by spaces.
+    oauth_scopes: String,
+    deadline: String,
+    parallel: bool,
+    /// One directory per line.
+    skills: String,
+}
+
+/// Non-empty lines of `text`, trimmed.
+fn trimmed_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A duration as the largest whole unit that holds it: `5m`, `90s`, `1500ms`.
+fn humanize(duration: Duration) -> String {
+    let millis = duration.as_millis();
+    for (unit, scale) in [
+        ("d", 86_400_000),
+        ("h", 3_600_000),
+        ("m", 60_000),
+        ("s", 1_000),
+    ] {
+        if millis >= scale && millis.is_multiple_of(scale) {
+            return format!("{}{unit}", millis / scale);
+        }
+    }
+    format!("{millis}ms")
+}
+
+/// A stored `auth`'s method: `token`, `oauth`, or `none`. A stored toolset's credentials are
+/// always references to its own secrets.
+fn auth_method(auth: Option<&toml::Value>) -> &'static str {
+    match auth.and_then(toml::Value::as_table) {
+        Some(table) if table.contains_key("bearer") => "token",
+        Some(table) if table.contains_key("oauth") => "oauth",
+        _ => "none",
+    }
+}
+
+/// The reference to the toolset `name`'s own secret `leaf`, or the reason it can't have one.
+fn own_reference(name: &str, leaf: &str, key: KeyPath) -> Result<Value, ToolsetError> {
+    let own =
+        credentials::toolset_path(name, leaf).map_err(|reason| ToolsetError { key, reason })?;
+    let mut reference = Map::new();
+    reference.insert("secret".to_owned(), Value::String(own.to_string()));
+    Ok(Value::Object(reference))
+}
+
+impl ToolsetForm {
+    /// The form for a new toolset.
+    fn blank() -> Self {
+        Self {
+            updated_at: String::new(),
+            name: String::new(),
+            url: String::new(),
+            insecure: false,
+            auth: "none".to_owned(),
+            bearer_token: String::new(),
+            bearer_stored: false,
+            oauth_client_id: String::new(),
+            oauth_client_secret: String::new(),
+            oauth_secret_stored: false,
+            oauth_scopes: String::new(),
+            deadline: String::new(),
+            parallel: false,
+            skills: String::new(),
+        }
+    }
+
+    /// The form of the stored toolset `name` with `spec`, last changed at `updated_at`.
+    fn from_spec(name: &str, spec: &ToolsetSpec, updated_at: Option<Timestamp>) -> Self {
+        let auth = auth_method(spec.auth.as_ref());
+        let oauth = spec
+            .auth
+            .as_ref()
+            .and_then(|auth| auth.get("oauth"))
+            .and_then(toml::Value::as_table);
+        let oauth_text = |key: &str| {
+            oauth
+                .and_then(|oauth| oauth.get(key))
+                .and_then(toml::Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        Self {
+            updated_at: updated_at.map(|at| at.to_string()).unwrap_or_default(),
+            name: name.to_owned(),
+            url: spec.url.clone().unwrap_or_default(),
+            insecure: spec.insecure == Some(true),
+            auth: auth.to_owned(),
+            bearer_token: String::new(),
+            bearer_stored: auth == "token",
+            oauth_client_id: oauth_text("client_id"),
+            oauth_client_secret: String::new(),
+            oauth_secret_stored: oauth.is_some_and(|oauth| oauth.contains_key("client_secret")),
+            oauth_scopes: oauth
+                .and_then(|oauth| oauth.get("scopes"))
+                .and_then(toml::Value::as_array)
+                .map(|scopes| {
+                    scopes
+                        .iter()
+                        .filter_map(toml::Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default(),
+            deadline: spec
+                .deadline
+                .map(|deadline| humanize(deadline.0))
+                .unwrap_or_default(),
+            parallel: spec.parallel == Some(true),
+            skills: spec
+                .skills
+                .as_ref()
+                .map(|skills| {
+                    skills
+                        .iter()
+                        .map(|path| path.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default(),
+        }
+    }
+
+    /// The form as posted. Names the form doesn't have are ignored, and an authentication choice it
+    /// doesn't offer is none.
+    fn posted(fields: &HashMap<String, String>) -> Self {
+        let text = |key: &str| fields.get(key).cloned().unwrap_or_default();
+        let flag = |key: &str| fields.contains_key(key);
+        let auth = match text("auth").as_str() {
+            "token" => "token",
+            "oauth" => "oauth",
+            _ => "none",
+        };
+        Self {
+            updated_at: text("updated_at").trim().to_owned(),
+            name: text("name").trim().to_owned(),
+            url: text("url").trim().to_owned(),
+            insecure: flag("insecure"),
+            auth: auth.to_owned(),
+            bearer_token: text("bearer_token").trim().to_owned(),
+            bearer_stored: flag("bearer_stored"),
+            oauth_client_id: text("oauth_client_id").trim().to_owned(),
+            oauth_client_secret: text("oauth_client_secret").trim().to_owned(),
+            oauth_secret_stored: flag("oauth_secret_stored"),
+            oauth_scopes: text("oauth_scopes").trim().to_owned(),
+            deadline: text("deadline").trim().to_owned(),
+            parallel: flag("parallel"),
+            skills: text("skills"),
+        }
+    }
+
+    /// Whether the URL is plain `http:`, the only case "Allow insecure connections" applies to:
+    /// the form shows the box for such a URL, and the box counts for no other.
+    fn plain_http(&self) -> bool {
+        self.url
+            .get(..5)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http:"))
+    }
+
+    /// The spec the form describes. A typed token is in it as the value, for the manager to store;
+    /// a blank one is the reference to the toolset's stored token.
+    ///
+    /// # Errors
+    ///
+    /// The key and the reason, as validation gives them, for a setting that isn't valid, and a
+    /// token that is needed and not typed.
+    fn spec(&self) -> Result<ToolsetSpec, ToolsetError> {
+        let text = |text: &str| Value::String(text.to_owned());
+        let mut map = Map::new();
+        if !self.url.is_empty() {
+            map.insert("url".to_owned(), text(&self.url));
+        }
+        if self.auth == "token" {
+            let key = KeyPath::root().key("auth").key("bearer");
+            let bearer = if !self.bearer_token.is_empty() {
+                text(&self.bearer_token)
+            } else if self.bearer_stored {
+                own_reference(&self.name, credentials::BEARER_TOKEN, key)?
+            } else {
+                return Err(ToolsetError {
+                    key,
+                    reason: "enter the token".to_owned(),
+                });
+            };
+            let mut auth = Map::new();
+            auth.insert("bearer".to_owned(), bearer);
+            map.insert("auth".to_owned(), Value::Object(auth));
+        }
+        if self.auth == "oauth" {
+            let mut oauth = Map::new();
+            if !self.oauth_client_id.is_empty() {
+                oauth.insert("client_id".to_owned(), text(&self.oauth_client_id));
+            }
+            if !self.oauth_client_secret.is_empty() {
+                oauth.insert("client_secret".to_owned(), text(&self.oauth_client_secret));
+            } else if self.oauth_secret_stored && !self.oauth_client_id.is_empty() {
+                let key = KeyPath::root()
+                    .key("auth")
+                    .key("oauth")
+                    .key("client_secret");
+                oauth.insert(
+                    "client_secret".to_owned(),
+                    own_reference(&self.name, credentials::OAUTH_CLIENT_SECRET, key)?,
+                );
+            }
+            let scopes: Vec<Value> = self.oauth_scopes.split_whitespace().map(&text).collect();
+            if !scopes.is_empty() {
+                oauth.insert("scopes".to_owned(), Value::Array(scopes));
+            }
+            let mut auth = Map::new();
+            auth.insert("oauth".to_owned(), Value::Object(oauth));
+            map.insert("auth".to_owned(), Value::Object(auth));
+        }
+        if self.insecure && self.plain_http() {
+            map.insert("insecure".to_owned(), Value::Bool(true));
+        }
+        if !self.deadline.is_empty() {
+            map.insert("deadline".to_owned(), text(&self.deadline));
+        }
+        if self.parallel {
+            map.insert("parallel".to_owned(), Value::Bool(true));
+        }
+        let skills = trimmed_lines(&self.skills);
+        if !skills.is_empty() {
+            map.insert(
+                "skills".to_owned(),
+                Value::Array(skills.into_iter().map(Value::String).collect()),
+            );
+        }
+        ToolsetSpec::from_json(&Value::Object(map).to_string())
+    }
+}
+
+/// The settings of the toolset the form describes, for its page: the ones the owner set. A token
+/// or client secret is never shown, only that there is one.
+fn settings(form: &ToolsetForm) -> Vec<Setting> {
+    fn add(out: &mut Vec<Setting>, label: &'static str, values: Vec<String>) {
+        if !values.is_empty() {
+            out.push(Setting { label, values });
+        }
+    }
+    fn one(text: &str) -> Vec<String> {
+        if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![text.to_owned()]
+        }
+    }
+    let mut out = Vec::new();
+    add(&mut out, "URL", one(&form.url));
+    if form.auth == "token" {
+        add(
+            &mut out,
+            "Authentication",
+            vec!["bearer token (stored)".to_owned()],
+        );
+    }
+    if form.auth == "oauth" {
+        add(
+            &mut out,
+            "Authentication",
+            vec!["OAuth: each user signs in".to_owned()],
+        );
+        let client = if form.oauth_client_id.is_empty() {
+            "registered when a user signs in".to_owned()
+        } else if form.oauth_secret_stored {
+            format!("{} (secret stored)", form.oauth_client_id)
+        } else {
+            form.oauth_client_id.clone()
+        };
+        add(&mut out, "OAuth client", vec![client]);
+        add(&mut out, "OAuth scopes", one(&form.oauth_scopes));
+    }
+    if form.insecure && form.plain_http() {
+        add(&mut out, "Insecure connections", vec!["allowed".to_owned()]);
+    }
+    add(&mut out, "Deadline", one(&form.deadline));
+    if form.parallel {
+        add(&mut out, "Parallel tools", vec!["allowed".to_owned()]);
+    }
+    add(
+        &mut out,
+        "Skills",
+        form.skills.lines().map(str::to_owned).collect(),
+    );
+    out
+}
+
+#[derive(Template)]
+#[template(path = "web/admin_toolset_form.html")]
+struct ToolsetFormPage<'a> {
+    shell: Shell,
+    csrf: &'a str,
+    title: String,
+    action: String,
+    submit: &'a str,
+    /// Edits a stored toolset (else the form adds one).
+    editing: bool,
+    /// The toolset changed since the form was loaded.
+    stale: bool,
+    error: Option<String>,
+    notice: Option<String>,
+    form: &'a ToolsetForm,
+}
+
+/// What is wrong with a posted form, and the status that says so.
+struct Problem {
+    status: StatusCode,
+    message: String,
+    /// The toolset was changed since the form was loaded.
+    stale: bool,
+}
+
+impl Problem {
+    /// A setting that isn't valid: 400.
+    fn invalid(error: &ToolsetError) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: error.to_string(),
+            stale: false,
+        }
+    }
+
+    /// What the manager refused, if the form can show it: 400 for a setting or a name that isn't
+    /// valid, 409 for a name that is taken, a toolset that changed meanwhile, and a toolset the
+    /// name of which is fine but that can't be used as a whole. `None` for the rest, which
+    /// [`failed`] answers.
+    fn of(err: &ToolsetManagerError, name: &str) -> Option<Self> {
+        let status = match err {
+            ToolsetManagerError::Invalid { key, .. }
+                if key.is_root()
+                    && InstanceName::new(name).is_ok()
+                    && !name.eq_ignore_ascii_case(RESERVED_TOOLSET_NAME) =>
+            {
+                StatusCode::CONFLICT
+            }
+            ToolsetManagerError::Invalid { .. } => StatusCode::BAD_REQUEST,
+            ToolsetManagerError::Exists | ToolsetManagerError::Stale => StatusCode::CONFLICT,
+            _ => return None,
+        };
+        Some(Self {
+            status,
+            message: err.to_string(),
+            stale: matches!(err, ToolsetManagerError::Stale),
+        })
+    }
+}
+
+/// The form for `form`, with `problem` if it is shown again after an error. `editing` says whether
+/// it edits the stored toolset `form.name`; otherwise it adds one.
+fn render_form(
+    user: &WebUser,
+    form: &ToolsetForm,
+    editing: bool,
+    problem: Option<Problem>,
+    notice: Option<String>,
+) -> Response {
+    let (title, action, submit) = if editing {
+        (
+            format!("Edit {}", form.name),
+            format!("/admin/mcp-servers/{}/edit", form.name),
+            "Save",
+        )
+    } else {
+        (
+            "New MCP server".to_owned(),
+            "/admin/mcp-servers".to_owned(),
+            "Add",
+        )
+    };
+    let status = problem.as_ref().map(|problem| problem.status);
+    let mut response = http::render(&ToolsetFormPage {
+        shell: Shell::new(user, Nav::McpServers),
+        csrf: &user.csrf,
+        title,
+        action,
+        submit,
+        editing,
+        stale: problem.as_ref().is_some_and(|problem| problem.stale),
+        error: problem.map(|problem| problem.message),
+        notice,
+        form,
+    });
+    if let Some(status) = status
+        && response.status().is_success()
+    {
+        *response.status_mut() = status;
+    }
+    response
+}
+
+/// `GET /admin/mcp-servers/new`: the form.
+async fn new_page(user: WebUser) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    render_form(&user, &ToolsetForm::blank(), false, None, None)
+}
+
+/// `POST /admin/mcp-servers` (CSRF-checked): adds the toolset, then 303 to its page. A form that
+/// isn't valid is shown again with the key and the reason; nothing is stored.
+async fn create(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    headers: HeaderMap,
+    Form(fields): Form<HashMap<String, String>>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    if let Err(rejected) = check_csrf(&user, &headers, fields.get("csrf").map(String::as_str)) {
+        return rejected.into_response();
+    }
+    let form = ToolsetForm::posted(&fields);
+    let spec = match form.spec() {
+        Ok(spec) => spec,
+        Err(error) => {
+            let problem = Problem::invalid(&error);
+            return render_form(&user, &form, false, Some(problem), None);
+        }
+    };
+    match pages.manager.add(&form.name, &spec).await {
+        Ok(view) => Redirect::to(&format!("/admin/mcp-servers/{}", view.name)).into_response(),
+        Err(err) => match Problem::of(&err, &form.name) {
+            Some(problem) => render_form(&user, &form, false, Some(problem), None),
+            None => failed(&err, "MCP server not added"),
+        },
+    }
+}
+
+/// The stored toolset `name` for a form, or the page that says why there is none: gone, or in
+/// `giles.toml`.
+async fn stored_view(
+    pages: &ToolsetPages,
+    name: &str,
+) -> Result<(ToolsetView, Timestamp), Box<Response>> {
+    let view = pages
+        .manager
+        .get(name)
+        .await
+        .map_err(|err| Box::new(failed(&err, "MCP server not changed")))?;
+    match view.source {
+        ToolsetSource::Stored { updated_at, .. } => Ok((view, updated_at)),
+        ToolsetSource::File => Err(Box::new(failed(
+            &ToolsetManagerError::Unsupported,
+            "MCP server not changed",
+        ))),
+    }
+}
+
+/// `GET /admin/mcp-servers/<name>/edit`: the form, filled in from the stored spec, with the
+/// `updated_at` it was read at.
+async fn edit_page(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    Path(name): Path<String>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    let (view, updated_at) = match stored_view(&pages, &name).await {
+        Ok(found) => found,
+        Err(response) => return *response,
+    };
+    let (form, notice) = match &view.spec {
+        Some(spec) => (
+            ToolsetForm::from_spec(&view.name, spec, Some(updated_at)),
+            None,
+        ),
+        None => {
+            let mut form = ToolsetForm::blank();
+            form.name.clone_from(&view.name);
+            form.updated_at = updated_at.to_string();
+            let notice = view
+                .failure
+                .map(|reason| format!("{reason}. Fill in the form to replace it."));
+            (form, notice)
+        }
+    };
+    render_form(&user, &form, true, None, notice)
+}
+
+/// `POST /admin/mcp-servers/<name>/edit` (CSRF-checked): replaces the settings and restarts the
+/// toolset with them, then 303 to its page. A form that isn't valid is shown again with the key
+/// and the reason; one for a toolset that changed since the form was loaded is a 409 with a
+/// link to reload it.
+async fn update(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    Form(fields): Form<HashMap<String, String>>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    if let Err(rejected) = check_csrf(&user, &headers, fields.get("csrf").map(String::as_str)) {
+        return rejected.into_response();
+    }
+    let (view, _) = match stored_view(&pages, &name).await {
+        Ok(found) => found,
+        Err(response) => return *response,
+    };
+    let mut form = ToolsetForm::posted(&fields);
+    form.name.clone_from(&view.name);
+    let expected = if form.updated_at.is_empty() {
+        None
+    } else {
+        match form.updated_at.parse::<Timestamp>() {
+            Ok(at) => Some(at),
+            Err(_) => {
+                let problem = Problem::invalid(&ToolsetError {
+                    key: KeyPath::root(),
+                    reason: "the form's updated_at isn't a time: reload the form".to_owned(),
+                });
+                return render_form(&user, &form, true, Some(problem), None);
+            }
+        }
+    };
+    let spec = match form.spec() {
+        Ok(spec) => spec,
+        Err(error) => {
+            let problem = Problem::invalid(&error);
+            return render_form(&user, &form, true, Some(problem), None);
+        }
+    };
+    match pages.manager.update(&view.name, &spec, expected).await {
+        Ok(updated) => {
+            Redirect::to(&format!("/admin/mcp-servers/{}", updated.name)).into_response()
+        }
+        Err(err) => match Problem::of(&err, &view.name) {
+            Some(problem) => render_form(&user, &form, true, Some(problem), None),
+            None => failed(&err, "MCP server not changed"),
+        },
+    }
+}
+
+/// An agent that mentions the toolset's tools.
+struct Mention {
+    id: String,
+    label: String,
+    /// The `tools` and `ask` entries that start with `<toolset>__`.
+    entries: Vec<String>,
+}
+
+/// The agents whose `tools` or `ask` mention tools of the toolset `name` (entries that start with
+/// `<name>__`), by id.
+fn mentions(config: &Config, name: &str) -> Vec<Mention> {
+    let prefix = format!("{name}__");
+    config
+        .agents
+        .values()
+        .filter_map(|agent| {
+            let entries: Vec<String> = agent
+                .tools
+                .iter()
+                .chain(&agent.ask)
+                .filter(|entry| entry.starts_with(&prefix))
+                .cloned()
+                .collect();
+            (!entries.is_empty()).then(|| Mention {
+                id: agent.id.to_string(),
+                label: agent_label(config, &agent.id),
+                entries,
+            })
+        })
+        .collect()
+}
+
+#[derive(Template)]
+#[template(path = "web/admin_toolset_remove.html")]
+struct RemovePage<'a> {
+    shell: Shell,
+    csrf: &'a str,
+    name: String,
+    agents: Vec<Mention>,
+}
+
+/// `GET /admin/mcp-servers/<name>/remove`: what removing does, the agents that mention the toolset's
+/// tools, and the button. Nothing happens until the form is posted.
+async fn remove_page(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    Path(name): Path<String>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    let (view, _) = match stored_view(&pages, &name).await {
+        Ok(found) => found,
+        Err(response) => return *response,
+    };
+    http::render(&RemovePage {
+        shell: Shell::new(&user, Nav::McpServers),
+        csrf: &user.csrf,
+        agents: mentions(&pages.config.get(), &view.name),
+        name: view.name,
+    })
+}
+
+/// `POST /admin/mcp-servers/<name>/remove` (CSRF-checked): removes the toolset, then 303 to the list.
+async fn remove(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    Form(fields): Form<HashMap<String, String>>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    if let Err(rejected) = check_csrf(&user, &headers, fields.get("csrf").map(String::as_str)) {
+        return rejected.into_response();
+    }
+    let (view, _) = match stored_view(&pages, &name).await {
+        Ok(found) => found,
+        Err(response) => return *response,
+    };
+    match pages.manager.remove(&view.name).await {
+        Ok(_) => Redirect::to("/admin/mcp-servers").into_response(),
+        Err(err) => failed(&err, "MCP server not removed"),
+    }
+}
+
+/// A tool glob an agent has, before and after a rename.
+struct GlobRow {
+    key: &'static str,
+    from: String,
+    to: String,
+}
+
+/// An agent whose globs a rename rewrites.
+struct AgentRow {
+    id: String,
+    label: String,
+    globs: Vec<GlobRow>,
+}
+
+/// A rename that went wrong on the server's side: the step, why, and what couldn't be undone.
+struct RenameFailure {
+    step: String,
+    error: String,
+    undo_errors: Vec<String>,
+}
+
+/// What the rename page shows besides the form.
+enum RenameState {
+    /// Only the form.
+    Form,
+    /// The agents that change, and the button to confirm.
+    Preview(Vec<AgentRow>),
+    /// The reason the name was refused, with the status that says so.
+    Refused(StatusCode, String),
+    /// A step of the rename failed.
+    Failed(RenameFailure),
+}
+
+#[derive(Template)]
+#[template(path = "web/admin_toolset_rename.html")]
+struct RenamePage<'a> {
+    shell: Shell,
+    csrf: &'a str,
+    name: String,
+    /// What the owner typed as the new name.
+    new: String,
+    error: Option<String>,
+    failure: Option<RenameFailure>,
+    preview: Option<Vec<AgentRow>>,
+}
+
+/// The agents of a rename's change list, labeled as the other pages label them.
+fn agent_rows(config: &Config, changes: &[AgentGlobChange]) -> Vec<AgentRow> {
+    let mut rows = Vec::new();
+    for change in changes {
+        let label = match AgentId::new(change.agent.as_str()) {
+            Ok(id) => agent_label(config, &id),
+            Err(_) => change.agent.clone(),
+        };
+        rows.push(AgentRow {
+            id: change.agent.clone(),
+            label,
+            globs: change
+                .globs
+                .iter()
+                .map(|glob| GlobRow {
+                    key: glob.key,
+                    from: glob.from.clone(),
+                    to: glob.to.clone(),
+                })
+                .collect(),
+        });
+    }
+    rows
+}
+
+/// The rename page for the toolset `name` and the new name `new`, in `state`.
+fn render_rename(user: &WebUser, name: &str, new: &str, state: RenameState) -> Response {
+    let (status, error, failure, preview) = match state {
+        RenameState::Form => (StatusCode::OK, None, None, None),
+        RenameState::Preview(agents) => (StatusCode::OK, None, None, Some(agents)),
+        RenameState::Refused(status, reason) => (status, Some(reason), None, None),
+        RenameState::Failed(failure) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, None, Some(failure), None)
+        }
+    };
+    let mut response = http::render(&RenamePage {
+        shell: Shell::new(user, Nav::McpServers),
+        csrf: &user.csrf,
+        name: name.to_owned(),
+        new: new.to_owned(),
+        error,
+        failure,
+        preview,
+    });
+    if status != StatusCode::OK && response.status().is_success() {
+        *response.status_mut() = status;
+    }
+    response
+}
+
+/// The answer to a rename the manager refused or that failed: the form again with the typed name
+/// and the reason (400 for a name or a glob that isn't valid, 409 for a name that is taken, 500
+/// for a failed step), or [`failed`]'s page for a toolset that is gone or can't be renamed.
+fn rename_problem(user: &WebUser, name: &str, new: &str, err: &ToolsetManagerError) -> Response {
+    let state = match err {
+        ToolsetManagerError::Refused { reason } => {
+            RenameState::Refused(StatusCode::BAD_REQUEST, reason.clone())
+        }
+        // The manager logs a failed rename, and the page tells the owner why a check couldn't run.
+        ToolsetManagerError::Failed {
+            step,
+            error,
+            undo_errors,
+        } => RenameState::Failed(RenameFailure {
+            step: step.clone(),
+            error: error.clone(),
+            undo_errors: undo_errors.clone(),
+        }),
+        err => match Problem::of(err, new) {
+            Some(problem) => RenameState::Refused(problem.status, problem.message),
+            None => return failed(err, "MCP server not renamed"),
+        },
+    };
+    render_rename(user, name, new, state)
+}
+
+/// `GET /admin/mcp-servers/<name>/rename`: the form for the new name. With `?new=`, the agents
+/// whose `tools` and `ask` globs would change, and the button that renames. Nothing is changed.
+async fn rename_page(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    Path(name): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    let (view, _) = match stored_view(&pages, &name).await {
+        Ok(found) => found,
+        Err(response) => return *response,
+    };
+    let new = query.get("new").map_or("", |new| new.trim());
+    if new.is_empty() {
+        return render_rename(&user, &view.name, "", RenameState::Form);
+    }
+    match pages.manager.rename_preview(&view.name, new).await {
+        Ok(preview) => {
+            let agents = agent_rows(&pages.config.get(), &preview.agents);
+            render_rename(&user, &view.name, new, RenameState::Preview(agents))
+        }
+        Err(err) => rename_problem(&user, &view.name, new, &err),
+    }
+}
+
+/// `POST /admin/mcp-servers/<name>/rename` (CSRF-checked): renames the toolset to the form's `new`,
+/// then 303 to its page under the new name. A name or glob that is refused is shown on the form
+/// again with the typed name; nothing is changed.
+async fn rename(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    Form(fields): Form<HashMap<String, String>>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    if let Err(rejected) = check_csrf(&user, &headers, fields.get("csrf").map(String::as_str)) {
+        return rejected.into_response();
+    }
+    let (view, _) = match stored_view(&pages, &name).await {
+        Ok(found) => found,
+        Err(response) => return *response,
+    };
+    let new = fields.get("new").map_or("", |new| new.trim());
+    if new.is_empty() {
+        let state = RenameState::Refused(
+            StatusCode::BAD_REQUEST,
+            "enter the new name of the MCP server".to_owned(),
+        );
+        return render_rename(&user, &view.name, "", state);
+    }
+    match pages.manager.rename(&view.name, new).await {
+        Ok(renamed) => {
+            Redirect::to(&format!("/admin/mcp-servers/{}", renamed.view.name)).into_response()
+        }
+        Err(err) => rename_problem(&user, &view.name, new, &err),
+    }
+}
+
+/// `POST /admin/mcp-servers/<name>/restart` (CSRF-checked): `RestartPlugin` for the toolset, then 303
+/// back to its page. A name that isn't a toolset is a 404, whatever else has the name.
+async fn restart(
+    State(pages): State<ToolsetPages>,
+    user: WebUser,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    Form(fields): Form<HashMap<String, String>>,
+) -> Response {
+    if !may_administer(&user) {
+        return forbidden();
+    }
+    if let Err(rejected) = check_csrf(&user, &headers, fields.get("csrf").map(String::as_str)) {
+        return rejected.into_response();
+    }
+    let view = match pages.manager.get(&name).await {
+        Ok(view) => view,
+        Err(err) => return failed(&err, "MCP server not restarted"),
+    };
+    match pages
+        .admin
+        .restart_plugin(Request::new(pb::RestartPluginRequest {
+            instance: view.name.clone(),
+            kind: pb::InstanceKind::Toolset.into(),
+        }))
+        .await
+    {
+        Ok(_) => Redirect::to(&format!("/admin/mcp-servers/{}", view.name)).into_response(),
+        Err(status) => call_failed("RestartPlugin", "Restart failed", &status),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec(json: &str) -> ToolsetSpec {
+        ToolsetSpec::from_json(json).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// What the rename page says when undoing the earlier steps failed too: the owner is told to
+    /// put each thing right by hand, and that the rename is partly done.
+    #[tokio::test]
+    async fn a_rename_that_could_not_be_undone_lists_what_to_put_right() {
+        let user = WebUser {
+            user: doozers_types::UserId::new("owner").unwrap(),
+            sender: doozers_types::NativeId::new("owner").unwrap(),
+            csrf: "token".to_owned(),
+            login: super::super::auth::Login::Test,
+        };
+        let err = ToolsetManagerError::Failed {
+            step: "rewriting /agents/zed/agent.toml".to_owned(),
+            error: "permission denied".to_owned(),
+            undo_errors: vec![
+                "put /agents/jeeves/agent.toml back: the file changed while the rename ran"
+                    .to_owned(),
+                "put the toolset's row back: <busy>".to_owned(),
+            ],
+        };
+        let response = rename_problem(&user, "box", "chest", &err);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        for expected in [
+            "rewriting /agents/zed/agent.toml: permission denied",
+            "so the rename is partly done",
+            "put /agents/jeeves/agent.toml back: the file changed while the rename ran",
+            // The reason is escaped.
+            "row back: &#60;busy&#62;",
+        ] {
+            assert!(html.contains(expected), "{expected}\n{html}");
+        }
+        assert!(!html.contains("Nothing was changed"), "{html}");
+    }
+
+    /// A spec filled into the form and built again is the same spec.
+    #[test]
+    fn a_spec_survives_the_form() {
+        for json in [
+            r#"{ "url": "http://example.com/mcp",
+                 "auth": { "bearer": { "secret": "toolsets/search/bearer-token" } },
+                 "insecure": true,
+                 "deadline": "90s", "parallel": true, "skills": ["/srv/skills"] }"#,
+            r#"{ "url": "https://example.com/mcp" }"#,
+            r#"{ "url": "https://example.com/mcp",
+                 "auth": { "oauth": { "client_id": "giles",
+                     "client_secret": { "secret": "toolsets/search/oauth-client-secret" },
+                     "scopes": ["repo", "read:org"] } } }"#,
+            r#"{ "url": "https://example.com/mcp", "auth": { "oauth": {} } }"#,
+        ] {
+            let original = spec(json);
+            let form = ToolsetForm::from_spec("search", &original, None);
+            assert_eq!(form.spec().unwrap(), original, "{json}");
+        }
+    }
+
+    /// What the browser posts for a form is what `from_spec` filled in.
+    #[test]
+    fn a_posted_form_reads_back_what_was_shown() {
+        let original = spec(
+            r#"{ "url": "https://example.com/mcp",
+                 "auth": { "bearer": { "secret": "toolsets/search/bearer-token" } },
+                 "deadline": "2m", "skills": ["/a", "/b"] }"#,
+        );
+        let form = ToolsetForm::from_spec("search", &original, None);
+        assert!(form.bearer_stored);
+        let fields: HashMap<String, String> = [
+            ("name", form.name.clone()),
+            ("url", form.url.clone()),
+            ("auth", form.auth.clone()),
+            ("bearer_stored", "1".to_owned()),
+            ("bearer_token", String::new()),
+            ("deadline", form.deadline.clone()),
+            ("skills", form.skills.clone()),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect();
+        let posted = ToolsetForm::posted(&fields);
+        assert_eq!(posted.spec().unwrap(), original);
+    }
+
+    #[test]
+    fn problems_with_a_value_name_the_key() {
+        let mut form = ToolsetForm::blank();
+        form.url = "https://example.com/mcp".to_owned();
+        form.deadline = "soon".to_owned();
+        assert_eq!(form.spec().unwrap_err().key.to_string(), "deadline");
+    }
+
+    #[test]
+    fn durations_are_shown_in_the_largest_whole_unit() {
+        for (millis, shown) in [
+            (300_000, "5m"),
+            (90_000, "90s"),
+            (3_600_000, "1h"),
+            (1_500, "1500ms"),
+            (172_800_000, "2d"),
+            (0, "0ms"),
+        ] {
+            assert_eq!(humanize(Duration::from_millis(millis)), shown);
+        }
+    }
+}

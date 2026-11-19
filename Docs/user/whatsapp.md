@@ -62,13 +62,13 @@ device_name = "Giles at home"
 max_blob = "20 MiB"
 ```
 
-An unknown key or an invalid value stops the instance from starting. The log and `giles status` name
-the key, e.g. `invalid config: phone_number: starts with 0`.
+An unknown key or an invalid value stops the instance from starting. The log and `doozers status`
+name the key, e.g. `invalid config: phone_number: starts with 0`.
 
 ## Linking
 
 While no device is linked, the web chat's [admin page](web.md#linking-a-channel) shows a code to
-link with. `giles status` shows the same code as text.
+link with. `doozers status` shows the same code as text.
 
 ### With a QR code
 

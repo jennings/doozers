@@ -1,8 +1,8 @@
 # MCP client
 
-Toolsets are MCP servers (PLAN section 7.10). The core's MCP client is `giles_core::mcp`, built on
+Toolsets are MCP servers (PLAN section 7.10). The core's MCP client is `doozers_core::mcp`, built on
 `rmcp` 3.7 (the official Rust SDK, client features only). One `McpToolset` is one connection to one
-server and implements the `giles_types::Toolset` trait, so the rest of the core never sees MCP.
+server and implements the `doozers_types::Toolset` trait, so the rest of the core never sees MCP.
 
 ## Connecting
 
@@ -49,13 +49,13 @@ stdin, stdout, and stderr with pipes. `DirectCommand { program, args, env, cwd }
 unsandboxed command (`command()`: a cleared environment plus the daemon's `PATH` and the configured
 `env`, whose values are `config::Secret`s) and its secrets (`secrets()`). The toolset launcher
 builds its own `Command` instead, running the server through the sandbox trampoline
-(`giles sandbox-exec <spec> -- <command>`), and passes it to the same constructor with the
+(`doozers sandbox-exec <spec> -- <command>`), and passes it to the same constructor with the
 instance's `env` values ([Toolsets](toolsets.md)).
 
-- **Stderr** is read line by line, scrubbed, and logged with target `giles_core::mcp::stderr` inside
-  the `mcp{toolset=<name>}` span, at the level the line carries if it starts with a timestamp and a
-  level, else `info` (the same rule as for plugins, see [Plugin host](plugin-host.md)).
-  `GILES_LOG=info,giles_core::mcp::stderr=warn` silences chatty servers. Lines are cut at 4 KiB
+- **Stderr** is read line by line, scrubbed, and logged with target `doozers_core::mcp::stderr`
+  inside the `mcp{toolset=<name>}` span, at the level the line carries if it starts with a timestamp
+  and a level, else `info` (the same rule as for plugins, see [Plugin host](plugin-host.md)).
+  `GILES_LOG=info,doozers_core::mcp::stderr=warn` silences chatty servers. Lines are cut at 4 KiB
   (marked `…`); a cut line that ends in the first bytes of a secret has that end redacted too.
   Invalid UTF-8 is replaced.
 - **The child** runs as the leader of its own process group and is owned by a supervisor task. If
@@ -220,7 +220,7 @@ section 7.10 says for v1. Without media the input is sent unchanged.
 
 ## Errors
 
-| Failure                                                  | `giles_types::Error`               |
+| Failure                                                  | `doozers_types::Error`               |
 | -------------------------------------------------------- | ---------------------------------- |
 | Connection closed, transport failure, server exited      | `Unavailable` (retryable)          |
 | HTTP 401 or 403 during `initialize`                      | `InvalidRequest`                   |
@@ -234,7 +234,7 @@ fails by its own account (`isError: true`) is a normal `Result` event, not an er
 
 ## Tests
 
-`crates/giles-core/tests/support/mcp_server.rs` is a small `rmcp` server (paginated tools,
+`crates/doozers-core/tests/support/mcp_server.rs` is a small `rmcp` server (paginated tools,
 `list_changed`, gated progress, a tool that waits to be cancelled, a tool that asks a question by
 elicitation and reports the answer, media results, a tool that reads the file at a path, exit). It
 runs:

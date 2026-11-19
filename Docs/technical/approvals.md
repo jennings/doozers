@@ -1,6 +1,6 @@
 # Approvals
 
-`giles_core::approvals` makes calls to the tools an agent's `ask` globs name, and questions a tool
+`doozers_core::approvals` makes calls to the tools an agent's `ask` globs name, and questions a tool
 asks mid-call (MCP elicitation), wait for the requester's answer ([Plan](../PLAN.md) §6.4, §7.10).
 The agent loop asks through it ([Agent loop](agent-loop.md)); the session manager hands it the
 `yes`/`no`/`yes!` replies ([Sessions and turns](sessions.md)), which the router recognizes only
@@ -20,11 +20,12 @@ while it says an approval is pending ([Identity and routing](identity-and-routin
 
 ## Wiring
 
-`giles serve` builds one `ApprovalBoard::new(ChannelPresenter::new(registry))` and passes it to both
-`AgentLoop::from_runtime(&runtime, board)` and `Runtime::start_sessions(runner, board, shutdown)`,
-so the replies the session manager receives reach the approvals the agent loop waits on. Each turn
-gets a `TurnApprovals::for_turn(board, agent, turn)`: the agent's `ask` globs and
-`approval_timeout`, answered by the turn's requester in the session's conversation.
+`doozers serve` builds one `ApprovalBoard::new(ChannelPresenter::new(registry))` and passes it to
+both `AgentLoop::from_runtime(&runtime, board)` and
+`Runtime::start_sessions(runner, board, shutdown)`, so the replies the session manager receives
+reach the approvals the agent loop waits on. Each turn gets a
+`TurnApprovals::for_turn(board, agent, turn)`: the agent's `ask` globs and `approval_timeout`,
+answered by the turn's requester in the session's conversation.
 
 ## What waits
 
@@ -174,7 +175,7 @@ re-exported by the web channel. `resolved` must not block.
 `approvals/prompt.rs` has the rendering table (backticks, padding, line breaks, control and
 bidirectional characters, long input). `approvals/tests.rs` tests the board and `TurnApprovals` on
 paused time with a fake channel and a recording presenter, and `ChannelPresenter` with a real web
-channel. `crates/giles-core/tests/approvals.rs` runs the whole path through
+channel. `crates/doozers-core/tests/approvals.rs` runs the whole path through
 `Runtime::start_sessions` and the agent loop: `yes`, `no`, `yes!` (and for the other waiting calls),
 a bare `yes` with two waiting, expiry and a late reply, denial by a new message in both busy modes,
 a question answered both ways, `/stop` while waiting, and the deadline not counting the wait.

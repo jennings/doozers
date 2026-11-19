@@ -3,7 +3,7 @@
 The core talks to provider, channel, and environment plugins over gRPC, and serves an admin service
 to the CLI and the web admin pages (PLAN section 8). Toolsets speak MCP instead and have no `.proto`
 contract. The contracts are Protobuf files under `proto/`, checked with `buf` and compiled into the
-`giles-proto` crate.
+`doozers-proto` crate.
 
 ## Packages
 
@@ -11,12 +11,12 @@ Each package lives in `proto/giles/<package>/v1/<package>.proto`; the `buf` modu
 
 | Package             | Contents                                                              | Rust module                   |
 | ------------------- | --------------------------------------------------------------------- | ----------------------------- |
-| `giles.types.v1`    | Shared types mirroring `giles-types`: messages, blocks, `BlobRef`     | `giles_proto::types::v1`      |
-| `giles.plugin.v1`   | `PluginService` (`Describe`, `Configure`, `Shutdown`, blob transfer)  | `giles_proto::plugin::v1`     |
-| `giles.provider.v1` | `ProviderCapabilities` only; `ProviderService` comes with provider plugins | `giles_proto::provider::v1` |
-| `giles.channel.v1`  | `ChannelService` (`Events`, `Send`) and `ChannelCapabilities`          | `giles_proto::channel::v1`    |
-| `giles.environment.v1` | `EnvironmentService` (workspaces, `Exec`, files, `Find`, `Grep`) and `EnvironmentCapabilities` | `giles_proto::environment::v1` |
-| `giles.admin.v1`    | `AdminService`, served by the core on `run/admin.sock`                | `giles_proto::admin::v1`      |
+| `giles.types.v1`    | Shared types mirroring `doozers-types`: messages, blocks, `BlobRef`     | `doozers_proto::types::v1`      |
+| `giles.plugin.v1`   | `PluginService` (`Describe`, `Configure`, `Shutdown`, blob transfer)  | `doozers_proto::plugin::v1`     |
+| `giles.provider.v1` | `ProviderCapabilities` only; `ProviderService` comes with provider plugins | `doozers_proto::provider::v1` |
+| `giles.channel.v1`  | `ChannelService` (`Events`, `Send`) and `ChannelCapabilities`          | `doozers_proto::channel::v1`    |
+| `giles.environment.v1` | `EnvironmentService` (workspaces, `Exec`, files, `Find`, `Grep`) and `EnvironmentCapabilities` | `doozers_proto::environment::v1` |
+| `giles.admin.v1`    | `AdminService`, served by the core on `run/admin.sock`                | `doozers_proto::admin::v1`      |
 
 Every gRPC plugin serves `giles.plugin.v1.PluginService`, `grpc.health.v1.Health` (from the
 `tonic-health` crate, not from these files), and exactly one kind service. The core is always the
@@ -44,11 +44,11 @@ is described in [Admin service](admin.md).
   - Enum values carry the enum's name as a prefix, and value 0 is `<ENUM>_UNSPECIFIED`. Where a
     value is required, an unspecified or unknown one is invalid (`INVALID_ARGUMENT`), except
     `CacheRetention`, whose unspecified value means the default, `SHORT`.
-- `optional` scalars stand exactly where `giles-types` has an `Option`, so `prost` generates the
+- `optional` scalars stand exactly where `doozers-types` has an `Option`, so `prost` generates the
   same `Option` and set-but-empty stays distinct from unset. Message-typed fields are always
   optional in proto3; the ones the domain requires say "Always set" in their comment, and a missing
   one is `INVALID_ARGUMENT`.
-- Ids are plain strings on the wire. The receiver validates them when converting to `giles-types`
+- Ids are plain strings on the wire. The receiver validates them when converting to `doozers-types`
   (non-empty, or SHA-256 hex for media).
 - JSON values are JSON text in `string` fields named `*_json`: tool input, tool input schemas,
   `Opaque` data, instance config. `google.protobuf.Struct` would not do: it holds only objects and
@@ -59,12 +59,12 @@ is described in [Admin service](admin.md).
   swaps the handle for the core's SHA-256 `MediaId` (PLAN section 8.3). A `BlobChunk` carries at
   most 1 MiB of data.
 - Messages are limited to 16 MiB instead of `tonic`'s 4 MiB default. Clients and servers set it from
-  `giles_proto::MAX_MESSAGE_SIZE`.
+  `doozers_proto::MAX_MESSAGE_SIZE`.
 
 ## Launch handshake
 
 Before any gRPC call, the core and a plugin agree on a few fixed values (PLAN section 7.4). Both
-sides take them from `giles_proto::handshake`, so they can't drift apart:
+sides take them from `doozers_proto::handshake`, so they can't drift apart:
 
 | Constant                       | Value                                                        |
 | ------------------------------ | ------------------------------------------------------------ |
@@ -82,12 +82,12 @@ sides take them from `giles_proto::handshake`, so they can't drift apart:
 spaces, no leading zeros or signs in the protocol, no other transport. Protocol majors are plain
 decimal (`parse_major`). [Plugin SDK](plugin-sdk.md) describes the plugin side.
 
-## Mapping to `giles-types`
+## Mapping to `doozers-types`
 
-`giles-proto` holds only the wire types. The plugin SDK and the core's `Remote*` adapters convert
-between them and `giles-types`, moving fields.
+`doozers-proto` holds only the wire types. The plugin SDK and the core's `Remote*` adapters convert
+between them and `doozers-types`, moving fields.
 
-| `giles-types`                                | `giles.types.v1`                                          |
+| `doozers-types`                                | `giles.types.v1`                                          |
 | -------------------------------------------- | --------------------------------------------------------- |
 | `Message { role, content, meta }`            | `Message { role, content, meta }`                          |
 | `Role::{User, Assistant}`                    | `Role` `ROLE_USER`, `ROLE_ASSISTANT`                       |
@@ -112,7 +112,7 @@ between them and `giles-types`, moving fields.
 
 The channel types map onto `giles.channel.v1`:
 
-| `giles-types`                                  | `giles.channel.v1`                                          |
+| `doozers-types`                                  | `giles.channel.v1`                                          |
 | ---------------------------------------------- | ----------------------------------------------------------- |
 | `ChannelInfo { output, can_initiate }`         | `ChannelCapabilities`, in `DescribeResponse.channel`        |
 | `ChannelInfo.identity_namespace`               | `giles.plugin.v1.ConfigureResponse.identity_namespace`      |
@@ -130,11 +130,11 @@ The channel types map onto `giles.channel.v1`:
 whole; the per-model `ModelInfo` comes with `ProviderService`.
 
 The environment types map onto `giles.environment.v1`. The `Environment` trait takes and returns
-`giles-types` values, and `giles_plugin_sdk::convert::environment` has the conversions in both
+`doozers-types` values, and `doozers_plugin_sdk::convert::environment` has the conversions in both
 directions: the SDK serves the trait over the service, and the core's `RemoteEnvironment` adapter
 calls the service and implements the trait.
 
-| `giles-types`                                    | `giles.environment.v1`                                     |
+| `doozers-types`                                    | `giles.environment.v1`                                     |
 | ------------------------------------------------ | ---------------------------------------------------------- |
 | `Environment::info`                              | `Info`; `InfoResponse.options_schema_json` is the schema   |
 | `Environment::create_workspace(id, options)`     | `CreateWorkspace`; `options_json` is a JSON object, `""` is `{}` |
@@ -183,7 +183,7 @@ only, and `buf breaking` enforces it:
 
 ## Code generation
 
-`crates/giles-proto/build.rs` compiles every package with `tonic-prost-build`. Since `tonic` 0.14,
+`crates/doozers-proto/build.rs` compiles every package with `tonic-prost-build`. Since `tonic` 0.14,
 `prost` support lives in separate crates: `tonic-prost-build` generates the code, and the generated
 code uses `tonic-prost`'s codec at run time.
 
@@ -192,12 +192,12 @@ code uses `tonic-prost`'s codec at run time.
   well-known types (`google/protobuf/timestamp.proto`) come from the vendored include directory
   either way.
 - Messages, and a client and a server for every service, are generated into `OUT_DIR` and included
-  in one module per package, `giles_proto::<package>::v1`, marked
+  in one module per package, `doozers_proto::<package>::v1`, marked
   `#[allow(missing_docs, clippy::all, clippy::pedantic)]`. Comments in the `.proto` files become the
   Rust docs. Well-known types map to `prost-types`.
-- `giles_proto::FILE_DESCRIPTOR_SET` is the encoded descriptor set of every package, with its
+- `doozers_proto::FILE_DESCRIPTOR_SET` is the encoded descriptor set of every package, with its
   imports, for gRPC server reflection.
-- `crates/giles-proto/proto` is a symlink to the repository's `proto/`. Cargo follows it when
+- `crates/doozers-proto/proto` is a symlink to the repository's `proto/`. Cargo follows it when
   packaging, so the published crate contains the `.proto` files and builds on its own.
 
 ## Checks
@@ -232,7 +232,7 @@ to match these files. The changes:
   the lint, each stream direction can now gain fields independently.
 - `InboundMessage.conversation` is a `giles.types.v1.ConversationRef`, which the admin service's
   sessions use too.
-- Fields that are `Option`s in `giles-types` are `optional`: `BlobRef.name`,
+- Fields that are `Option`s in `doozers-types` are `optional`: `BlobRef.name`,
   `InboundMessage.sender_display_name`, `reply_to`, and `message_id`, and `SendRequest.reply_to`.
 - `DescribeResponse` reserves 12 (toolsets) at message level, since a `oneof` can't hold
   reservations, and `SandboxGrants` is defined in `giles.plugin.v1`.

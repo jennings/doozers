@@ -1,10 +1,10 @@
 # End-to-end tests
 
-`crates/giles/tests/e2e/` runs the whole daemon, scripted from outside. Each test starts the real
-`giles serve` binary on a temporary data root, with the echo channel plugin
-(`plugins/giles-channel-echo`, see [Plugin SDK](plugin-sdk.md)) and a fake model provider. The tests
-play the owner: they put messages into the echo plugin and read back what the daemon sent. Nothing
-in the product is test-aware: there is no test feature, injectable provider, or clock.
+`crates/doozers/tests/e2e/` runs the whole daemon, scripted from outside. Each test starts the real
+`doozers serve` binary on a temporary data root, with the echo channel plugin
+(`plugins/doozers-channel-echo`, see [Plugin SDK](plugin-sdk.md)) and a fake model provider. The
+tests play the owner: they put messages into the echo plugin and read back what the daemon sent.
+Nothing in the product is test-aware: there is no test feature, injectable provider, or clock.
 
 | File          | What it holds                                                                      |
 | ------------- | ---------------------------------------------------------------------------------- |
@@ -15,14 +15,14 @@ in the product is test-aware: there is no test feature, injectable provider, or 
 | `jobs.rs`     | A configured job delivered through the outbox, also across a restart               |
 | `environments.rs` | An agent working in the echo environment plugin's workspace, and `/stop` cancelling its command |
 
-The suite is one test target, `cargo test -p giles --test e2e`, and part of
+The suite is one test target, `cargo test -p doozers --test e2e`, and part of
 `cargo test --workspace`. It takes a few seconds: the tests run in parallel, each with its own
 daemon, data root, and provider.
 
 ## The fake provider
 
 Provider plugins aren't supported yet, and there is no way to put a different `Provider` into
-`giles serve`, so the fake is a server instead of a component: `FakeProvider` is a loopback HTTP
+`doozers serve`, so the fake is a server instead of a component: `FakeProvider` is a loopback HTTP
 server speaking the OpenAI Chat Completions streaming protocol, and the data root's `giles.toml`
 configures the built-in `openai` provider with `base_url` pointing at it
 ([Providers](providers.md)). The daemon's real provider code, SSE parsing, and tool call handling
@@ -54,14 +54,14 @@ by accident through a turn it didn't plan, and scripts say exactly what the mode
   server listens on `127.0.0.1:0`, and the daemon's sockets are under the root (or `TMPDIR` when the
   path is long, as in production). Nothing touches the real `~/.giles`.
 - **The environment plugin** is opt-in: `Home::with_environment` also symlinks
-  `giles-environment-echo` (built the same way, on first use) and configures it as
+  `doozers-environment-echo` (built the same way, on first use) and configures it as
   `[environment.box]`. The agent still lists it in `environments`. The plugin keeps workspaces and
   files in memory, and writes `exec-started` and `exec-cancelled` in its data directory
   (`Home::environment_dir`) when a `hang` command starts and when the core cancels it.
-- **The plugin binary** is `giles-channel-echo` next to the `giles` binary in `target/`. Once per
-  test run the harness runs `cargo build -p giles-channel-echo` for that target directory and
+- **The plugin binary** is `doozers-channel-echo` next to the `doozers` binary in `target/`. Once
+  per test run the harness runs `cargo build -p doozers-channel-echo` for that target directory and
   profile. It does nothing when `cargo test --workspace` has just built the plugin (same artifact),
-  and builds or rebuilds it when only `-p giles` is tested, so a stale plugin never runs.
+  and builds or rebuilds it when only `-p doozers` is tested, so a stale plugin never runs.
 - **Sandbox.** The echo plugin runs sandboxed wherever `sandbox::check_host()` says the host can
   (macOS, Linux with Landlock); otherwise the config adds `unsandboxed = true`, so the same tests
   run in a container without Landlock.
@@ -73,7 +73,7 @@ by accident through a turn it didn't plan, and scripts say exactly what the mode
 - **Inspecting state.** `db()`, `inbox_states()`, and `outbox_rows()` read the daemon's SQLite
   database (read-only use; the daemon owns it) for facts the channel can't show, such as an inbox
   row being `started` or `unknown`.
-- **The daemon.** `Daemon::start(&home)` spawns `giles serve --home <root>` and waits for
+- **The daemon.** `Daemon::start(&home)` spawns `doozers serve --home <root>` and waits for
   `giles started`; its stderr is collected for `wait_for_log`. `stop()` sends SIGTERM and checks for
   a clean exit, `kill()` is a SIGKILL crash, and dropping a daemon kills it and, when the test is
   failing, prints its log. A killed daemon's plugin sees stdin close and exits; the next start reaps
@@ -109,11 +109,11 @@ by accident through a turn it didn't plan, and scripts say exactly what the mode
   provider sees no extra request), the model gets `Error: interrupted` for the call that was
   waiting, and that call never runs.
 - **Job delivery** (`jobs.rs`): `cron = "0 0 1 1 *"` with a `job_runs` row 400 days old (written
-  with `giles-store` before the daemon starts) makes the scheduler run the job once at startup as a
-  missed time ([Scheduler](scheduler.md#timing)), without waiting for a clock. The reply is sent to
-  the channel as `{"recipient": "owner"}`, the identity `echo:owner` split at its namespace, and the
-  outbox is empty after. In a second test the echo plugin refuses the owner (`unavailable`), the row
-  waits in `outbox` with its error, survives the daemon stopping, and is delivered once after a
+  with `doozers-store` before the daemon starts) makes the scheduler run the job once at startup as
+  a missed time ([Scheduler](scheduler.md#timing)), without waiting for a clock. The reply is sent
+  to the channel as `{"recipient": "owner"}`, the identity `echo:owner` split at its namespace, and
+  the outbox is empty after. In a second test the echo plugin refuses the owner (`unavailable`), the
+  row waits in `outbox` with its error, survives the daemon stopping, and is delivered once after a
   restart with the channel working; the job doesn't run again.
 
 ## Adding a test

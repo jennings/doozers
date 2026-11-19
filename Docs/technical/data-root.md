@@ -1,7 +1,7 @@
 # Data root
 
 Everything Giles stores lives under one directory, the data root (`GILES_HOME`, PLAN section 11.1).
-The module `giles_core::paths` owns its layout: no other code joins path strings onto the root.
+The module `doozers_core::paths` owns its layout: no other code joins path strings onto the root.
 
 ## Resolution
 
@@ -70,7 +70,7 @@ either. It matters most for `data/<kind>/<instance>/`, the only directory a plug
 
 ## Creating the layout
 
-`DataRoot::create_layout` runs at `giles serve` startup and is idempotent. It creates the root and
+`DataRoot::create_layout` runs at `doozers serve` startup and is idempotent. It creates the root and
 every directory above, each with mode 0700. It creates no files: `giles.toml` and `secrets.toml` are
 written by people, and the database, `secret.key`, token, sockets, and pid files by the subsystems
 that own them.
@@ -95,7 +95,7 @@ $TMPDIR/giles-<16 hex digits>/proxy.sock
 ```
 
 - The name is the 64-bit FNV-1a hash of the absolute, normalized root path. It is a fixed algorithm
-  (unlike Rust's `DefaultHasher`), so the daemon and any `giles` CLI, even from another release,
+  (unlike Rust's `DefaultHasher`), so the daemon and any `doozers` CLI, even from another release,
   derive the same directory from the same `GILES_HOME` without coordinating.
 - Only the sockets move. `run/admin.token`, `run/giles.lock`, `run/pids/`, and `run/sandbox/` stay
   in the data root.

@@ -2,7 +2,7 @@
 
 Every message a channel receives passes one pure decision before anything is stored: drop it, handle
 it as a core command, or hand it to an agent's session ([Plan](../PLAN.md) §1.1, §3.2, §3.3,
-§6.1–§6.4). Three modules of `giles-core` implement it; the inbox and sessions code calls
+§6.1–§6.4). Three modules of `doozers-core` implement it; the inbox and sessions code calls
 `Router::classify` for every `ChannelEvent::Message`. The user-facing side is in
 [Configuration](../user/configuration.md) and [Chat commands](../user/commands.md).
 
@@ -68,7 +68,7 @@ message is from the owner.
 ### Identity in memory
 
 Memory ([Skills and Memory](skills-and-memory.md#memory)) uses identity in three ways, all in
-`giles_core::memory`:
+`doozers_core::memory`:
 
 - **A user's memories belong to the internal user id**, not to a channel identity. They follow the
   user's direct and job sessions with the agent on every channel (v1: `owner`), as `memory_search`'s
@@ -82,18 +82,18 @@ Memory ([Skills and Memory](skills-and-memory.md#memory)) uses identity in three
 - **A group's private scope is keyed by channel instance and conversation**
   (`MemoryOwner::Group { instance, conversation }`), taken from the session, not from whoever
   speaks: every participant shares it, and none of their own memories is in it. The conversation id
-  alone isn't enough, since the same id can exist on two instances; `giles channel rename` rewrites
-  the instance part of these keys ([Instance rename](instance-rename.md)). v1 drops group messages
-  at `classify` (above), so no group session exists yet.
+  alone isn't enough, since the same id can exist on two instances; `doozers channel rename`
+  rewrites the instance part of these keys ([Instance rename](instance-rename.md)). v1 drops group
+  messages at `classify` (above), so no group session exists yet.
 
 ## Identity namespaces
 
 A channel reports its namespace in `ChannelInfo::identity_namespace` (§3.2).
 `validate_namespace(component, namespace)` accepts it only if it is the component name itself
-(`web`, `whatsapp`) or starts with `<component>:` (`irc:libera.chat` from `giles-channel-irc`). The
-match is on whole segments, so component `irc` can't claim `ircx`, and case-sensitive, so it can't
-claim `IRC` either. Every `:`-separated segment must be non-empty, without whitespace or control
-characters.
+(`web`, `whatsapp`) or starts with `<component>:` (`irc:libera.chat` from `doozers-channel-irc`).
+The match is on whole segments, so component `irc` can't claim `ircx`, and case-sensitive, so it
+can't claim `IRC` either. Every `:`-separated segment must be non-empty, without whitespace or
+control characters.
 
 Channel registration (plugin host and the built-in web channel) calls `validate_namespace` once and
 refuses a channel that fails. `classify` repeats the check per event (a few byte comparisons) so the
@@ -165,7 +165,7 @@ per core, `Runtime::routes`) owns them:
   are never read: not when the file changes, not when the owner has deleted every route (the record,
   not an empty table, says it ran), not when they have become invalid. While the file still has
   `[[routes]]`, startup logs `info` on the importing start and `warn` on every later one, saying
-  they're ignored and to remove them. `giles status` doesn't report it: its response has no field
+  they're ignored and to remove them. `doozers status` doesn't report it: its response has no field
   for a warning (`config_error` is for reload errors), and a new proto field wasn't worth it for a
   line already in the log and on the routes page.
 

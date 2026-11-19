@@ -1,6 +1,6 @@
 # Message model and component traits
 
-The `giles-types` crate holds the domain types and the three component traits the core uses:
+The `doozers-types` crate holds the domain types and the three component traits the core uses:
 `Provider`, `Channel`, and `Toolset` (PLAN sections 4.3, 4.4, and 5). Built-in components implement
 the traits directly. The gRPC adapters (`Remote*`) and the plugin SDK convert between these types
 and the `prost`-generated ones at the boundary, so generated types never appear in the core.
@@ -13,7 +13,7 @@ Conventions:
 - Ids are validated newtypes. String ids (`EventId`, `MessageId`, `NativeId`, `ConversationId`,
   `UserId`, `AgentId`, `ApprovalId`) reject the empty string. `MediaId` is the SHA-256 of a blob as
   64 lowercase hex digits. Validation runs in every constructor and on deserialization.
-- Times are `giles_types::Timestamp` (a re-export of `jiff::Timestamp`), serialized as RFC 3339.
+- Times are `doozers_types::Timestamp` (a re-export of `jiff::Timestamp`), serialized as RFC 3339.
 - Errors are one `Error` enum with a `Result<T>` alias. `Error::Unavailable` (rate limit, overload,
   5xx, timeout, recipient offline) is the only retryable variant; `InvalidRequest`, `NotFound`,
   `InvalidId`, and `Other` are not.

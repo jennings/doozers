@@ -3,10 +3,10 @@
 An environment plugin ([Plugin host](plugin-host.md#environment-plugins), PLAN section 8.8) holds
 workspaces: places where an agent's `bash`, `read`, `write`, `edit`, `find`, and `grep` tools run.
 The plugin makes and destroys them when the core asks; everything about who owns a workspace, when
-it is used, and when it is stopped or deleted is the core's. `giles_core::workspaces::Workspaces` is
-that part. The runtime holds it (`Runtime::workspaces`), the core tools call it, the scheduler calls
-it when an isolated job run ends, and its sweep runs beside the blob sweep. The `workspaces` table
-is described in [Storage](storage.md#workspaces).
+it is used, and when it is stopped or deleted is the core's. `doozers_core::workspaces::Workspaces`
+is that part. The runtime holds it (`Runtime::workspaces`), the core tools call it, the scheduler
+calls it when an isolated job run ends, and its sweep runs beside the blob sweep. The `workspaces`
+table is described in [Storage](storage.md#workspaces).
 
 ## Owners and ids
 
@@ -164,8 +164,8 @@ run killed with the process is settled by `recover` at the next start.
 ## Renames
 
 `workspaces.environment` is the environment instance and `workspaces.channel` the channel of a
-conversation's owner, so `giles environment rename` and `giles channel rename` move them with the
-other rows ([Instance rename](instance-rename.md)); a renamed instance keeps its workspaces, in
+conversation's owner, so `doozers environment rename` and `doozers channel rename` move them with
+the other rows ([Instance rename](instance-rename.md)); a renamed instance keeps its workspaces, in
 every state, so a pending cleanup still finds its plugin. There is no agent rename to cover: the
 agent in an owner is the agent's id.
 
@@ -272,7 +272,7 @@ workspace, a plugin that is away, waiting for a sweep), leases against the sweep
 `stop_after`, deleting after `delete_after` with conversation activity keeping a workspace alive,
 pruning, each reconciliation rule and the grace period, startup recovery, the schedule and the
 connection watcher. `scheduler/tests.rs` covers the isolated run's deletion and a `dm` job's
-workspace staying; `giles-store`'s tests cover the table, and the rename tests cover the rows
+workspace staying; `doozers-store`'s tests cover the table, and the rename tests cover the rows
 moving.
 
 `core_tools/environment/tests.rs` runs each workspace tool against the same in-process environment
@@ -280,6 +280,6 @@ moving.
 files): the offer and the allowlist gate, the no-workspace and deleted guidance, one workspace per
 conversation, notices leading results, reset and delete, `bash` output and timeout handling and
 cancellation, `read`'s numbering and caps, `edit`'s match counting, and `find` and `grep` limits.
-The end-to-end tests (`crates/giles/tests/e2e/environments.rs`) drive the daemon with the echo
+The end-to-end tests (`crates/doozers/tests/e2e/environments.rs`) drive the daemon with the echo
 environment plugin: create, write, read, and run, and `/stop` cancelling a running command in the
 plugin.

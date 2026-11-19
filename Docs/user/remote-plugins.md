@@ -1,9 +1,9 @@
 # Running a plugin on another machine
 
-This page shows how to run a channel plugin that ships with Giles (`giles-channel-discord`,
-`giles-channel-email`, `giles-channel-irc`, or `giles-channel-whatsapp`) on a different machine from
-Giles, and how to point Giles at it. By default Giles launches its plugins itself and doesn't need
-any of this.
+This page shows how to run a channel plugin that ships with Giles (`doozers-channel-discord`,
+`doozers-channel-email`, `doozers-channel-irc`, or `doozers-channel-whatsapp`) on a different
+machine from Giles, and how to point Giles at it. By default Giles launches its plugins itself and
+doesn't need any of this.
 
 The steps are the same for the [Docker environment plugin](docker-environment.md), except that its
 settings go in the `[config]` table of the transport file instead of in `giles.toml`.
@@ -34,7 +34,7 @@ for every plugin:
 
 ```toml
 listen = "0.0.0.0:7443"
-data = "/var/lib/giles-channel-discord"
+data = "/var/lib/doozers-channel-discord"
 tls_cert = "/etc/giles/fullchain.pem"
 tls_key = "/etc/giles/key.pem"
 token_file = "/etc/giles/discord.token"
@@ -57,7 +57,7 @@ token, because a flag shows in the process list.
 ## Start the plugin
 
 ```sh
-giles-channel-discord serve --config /etc/giles/discord-serve.toml
+doozers-channel-discord serve --config /etc/giles/discord-serve.toml
 ```
 
 The plugin prints `listening on <address>` and runs until you stop it with `SIGINT` or `SIGTERM`. It
@@ -65,7 +65,7 @@ refuses to start without a token. To accept any caller, for a plugin on a privat
 something else protects, pass `--no-auth`.
 **Anyone who can reach the port can then read and send the channel's messages.**
 
-Run `giles-channel-discord --help` for the full list of options.
+Run `doozers-channel-discord --help` for the full list of options.
 
 ## Point Giles at it
 
@@ -90,7 +90,7 @@ authority.
 
 ## Check that it works
 
-Run `giles status`. The instance shows `running` with no process id:
+Run `doozers status`. The instance shows `running` with no process id:
 
 ```text
 Plugins:

@@ -8,7 +8,7 @@ is in [Skills and memory](../user/skills-and-memory.md).
 ## Front-matter
 
 `SKILL.md` and the user profile `USER.md` may start with YAML front-matter. The private module
-`giles_core::front_matter` only finds the block's boundaries:
+`doozers_core::front_matter` only finds the block's boundaries:
 
 - The first line (after an optional UTF-8 byte-order mark) is `---`, and the block ends at the next
   line that is exactly `---`. Delimiter lines may end in `\n` or `\r\n` and carry trailing spaces or
@@ -18,12 +18,12 @@ is in [Skills and memory](../user/skills-and-memory.md).
 
 ## Skills
 
-`giles_core::skills` implements the [Agent Skills format](https://agentskills.io/specification). A
+`doozers_core::skills` implements the [Agent Skills format](https://agentskills.io/specification). A
 skill is a directory with `SKILL.md` and optional resource files.
 
 | Item                           | Purpose                                                            |
 | ------------------------------ | ------------------------------------------------------------------ |
-| `parse_skill(dir, text)`       | Parses the contents of `dir/SKILL.md` into a `giles_types::Skill`  |
+| `parse_skill(dir, text)`       | Parses the contents of `dir/SKILL.md` into a `doozers_types::Skill`  |
 | `load_skill(dir)`              | Reads and parses `dir/SKILL.md`                                    |
 | `validate_skill_name(name)`    | The specification's name rules                                     |
 | `SkillSource { dir, prefix }`  | A directory whose subdirectories are skills                        |
@@ -103,12 +103,12 @@ reads one, both blocking:
 Config loading also keeps plugins out of skill directories: a toolset's `skills` directory may not
 overlap the plugins' data directories, and no `write` or `unix` grant may overlap one (the same rule
 as for the directories of binaries Giles runs). Local skills live under `GILES_HOME`, which grants
-can't overlap anyway. `giles_core::media::media_type_for(name, bytes)` gives a file's media type
+can't overlap anyway. `doozers_core::media::media_type_for(name, bytes)` gives a file's media type
 from its extension, else `text/plain` for UTF-8 text, else `application/octet-stream`.
 
 ### The `load_skill` and `send_attachment` tools
 
-Core tools in `giles_core::core_tools::{load_skill, send_attachment}`, registered by
+Core tools in `doozers_core::core_tools::{load_skill, send_attachment}`, registered by
 `core_tools::register` with the runtime's blob store.
 
 `load_skill(name, file?)` (`LoadSkillTool`; parallel-safe) answers from `TurnContext::skills`, the
@@ -146,11 +146,11 @@ visibility, limits, all enforced inside the write transaction) is
 
 | Piece                                                                         | Where                                                              |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `MemoryStore`, `MemoryViewer`, `MemoryOwner`                                  | `giles-store` (`memory.rs`, `memory_migrations/`)                  |
-| `MemoryDbs`                                                                   | `giles_core::memory_dbs`: the open databases, by agent             |
-| `viewer`, `prompt_viewer`, `line`, `flags`, `usage_header`, `user_profile_file` | `giles_core::memory`                                             |
-| `memory_add`, `memory_edit`, `memory_forget`, `memory_recall`                 | `giles_core::core_tools::memory_*`                                 |
-| the `# Memory` section                                                        | `giles_core::agent_loop::prompt` ([Agent Loop](agent-loop.md#system)) |
+| `MemoryStore`, `MemoryViewer`, `MemoryOwner`                                  | `doozers-store` (`memory.rs`, `memory_migrations/`)                  |
+| `MemoryDbs`                                                                   | `doozers_core::memory_dbs`: the open databases, by agent             |
+| `viewer`, `prompt_viewer`, `line`, `flags`, `usage_header`, `user_profile_file` | `doozers_core::memory`                                             |
+| `memory_add`, `memory_edit`, `memory_forget`, `memory_recall`                 | `doozers_core::core_tools::memory_*`                                 |
+| the `# Memory` section                                                        | `doozers_core::agent_loop::prompt` ([Agent Loop](agent-loop.md#system)) |
 
 ### Data layout
 
@@ -179,8 +179,8 @@ drops it.
 
 ### Who sees what
 
-`giles_core::memory` decides which `MemoryViewer` (the session's owner scope and `can_write_shared`)
-a call or the prompt uses; the store applies it. The scopes:
+`doozers_core::memory` decides which `MemoryViewer` (the session's owner scope and
+`can_write_shared`) a call or the prompt uses; the store applies it. The scopes:
 
 - A direct or job session belongs to a user: its private scope is `MemoryOwner::User`. A runtime job
   runs as its creator, in the creator's session, so it is the creator's turn.
@@ -252,7 +252,7 @@ thousands. With a cap of 0, empty is 0% and anything else 100%.
 ### The memory tools
 
 Four core tools in
-`giles_core::core_tools::{memory_add, memory_edit, memory_forget, memory_recall}`, registered by
+`doozers_core::core_tools::{memory_add, memory_edit, memory_forget, memory_recall}`, registered by
 `core_tools::register` at the end of `Runtime::start` (see [Agent Loop](agent-loop.md#core-tools))
 and reserved in `CORE_TOOLS` ([Registry](registry.md)). Each holds the `MemoryDbs`, the live
 configuration, and a clock. Their input schemas are closed (`additionalProperties: false`, and
@@ -297,9 +297,9 @@ and the cap, that a memory is private by default, who may share, and that the pr
 
 ## The `memory_search` tool
 
-A core tool (§6.7) in `giles_core::core_tools::memory_search`, registered by `core_tools::register`
-with the others. It searches transcripts in `giles.db`, not memories, and the memory database
-doesn't change it.
+A core tool (§6.7) in `doozers_core::core_tools::memory_search`, registered by
+`core_tools::register` with the others. It searches transcripts in `giles.db`, not memories, and the
+memory database doesn't change it.
 
 `memory_search(query, limit?)` (`MemorySearchTool`, holding the store; parallel-safe):
 

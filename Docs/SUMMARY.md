@@ -32,7 +32,7 @@
 - [Container image](technical/container-image.md)
 - [Message model and traits](technical/message-model.md)
 - [Providers](technical/providers.md)
-- [The `giles` binary](technical/daemon.md)
+- [The `doozers` binary](technical/daemon.md)
 - [Data root](technical/data-root.md)
 - [Storage](technical/storage.md)
 - [Backups](technical/backups.md)

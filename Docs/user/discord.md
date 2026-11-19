@@ -1,7 +1,7 @@
 # Discord
 
 Giles can talk to you in direct messages through a Discord bot that you create. The channel is the
-plugin `giles-channel-discord`.
+plugin `doozers-channel-discord`.
 
 **Giles logs in as a bot, never as your own account.** Automating a normal user account (a
 "self-bot") is against Discord's terms. Your bot is bound by Discord's
@@ -89,7 +89,7 @@ token = { secret = "discord" }
 The instance name (`discord` here) is up to you, but it's permanent. The plugin keeps its data under
 that name.
 
-Start Giles. `giles status` should show the channel as `connected`, and the bot shows as online in
+Start Giles. `doozers status` should show the channel as `connected`, and the bot shows as online in
 Discord.
 
 ## Settings
@@ -173,7 +173,7 @@ first message to the bot is sent while Giles is stopped, it's delivered only whe
 
 ## Status
 
-`giles status` and the [admin page](web.md#admin-pages) show the channel's last status:
+`doozers status` and the [admin page](web.md#admin-pages) show the channel's last status:
 
 | Status | What it means | What to do |
 | ------ | ------------- | ---------- |

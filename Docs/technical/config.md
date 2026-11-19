@@ -1,6 +1,6 @@
 # Configuration
 
-`giles_core::config` reads and validates `giles.toml`, `secrets.toml`, and every
+`doozers_core::config` reads and validates `giles.toml`, `secrets.toml`, and every
 `agents/<agent>/agent.toml` (PLAN sections 1.1, 7.7, and 11.2). The user-facing reference is
 [Configuration](../user/configuration.md).
 
@@ -14,11 +14,11 @@ let options = LoadOptions { builtins, env: &|name| lookup(name), giles_exe: Some
 let config: Config = Config::load_with(&data_root, &options)?;
 ```
 
-`Config::load` runs once, before `giles serve` builds its runtime; configuration reload is deferred
-(D28). It reads files only through `DataRoot` (`config_file`, `secrets_file`, `agents_dir`), and
-returns the first problem as a `ConfigError`. Everything else in the core takes the resulting
-`Config` and never reads the files again (agent Markdown files are read per turn by their owners,
-not here).
+`Config::load` runs once, before `doozers serve` builds its runtime; configuration reload is
+deferred (D28). It reads files only through `DataRoot` (`config_file`, `secrets_file`,
+`agents_dir`), and returns the first problem as a `ConfigError`. Everything else in the core takes
+the resulting `Config` and never reads the files again (agent Markdown files are read per turn by
+their owners, not here).
 
 The steps:
 
@@ -35,7 +35,7 @@ The steps:
    ([Ignored toolset tables](#ignored-toolset-tables)), and each other one is then deserialized into
    a `ToolsetSpec` the same lenient way, its unknown keys and errors at their full key path.
 2. Validate `[core]` and `[owner]`. `core.journal_mode` is parsed with
-   `giles_store::JournalMode::from_str` (case-insensitive; `memory` and `off` and anything unknown
+   `doozers_store::JournalMode::from_str` (case-insensitive; `memory` and `off` and anything unknown
    are errors at `core.journal_mode`) and defaults to WAL ([Storage](storage.md#journal-modes));
    `Runtime::start` passes it to the store. `core.secret_key_file` is joined onto the data root (an
    absolute path replaces it), defaults to `DataRoot::secret_key_file()`, and may not be empty. It's
@@ -121,12 +121,12 @@ them into `UnknownKey`s with full paths (`provider.anthropic.config.modle`), and
 found. Out-of-process plugins validate their own `config` in `Configure` and fail only their
 instance.
 
-`giles serve` logs the `UnknownKey`s found while loading once, right after the load, at `warn`;
+`doozers serve` logs the `UnknownKey`s found while loading once, right after the load, at `warn`;
 there is no status field for them. The configuration is read only at startup, so later changes (an
 agent created or edited in the web UI) log nothing again: `Config::validate_agent` ignores unknown
 keys without reporting them.
 
-Text given to `giles toolset set` and the admin API (`ToolsetSpec::from_toml`) is not a
+Text given to `doozers toolset set` and the admin API (`ToolsetSpec::from_toml`) is not a
 configuration file read at startup: a key the spec doesn't have, nested ones included, is refused
 there, so a typo isn't stored silently.
 
@@ -147,11 +147,11 @@ Each instance kind has a raw struct with every core-owned key as an `Option`, so
 
 Component resolution is `Builtins::resolve(kind, component)`: a name in the built-in list for that
 kind is `Component::BuiltIn`; anything else is `Component::Plugin` with binary
-`giles-<kind>-<component>` (`plugin_binary`). The built-in list is a parameter, `Builtins`, so the
+`doozers-<kind>-<component>` (`plugin_binary`). The built-in list is a parameter, `Builtins`, so the
 core can pass the components its Cargo features compiled in; `Builtins::V1` lists every v1 built-in
 (`anthropic` and `openai` providers, `web` channel). Finding the binary in `<root>/plugins/` or on
 `$PATH` is the plugin host's job, at launch. Only providers, channels, and environments have a
-component; an environment has no built-ins, so it always runs `giles-environment-<component>`.
+component; an environment has no built-ins, so it always runs `doozers-environment-<component>`.
 
 An `[environment.<name>]` adds `description` (empty unless set), `stop_after` (30 minutes), and
 `delete_after` (30 days), parsed with the same duration syntax as `idle_stop` and `approval_timeout`
@@ -186,31 +186,31 @@ datetimes become their TOML text; infinite and NaN floats, which JSON can't carr
 ## Ignored toolset tables
 
 Remote toolsets are stored in the database and managed in the web UI, the admin RPCs, and
-`giles toolset`; `giles.toml` keeps the toolsets Giles runs as a process. A login to the web UI must
-not choose a program for Giles to run, its arguments, environment, or sandbox grants, while
+`doozers toolset`; `giles.toml` keeps the toolsets Giles runs as a process. A login to the web UI
+must not choose a program for Giles to run, its arguments, environment, or sandbox grants, while
 connecting to a remote server runs nothing on the host.
 
 Loading therefore ignores every `[toolset.<name>]` table that has `url`, whatever else it holds
 (`giles::is_remote_toolset`). It isn't deserialized, so nothing in it is checked: a wrong type or an
 unknown key inside doesn't stop startup and isn't reported as an unknown key. Each such table
 becomes an `IgnoredToolsetTable { file, position, name }`, the position found with `error::locate`
-at `toolset.<name>`, and `Config::ignored_toolset_tables` lists them in file order. `giles serve`
+at `toolset.<name>`, and `Config::ignored_toolset_tables` lists them in file order. `doozers serve`
 logs one warning for each right after the load, after the unknown keys, at every start (it names the
 file, not the position):
 
 ```text
-giles.toml: [toolset.github] is ignored: remote toolsets are managed in the web UI (Admin → MCP servers) or with giles toolset set
+giles.toml: [toolset.github] is ignored: remote toolsets are managed in the web UI (Admin → MCP servers) or with doozers toolset set
 ```
 
 An ignored table's name isn't part of the unique-name check, and the `Config` doesn't have it, so a
 stored toolset may use the name. Nothing is migrated: the owner adds each remote server again in the
-web UI or with `giles toolset set`.
+web UI or with `doozers toolset set`.
 
 ## Validating one toolset
 
 Validation of a toolset is separate from reading `giles.toml`, so the same checks run on a toolset
 that comes from elsewhere, such as a spec stored as JSON, against the configuration that is running
-now. The pieces, all in `giles_core::config`:
+now. The pieces, all in `doozers_core::config`:
 
 - `ToolsetSpec`: one toolset as written, with the keys of a `[toolset.<name>]` table (`command`,
   `args`, `env`, `url`, `auth`, `insecure`, `deadline`, `idle_stop`, `parallel`, `skills`,
@@ -233,8 +233,8 @@ now. The pieces, all in `giles_core::config`:
 - `ToolsetContext { root, secrets, options, config, replacing }`: the data root (with its socket
   directory), a `Secrets` loaded from `secrets.toml` by the caller (so a new secret needs no
   restart), the `LoadOptions` (built-ins, the environment for `{ env = ... }` references and `PATH`,
-  the `giles` binary), the `Config` whose other instances the toolset must fit with, and the toolset
-  being replaced, if any.
+  the `doozers` binary), the `Config` whose other instances the toolset must fit with, and the
+  toolset being replaced, if any.
 - `ToolsetError { key, reason }`: `key` is relative to the toolset's table (`env.TOKEN`,
   `sandbox.write[0]`, `skills[1]`), so a form can show the reason next to the field; it is the root
   when the problem is the name or a clash. `Ctx` raises `ConfigError`s at `toolset.<name>.<key>` in
@@ -243,7 +243,7 @@ now. The pieces, all in `giles_core::config`:
   credential.
 
 With one toolset the binary-directory check only reports what involves it: the toolset's own `write`
-and `unix` grants against every binary directory (the `giles` binary, channel plugins, every stdio
+and `unix` grants against every binary directory (the `doozers` binary, channel plugins, every stdio
 server including its own, every toolset's `skills`), and each other instance's grants against this
 toolset's server and `skills` directories. The error then names the other instance's key
 (`toolset.other.sandbox.write[0]`) in the reason, with an empty `key`. Problems among other
@@ -340,7 +340,7 @@ The "plugin directories" of PLAN section 12.4 are the directories holding binari
 plugin that could replace one would run its code at the next launch, possibly unsandboxed or with
 another instance's grants, so after every instance is validated the loader collects:
 
-- the directory of the running `giles` binary, which is also the `sandbox-exec` trampoline
+- the directory of the running `doozers` binary, which is also the `sandbox-exec` trampoline
   (`LoadOptions::giles_exe`, default `std::env::current_exe()`);
 - for each launched channel plugin and each stdio toolset, the directory of its binary as found now:
   `discover_plugin(root, kind, component, env)` for channel plugins (`<root>/plugins/`, then each
@@ -410,7 +410,7 @@ computed independently from this table, guard the algorithm; changing it needs a
 | Identities  | `Identity::new`            | `<namespace>:<id>`; the namespace may contain `:`, so matching compares the whole string |
 
 `parse_duration` and `parse_size` (and the serde types `HumanDuration` and `ByteSize`) live in
-`giles_plugin_sdk::config`, so plugins parse their own `config` tables the same way.
+`doozers_plugin_sdk::config`, so plugins parse their own `config` tables the same way.
 
 ## v1 choices
 

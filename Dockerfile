@@ -23,18 +23,18 @@ COPY . .
 # creates, built for the architecture of the engine it talks to. In this image that is the image's
 # own architecture (the plugin reaches an engine on another machine as a remote plugin), so the
 # helper is built for it, as a musl binary that runs in any image, and installed next to the plugin
-# as `giles-workspace-helper-<arch>`.
+# as `doozers-workspace-helper-<arch>`.
 RUN --mount=type=cache,id=giles-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=giles-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=giles-target,target=/src/target,sharing=locked \
     set -eu; \
-    bins="giles giles-channel-irc giles-channel-email giles-channel-whatsapp giles-channel-discord giles-environment-docker"; \
+    bins="doozers doozers-channel-irc doozers-channel-email doozers-channel-whatsapp doozers-channel-discord doozers-environment-docker"; \
     arch="$(uname -m)"; \
     cargo build --release --locked $(for bin in $bins; do printf -- '-p %s ' "$bin"; done); \
-    cargo build --release --locked -p giles-workspace-helper --target "$arch-unknown-linux-musl"; \
+    cargo build --release --locked -p doozers-workspace-helper --target "$arch-unknown-linux-musl"; \
     mkdir /out; \
     for bin in $bins; do cp "target/release/$bin" /out/; done; \
-    cp "target/$arch-unknown-linux-musl/release/giles-workspace-helper" "/out/giles-workspace-helper-$arch"
+    cp "target/$arch-unknown-linux-musl/release/doozers-workspace-helper" "/out/doozers-workspace-helper-$arch"
 
 # Runtime stage.
 FROM debian:bookworm-slim
@@ -48,16 +48,16 @@ RUN apt-get update \
 # A fixed, unprivileged uid and gid outside the range of system and login accounts, so a
 # bind-mounted data root can be given to it.
 RUN groupadd --gid 10001 giles \
-    && useradd --uid 10001 --gid giles --home-dir /data --no-create-home --shell /usr/sbin/nologin \
+    && useradd --uid 10001 --gid doozers --home-dir /data --no-create-home --shell /usr/sbin/nologin \
         giles \
     && install -d -m 0700 -o giles -g giles /data
 
 # Plugin discovery finds the plugins on `$PATH` (PLAN section 7.3), so the data root stays pure data.
 COPY --from=build /out/ /usr/local/bin/
-# The repository is MIT OR Apache-2.0, except plugins/giles-channel-whatsapp, which is
+# The repository is MIT OR Apache-2.0, except plugins/doozers-channel-whatsapp, which is
 # AGPL-3.0-only (it links AGPL code): its license text and source offer ship with the binary.
 COPY LICENSE-MIT LICENSE-APACHE /usr/share/doc/giles/
-COPY plugins/giles-channel-whatsapp/LICENSE-AGPL-3.0 plugins/giles-channel-whatsapp/THIRD-PARTY \
+COPY plugins/doozers-channel-whatsapp/LICENSE-AGPL-3.0 plugins/doozers-channel-whatsapp/THIRD-PARTY \
     /usr/share/doc/giles/
 
 LABEL org.opencontainers.image.title="Giles" \
@@ -72,5 +72,5 @@ WORKDIR /data
 # `giles.toml` must set `http_listen = "0.0.0.0:8080"` for this port to be reachable.
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/bin/tini", "--", "giles"]
+ENTRYPOINT ["/usr/bin/tini", "--", "doozers"]
 CMD ["serve"]

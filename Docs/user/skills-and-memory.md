@@ -148,7 +148,7 @@ changes that would make it longer are refused until it's under again.
 ### Where memories are stored
 
 Each agent's memories are in `agents/<agent>/memory.db`, a SQLite database.
-[`giles backup`](backups.md) includes it, and it moves with the agent's directory when you
+[`doozers backup`](backups.md) includes it, and it moves with the agent's directory when you
 [remove the agent](web.md#removing-an-agent) in the web UI.
 
 Don't open or copy it while Giles runs, for the same reasons as `giles.db`.

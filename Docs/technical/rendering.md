@@ -1,9 +1,9 @@
 # Rendering model output
 
 The model writes Markdown, and every channel receives it as CommonMark ([Plan](../PLAN.md) §6.9).
-Each channel turns it into its own format. The renderers live in `giles_plugin_sdk::render`, so the
-built-in web channel and the Rust channel plugins share one implementation (§10). They are built on
-`pulldown-cmark`.
+Each channel turns it into its own format. The renderers live in `doozers_plugin_sdk::render`, so
+the built-in web channel and the Rust channel plugins share one implementation (§10). They are built
+on `pulldown-cmark`.
 
 | Function                        | Used by                | Output                                    |
 | ------------------------------- | ---------------------- | ----------------------------------------- |

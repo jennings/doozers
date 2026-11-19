@@ -19,7 +19,7 @@ The implementation differs from the boards on purpose in four ways:
   that prefers light.
 - The sidebar footer has an initial badge next to the user's name.
 - The boards style with inline `style=""`. Giles can't: the CSP blocks inline styles, so every rule
-  is a class in `crates/giles-core/assets/giles.css`.
+  is a class in `crates/doozers-core/assets/giles.css`.
 
 ## Principles
 
@@ -402,7 +402,7 @@ view, except the chat page's approvals. Inside a table, every action is a `butto
   `.stat-value` (22 px, display font). Below 760 px they become one card of label and value lines.
 - `.confirm`: a card with the warn border, at most 620 px wide. As a `<dialog>` it has the scrim
   backdrop, and it's hidden while closed, since `.card` sets `display`.
-- `.subtitle`: the quieter second half of a heading, such as "giles-channel-irc, wasm" after a
+- `.subtitle`: the quieter second half of a heading, such as "doozers-channel-irc, wasm" after a
   plugin's name.
 - `.highlight`: a card with the accent border, for one that needs attention now (a channel waiting
   to be linked).

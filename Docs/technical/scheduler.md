@@ -1,6 +1,6 @@
 # Scheduler
 
-`giles_core::scheduler` runs jobs ([Plan](../PLAN.md) §6.4, §6.11): config jobs (`[[jobs]]` in
+`doozers_core::scheduler` runs jobs ([Plan](../PLAN.md) §6.4, §6.11): config jobs (`[[jobs]]` in
 `agent.toml`) and runtime jobs (rows in the `jobs` table, [Storage](storage.md)).
 
 | Item                       | What it is                                                           |
@@ -18,8 +18,8 @@
 
 ## Wiring
 
-`giles serve` calls `Runtime::start_scheduler(sessions, runner, shutdown)` after the outbox and the
-session manager have started (approval prompts may only be queued once the outbox's sender has
+`doozers serve` calls `Runtime::start_scheduler(sessions, runner, shutdown)` after the outbox and
+the session manager have started (approval prompts may only be queued once the outbox's sender has
 dropped the previous process's), with the same runner (the agent loop). Its `JobDelivery` is
 `OutboxDelivery`: an `OutboxItem` into the delivery's conversation (`Destination::Conversation`), or
 else `OutboxItem::to_owner`, with `JobReply` or `ApprovalPrompt` and the delivery's expiry; `remove`

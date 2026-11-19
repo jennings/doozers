@@ -15,7 +15,7 @@ the way to verify both the spike and the plugin later.
 
 **Recommendation:** build the plugin on `whatsapp-rust`, unless the live run fails one of the
 [decision criteria](#decision-criteria). It is actively maintained, covers everything Giles needs,
-and keeps the plugin in Rust, so it can use `giles-plugin-sdk` (gRPC serving, the `whatsapp()`
+and keeps the plugin in Rust, so it can use `doozers-plugin-sdk` (gRPC serving, the `whatsapp()`
 renderer, unacked-event storage). A Go plugin on `whatsmeow` would have to rebuild all of that in
 Go. The risks are its age (one year), a single main author, a fast-moving API, and fixes that are on
 `main` but not in a release yet (see [Findings](#findings-for-the-plugin)). Its manifests say MIT,
@@ -55,7 +55,7 @@ From reading the 0.7.0 sources, building the spike, and one unscanned `link --qr
   features off and lists the rest (`signal`, `sqlite-storage`, `tokio-native`, `tokio-runtime`,
   `tokio-transport`, `ureq-client`). `main` has no `simd` feature.
 - **SQLite version clash with the workspace.** 0.7.0's `whatsapp-rust-sqlite-storage` requires
-  `libsqlite3-sys` 0.37; `giles-store`'s `rusqlite` 0.40 uses 0.38. Cargo allows only one package
+  `libsqlite3-sys` 0.37; `doozers-store`'s `rusqlite` 0.40 uses 0.38. Cargo allows only one package
   per native `links` name in a resolve, so a 0.7.0 plugin can't be a member of the workspace. `main`
   already uses 0.38 and says it is meant to coexist with `rusqlite` 0.40. The plugin should use the
   first release after 0.7.0 (or pin a `main` commit). *Resolved:* there is no release after 0.7.0,
@@ -285,7 +285,7 @@ config rewrites `https://github.com/` to SSH, which Cargo's built-in git can't u
 
 The plugin uses the same library at the commit under [Testing `main`](#testing-main), so the plan
 above checks it too, with the plugin's own surfaces in place of the spike's output. Link with
-`giles-channel-whatsapp` instead of `spikes/whatsapp`, on a throwaway `GILES_HOME` (never
+`doozers-channel-whatsapp` instead of `spikes/whatsapp`, on a throwaway `GILES_HOME` (never
 `~/.giles`), with a `[channel.whatsapp]` instance and the web chat's admin page open:
 
 - Steps 1 and 12 (QR and pair code): the admin page shows the QR code or the pair code

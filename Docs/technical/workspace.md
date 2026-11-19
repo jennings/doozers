@@ -2,7 +2,7 @@
 
 Cargo builds the whole repository. The root `Cargo.toml` is a virtual workspace (`resolver = "3"`)
 whose members are `crates/*` and `plugins/*`. First-party plugins live in
-`plugins/giles-<kind>-<name>`.
+`plugins/doozers-<kind>-<name>`.
 
 Spikes live in `spikes/<name>/` as standalone crates with their own `Cargo.lock`, outside the
 workspace (`exclude = ["spikes"]`; `exclude` takes path prefixes, not globs), so their dependencies
@@ -14,42 +14,42 @@ so far is [the WhatsApp spike](whatsapp-spike.md).
 | Crate                | Kind     | Published | Contents                                                     |
 | -------------------- | -------- | --------- | ------------------------------------------------------------ |
 | `giles`              | bin      | no        | The daemon and its command-line interface                    |
-| `giles-core`         | lib      | no        | Orchestration: agent loop, routing, sessions, scheduling     |
-| `giles-types`        | lib      | yes       | Domain types and the `Provider`, `Channel`, `Toolset` traits |
-| `giles-proto`        | lib      | yes       | Generated gRPC code for the plugin and admin protocols       |
-| `giles-plugin-sdk`   | lib      | yes       | Serves a trait implementation as an out-of-process plugin    |
-| `giles-store`        | lib      | no        | SQLite and file storage under `GILES_HOME`                   |
-| `giles-channel-echo` | bin      | no        | Test-only channel plugin for host and end-to-end tests       |
-| `giles-channel-irc`  | lib, bin | no        | The IRC channel plugin ([IRC channel](irc.md))               |
-| `giles-channel-whatsapp` | bin  | no        | The WhatsApp channel plugin ([WhatsApp channel](whatsapp.md)) |
-| `giles-channel-discord` | lib, bin | no     | The Discord channel plugin ([Discord channel](discord.md))   |
+| `doozers-core`         | lib      | no        | Orchestration: agent loop, routing, sessions, scheduling     |
+| `doozers-types`        | lib      | yes       | Domain types and the `Provider`, `Channel`, `Toolset` traits |
+| `doozers-proto`        | lib      | yes       | Generated gRPC code for the plugin and admin protocols       |
+| `doozers-plugin-sdk`   | lib      | yes       | Serves a trait implementation as an out-of-process plugin    |
+| `doozers-store`        | lib      | no        | SQLite and file storage under `GILES_HOME`                   |
+| `doozers-channel-echo` | bin      | no        | Test-only channel plugin for host and end-to-end tests       |
+| `doozers-channel-irc`  | lib, bin | no        | The IRC channel plugin ([IRC channel](irc.md))               |
+| `doozers-channel-whatsapp` | bin  | no        | The WhatsApp channel plugin ([WhatsApp channel](whatsapp.md)) |
+| `doozers-channel-discord` | lib, bin | no     | The Discord channel plugin ([Discord channel](discord.md))   |
 
 Dependencies between them:
 
 ```mermaid
 flowchart TD
-  giles --> core[giles-core]
-  core --> types[giles-types]
-  core --> store[giles-store]
-  core --> proto[giles-proto]
-  core --> sdk[giles-plugin-sdk]
+  giles --> core[doozers-core]
+  core --> types[doozers-types]
+  core --> store[doozers-store]
+  core --> proto[doozers-proto]
+  core --> sdk[doozers-plugin-sdk]
   sdk --> types
   sdk --> proto
   store --> types
-  echo[giles-channel-echo] --> sdk
-  irc[giles-channel-irc] --> sdk
-  whatsapp[giles-channel-whatsapp] --> sdk
-  discord[giles-channel-discord] --> sdk
+  echo[doozers-channel-echo] --> sdk
+  irc[doozers-channel-irc] --> sdk
+  whatsapp[doozers-channel-whatsapp] --> sdk
+  discord[doozers-channel-discord] --> sdk
 ```
 
-`giles-types` is the contract shared by the core and plugins, so it depends on no other Giles crate.
-Plugins depend on `giles-plugin-sdk` (and through it `giles-types` and `giles-proto`), never on
-`giles-core` or `giles-store`. The core depends on `giles-plugin-sdk` (default features off, so
-without its `tls` module) for `convert`, the proto-to-domain conversions its `RemoteChannel` and
-admin service share with plugins, and for `render`, which the web channel uses.
+`doozers-types` is the contract shared by the core and plugins, so it depends on no other Giles
+crate. Plugins depend on `doozers-plugin-sdk` (and through it `doozers-types` and `doozers-proto`),
+never on `doozers-core` or `doozers-store`. The core depends on `doozers-plugin-sdk` (default
+features off, so without its `tls` module) for `convert`, the proto-to-domain conversions its
+`RemoteChannel` and admin service share with plugins, and for `render`, which the web channel uses.
 
-The three crates a third-party plugin author needs (`giles-types`, `giles-proto`,
-`giles-plugin-sdk`) are publishable to crates.io; each carries symlinks to the repository's
+The three crates a third-party plugin author needs (`doozers-types`, `doozers-proto`,
+`doozers-plugin-sdk`) are publishable to crates.io; each carries symlinks to the repository's
 `LICENSE-MIT` and `LICENSE-APACHE` so the files ship in the package. The other crates set
 `publish = false`.
 
@@ -60,7 +60,7 @@ The three crates a third-party plugin author needs (`giles-types`, `giles-proto`
   `Cargo.lock` is committed.
 - Every crate inherits `version`, `edition` (2024), `rust-version`, `authors`, `repository`, and
   `license` (`MIT OR Apache-2.0`) from `[workspace.package]`, except
-  `plugins/giles-channel-whatsapp`, which sets its own `license = "AGPL-3.0-only"` and carries
+  `plugins/doozers-channel-whatsapp`, which sets its own `license = "AGPL-3.0-only"` and carries
   `LICENSE-AGPL-3.0` ([Licensing](whatsapp.md#licensing)). No other crate depends on it or on the
   library that brings the AGPL code, and a test in that crate checks it.
 
@@ -97,8 +97,8 @@ Consequences for code:
   socket pair) and `tempfile`.
 - A dependency used by a single crate goes in that crate's own manifest.
 - Internal crates are also listed in `[workspace.dependencies]` with both `path` and `version`, so
-  the publishable crates resolve on crates.io. `giles-core` is listed with
+  the publishable crates resolve on crates.io. `doozers-core` is listed with
   `default-features = false`: its built-in components are Cargo features (`provider-anthropic` and
-  `provider-openai`, on by default) that the `giles` crate forwards under the same names and turns
+  `provider-openai`, on by default) that the `doozers` crate forwards under the same names and turns
   on by default.
 - Libraries use `thiserror` for errors; `anyhow` is for the binary.

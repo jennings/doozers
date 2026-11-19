@@ -1,6 +1,6 @@
 # Backups
 
-`giles backup` copies your Giles data root while the daemon keeps running.
+`doozers backup` copies your Giles data root while the daemon keeps running.
 
 **Don't copy `data/giles.db` or an agent's `memory.db` yourself.** Giles writes to them while it
 runs, so a plain file copy can miss recent writes or catch a half-written state.
@@ -11,7 +11,7 @@ The daemon must be running, and the directory must exist:
 
 ```sh
 mkdir -p /mnt/backups/giles
-giles backup /mnt/backups/giles
+doozers backup /mnt/backups/giles
 ```
 
 The command prints the two files it wrote:
@@ -49,8 +49,8 @@ A backup leaves out:
 - [Agents you removed](web.md#removing-an-agent), which are kept in `trash/`. Copy that directory
   yourself if you want them kept elsewhere.
 - Symbolic links. If `giles.toml` or an agent's `memory.db` is a link, as a dotfiles manager makes,
-  neither the link nor its target is in the backup. `giles backup` logs a warning for each one. Back
-  those files up yourself.
+  neither the link nor its target is in the backup. `doozers backup` logs a warning for each one.
+  Back those files up yourself.
 
 ## Restoring
 
@@ -58,7 +58,7 @@ Restore into the data root of a stopped Giles, with the same or a newer version 
 `mkdir` is only needed on a new machine.
 
 ```sh
-# 1. Stop `giles serve`.
+# 1. Stop `doozers serve`.
 # 2. Make sure the directories exist, private to you (nothing changes if they do).
 mkdir -p -m 700 ~/.giles ~/.giles/data
 cd ~/.giles
@@ -73,7 +73,7 @@ rm -f agents/*/memory.db-wal agents/*/memory.db-shm agents/*/memory.db-journal
 #    back to `agents/<agent>/memory.db`.
 tar -xf /mnt/backups/giles/giles-20261023T140312Z.tar
 # 6. Start Giles again.
-giles serve
+doozers serve
 ```
 
 On a new machine, add `secrets.toml` and `secret.key` (both mode 0600) and the plugin binaries
@@ -81,7 +81,7 @@ before step 6. If you set [`secret_key_file`](configuration.md#secret_key_file),
 instead of `secret.key`.
 
 If the data root isn't `~/.giles`, use its path in steps 2 to 4, or set `GILES_HOME` for
-`giles serve`.
+`doozers serve`.
 
 Unpacking replaces files with the same name and leaves other files alone. To get back exactly what
 the backup held, restore into an empty data root.
@@ -89,7 +89,7 @@ the backup held, restore into an empty data root.
 ## Backups before an upgrade
 
 A new version of Giles can change the database's schema. Before it changes an existing database,
-`giles serve` writes a backup to `backups/` in the data root:
+`doozers serve` writes a backup to `backups/` in the data root:
 
 ```text
 ~/.giles/backups/giles-20261023T140312Z-pre-migration-v1.db
@@ -102,7 +102,7 @@ If Giles can't write this backup, for example because the disk is full, it doesn
 database is left untouched.
 
 Giles keeps the five newest pre-migration backups and deletes older ones. It never deletes backups
-you make with `giles backup`, even in `backups/`.
+you make with `doozers backup`, even in `backups/`.
 
 To go back after a bad upgrade, stop Giles, install the older version, and [restore](#restoring) the
 pre-migration backup. The older version refuses to start with the migrated database.

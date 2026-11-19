@@ -1,4 +1,4 @@
-// Shared message types. They mirror the giles-types crate (PLAN section 5); see
+// Shared message types. They mirror the doozers-types crate (PLAN section 5); see
 // Docs/technical/protocols.md for the mapping and the conventions used here.
 syntax = "proto3";
 

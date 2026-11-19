@@ -6,10 +6,10 @@ started from is in [Plan](../PLAN.md).
 
 The shape of the system, in brief:
 
-- One `giles` daemon process holds the core: identity, routing, sessions, the agent loop,
+- One `doozers` daemon process holds the core: identity, routing, sessions, the agent loop,
   scheduling, policy, storage, and plugin supervision.
-- Providers, channels, and toolsets are each one Rust trait, defined in `giles-types`. The core
+- Providers, channels, and toolsets are each one Rust trait, defined in `doozers-types`. The core
   talks only to the trait, so a built-in component and an out-of-process plugin look the same.
 - Plugins are separate executables that the core launches in a sandbox and talks to over gRPC
-  (`giles-proto`); `giles-plugin-sdk` serves a trait implementation as a plugin.
-- State lives in SQLite and a content-addressed blob store under `GILES_HOME` (`giles-store`).
+  (`doozers-proto`); `doozers-plugin-sdk` serves a trait implementation as a plugin.
+- State lives in SQLite and a content-addressed blob store under `GILES_HOME` (`doozers-store`).

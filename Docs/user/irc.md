@@ -1,6 +1,6 @@
 # IRC
 
-The IRC channel plugin, `giles-channel-irc`, lets you talk to the agent on an IRC network.
+The IRC channel plugin, `doozers-channel-irc`, lets you talk to the agent on an IRC network.
 
 Each instance of component `irc` connects to one network. For two networks, add two instances.
 
@@ -47,7 +47,7 @@ These keys go in the instance's `config` table.
 | `send_burst`       | 5            | Lines sent at once before the [rate limit](#rate-limit) applies        |
 | `send_interval_ms` | 1000         | Milliseconds between lines after the burst. 0 turns the limit off.     |
 
-An unknown key or invalid value stops the instance from starting. The log and `giles status` name
+An unknown key or invalid value stops the instance from starting. The log and `doozers status` name
 the key, for example `invalid config: nick: not a valid IRC nick`.
 
 `network` names the network in identities. It isn't taken from `server`, so you can change servers
@@ -78,7 +78,7 @@ Giles never sends passwords (`password` or SASL PLAIN) over plain TCP to another
 `CERT ADD`.
 
 With `sasl` set, Giles registers only after it logs in. If the server doesn't offer SASL or the
-mechanism, or the login fails, Giles drops the connection and retries later. `giles status` shows
+mechanism, or the login fails, Giles drops the connection and retries later. `doozers status` shows
 the reason.
 
 ### Rate limit
@@ -158,7 +158,7 @@ Attachments can't be sent over IRC. Each becomes a line `[attachment not sent: <
 
 ## Connection
 
-`giles status` shows `connected`, or the last error, such as `SASL authentication failed: ...` or
+`doozers status` shows `connected`, or the last error, such as `SASL authentication failed: ...` or
 `connecting to irc.example.net:6697: ...`.
 
 Giles reconnects after a lost connection. If the nick is taken while connecting, Giles tries

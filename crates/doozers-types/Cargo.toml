@@ -1,0 +1,21 @@
+[package]
+name = "doozers-types"
+description = "Domain types and component traits shared by Giles and its plugins."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+futures.workspace = true
+jiff = { workspace = true, features = ["serde"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+
+[lints]
+workspace = true

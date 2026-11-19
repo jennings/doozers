@@ -1,0 +1,26 @@
+[package]
+name = "doozers-store"
+description = "SQLite and file storage for the Giles core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+doozers-types.workspace = true
+rusqlite = { workspace = true, features = ["bundled"] }
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "rt", "sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

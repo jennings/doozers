@@ -1,15 +1,16 @@
 # Docker environment
 
-The design of `giles-environment-docker`, the first environment plugin (issue #25, built in
+The design of `doozers-environment-docker`, the first environment plugin (issue #25, built in
 issue #90). It runs each workspace as a container plus a named volume, through the Docker Engine
 API, and serves `giles.environment.v1` on the plugin SDK ([Plugin SDK](plugin-sdk.md)). User-facing
 setup and settings are in [Docker environment](../user/docker-environment.md).
 
-The crate is a library with a thin binary. `DockerEnvironment` implements `giles_types::Environment`
-directly, so the SDK serves it with no adapter. `main` calls `EnvironmentPlugin::run`, which gives
-the plugin both launched mode (`socket`) and remote mode (`serve`), and parses the `config` of the
-instance with `Config` (`deny_unknown_fields`). Its settings come from `[environment.<name>.config]`
-when launched, and from the `[config]` table of the `serve --config` file when remote.
+The crate is a library with a thin binary. `DockerEnvironment` implements
+`doozers_types::Environment` directly, so the SDK serves it with no adapter. `main` calls
+`EnvironmentPlugin::run`, which gives the plugin both launched mode (`socket`) and remote mode
+(`serve`), and parses the `config` of the instance with `Config` (`deny_unknown_fields`). Its
+settings come from `[environment.<name>.config]` when launched, and from the `[config]` table of the
+`serve --config` file when remote.
 
 The Engine API client is `bollard`, over the unix socket only (`pipe` feature, no TLS stack). It is
 the one place the engine is named: `socket`, else the `unix://` path in `DOCKER_HOST`, else
@@ -147,11 +148,11 @@ instance. A failed create removes the image that attempt pulled by the same rule
 
 ## The helper
 
-`giles-workspace-helper` (crate `crates/giles-workspace-helper`) is a small static Linux binary that
-the plugin copies to `/.giles/bin/giles-workspace-helper` in every container. Its name doesn't start
-with `giles-environment-`, which would make plugin discovery treat it as a plugin. It has no async
-runtime. It exists because the container can't be assumed to have anything but `/bin/sh`, and
-because the Engine API can't kill an exec.
+`doozers-workspace-helper` (crate `crates/doozers-workspace-helper`) is a small static Linux binary
+that the plugin copies to `/.giles/bin/doozers-workspace-helper` in every container. Its name
+doesn't start with `doozers-environment-`, which would make plugin discovery treat it as a plugin.
+It has no async runtime. It exists because the container can't be assumed to have anything but
+`/bin/sh`, and because the Engine API can't kill an exec.
 
 | Subcommand | Purpose |
 | --- | --- |
@@ -175,7 +176,7 @@ permissions.
 The helper is built for the engine's architecture, which can differ from the plugin's (a plugin on
 macOS driving a Linux VM). At connect time the plugin reads the engine's `info.Architecture`, maps
 `amd64` and `x86_64` to `x86_64` and `arm64` and `aarch64` to `aarch64`, and loads
-`<helper_dir>/giles-workspace-helper-<arch>`, where `helper_dir` defaults to the directory of the
+`<helper_dir>/doozers-workspace-helper-<arch>`, where `helper_dir` defaults to the directory of the
 plugin's own executable. A missing file fails the plugin's configure step, with a message that names
 the path and the `cargo build --target <arch>-unknown-linux-musl` command that makes it.
 
@@ -188,8 +189,8 @@ with mode 1777, so a command that runs as another user can still record its grou
 ## Running commands
 
 Every command runs as one exec of
-`/.giles/bin/giles-workspace-helper run --id <uuid> -- /bin/sh -c <command>`, in `/workspace`, with
-no TTY and standard input closed. The id is a fresh UUID, not the engine's exec id, because the
+`/.giles/bin/doozers-workspace-helper run --id <uuid> -- /bin/sh -c <command>`, in `/workspace`,
+with no TTY and standard input closed. The id is a fresh UUID, not the engine's exec id, because the
 plugin needs it before the exec exists.
 
 `run` starts the command in a new process group and writes the group id to `/.giles/run/<id>`. It
@@ -243,8 +244,8 @@ handling, because every exec starts in `/workspace`.
 ## Tests
 
 The unit tests cover the reference parser, the allowlist, the configuration, the helper archive, and
-the helper's output parsing. `crates/giles-workspace-helper/tests/cli.rs` runs the helper binary on
-the host. The integration tests in `plugins/giles-environment-docker/tests/` run against a real
+the helper's output parsing. `crates/doozers-workspace-helper/tests/cli.rs` runs the helper binary
+on the host. The integration tests in `plugins/doozers-environment-docker/tests/` run against a real
 Docker API socket: `docker.rs` calls `DockerEnvironment` directly, and `serve.rs` runs the binary
 with `serve --config` and drives it over gRPC. They skip, printing why, when no socket answers
 (`GILES_REQUIRE_DOCKER=1` makes that a failure, as in [CI](ci.md)). The helper comes from

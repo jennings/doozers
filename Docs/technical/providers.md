@@ -1,17 +1,18 @@
 # Providers
 
-The built-in providers live in `giles_core::providers`, each behind a Cargo feature of `giles-core`
-that the `giles` crate forwards under the same name (PLAN section 4.2). Both implement
-`giles_types::Provider` (see [Message Model and Traits](message-model.md)) by translating the
-message model to and from the provider's wire format; the core never sees wire formats.
+The built-in providers live in `doozers_core::providers`, each behind a Cargo feature of
+`doozers-core` that the `doozers` crate forwards under the same name (PLAN section 4.2). Both
+implement `doozers_types::Provider` (see [Message Model and Traits](message-model.md)) by
+translating the message model to and from the provider's wire format; the core never sees wire
+formats.
 
 | Feature              | Module                 | API                                    |
 | -------------------- | ---------------------- | -------------------------------------- |
 | `provider-anthropic` | `providers::anthropic` | Anthropic Messages API                 |
 | `provider-openai`    | `providers::openai`    | OpenAI-compatible Chat Completions API |
 
-Both are on by default. The shared modules below are compiled when either is, so `giles-core` builds
-with no provider, either one, or both (`--no-default-features --features provider-openai`).
+Both are on by default. The shared modules below are compiled when either is, so `doozers-core`
+builds with no provider, either one, or both (`--no-default-features --features provider-openai`).
 
 ## Shared plumbing
 
@@ -56,7 +57,7 @@ limit and be tested against every chunk boundary.
   Each event, and any single line, is limited to 16 MiB (`SseError::TooLarge`).
 - `SseEvent { event, data, id }`; `event` is `message` when the stream didn't name it.
 - `events(body)` turns a byte stream into a stream of events. Its error type only needs
-  `From<SseError>`, which `giles_types::Error` has (as `Error::Other`), so a provider writes
+  `From<SseError>`, which `doozers_types::Error` has (as `Error::Other`), so a provider writes
   `sse::events(http::body_stream(response))`. Body errors pass through, and the first error ends the
   stream.
 
@@ -71,7 +72,7 @@ limit and be tested against every chunk boundary.
   rest of the body, or after the first error.
 - `media_essence(type)` is a media type without parameters, lowercased, for matching. The text an
   attachment becomes when the model doesn't receive it as content, `[media:<id> <name> <type>]`
-  (PLAN section 5), is `giles_core::media::reference(&MediaRef)`, shared with the agent loop.
+  (PLAN section 5), is `doozers_core::media::reference(&MediaRef)`, shared with the agent loop.
 - `temperature(f32)` is a temperature as its shortest decimal (`0.7`, not `0.699999988079071`); NaN
   and infinity are `Error::InvalidRequest`.
 
@@ -83,7 +84,7 @@ limit and be tested against every chunk boundary.
 
 ```rust
 let config = AnthropicConfig::from_json(&instance_config_json)?;
-let provider = AnthropicProvider::new(config, media_source)?; // impl giles_types::Provider
+let provider = AnthropicProvider::new(config, media_source)?; // impl doozers_types::Provider
 ```
 
 `AnthropicProvider::new(AnthropicConfig, Arc<dyn MediaSource>)` builds the HTTP client and sends
@@ -293,7 +294,7 @@ llama.cpp, and most gateways serve. Its API family name, `Opaque::api`, is `open
 
 ```rust
 let config = OpenAiConfig::from_json(&instance_config_json)?;
-let provider = OpenAiProvider::new(config, media_source)?; // impl giles_types::Provider
+let provider = OpenAiProvider::new(config, media_source)?; // impl doozers_types::Provider
 ```
 
 `OpenAiProvider::new(OpenAiConfig, Arc<dyn MediaSource>)` builds the HTTP client and sends nothing.

@@ -1,11 +1,11 @@
 # Instance rename
 
-Instance names are permanent ids (PLAN section 7.2). `giles_core::rename` renames one,
-`rename_instance`, which `giles channel rename <old> <new>`, `giles environment rename <old> <new>`,
-`giles provider rename <old> <new>`, and `giles toolset rename <old> <new>` (with Giles stopped)
-call, each for its own kind. `ToolsetManager::rename` renames a toolset stored in the database while
-Giles runs. This page covers what a name keys, the order of the steps, and what a failure leaves
-behind.
+Instance names are permanent ids (PLAN section 7.2). `doozers_core::rename` renames one,
+`rename_instance`, which `doozers channel rename <old> <new>`,
+`doozers environment rename <old> <new>`, `doozers provider rename <old> <new>`, and
+`doozers toolset rename <old> <new>` (with Giles stopped) call, each for its own kind.
+`ToolsetManager::rename` renames a toolset stored in the database while Giles runs. This page covers
+what a name keys, the order of the steps, and what a failure leaves behind.
 
 ## What a name keys
 
@@ -106,11 +106,11 @@ renamed as written.
 ## The steps
 
 `rename_instance(root, store, lock, kind, old, new)` takes the data root's `InstanceLock` as an
-argument: the caller proves the core is stopped by holding the same `flock` `giles serve` holds, so
-no admin socket probing is needed and a core that starts mid-rename is refused instead. The kind
-comes from the command (`giles channel rename`, `giles environment rename`, `giles provider rename`,
-`giles toolset rename`), not from the name, so one driver (`rename::run` in the `giles` crate)
-serves all four.
+argument: the caller proves the core is stopped by holding the same `flock` `doozers serve` holds,
+so no admin socket probing is needed and a core that starts mid-rename is refused instead. The kind
+comes from the command (`doozers channel rename`, `doozers environment rename`,
+`doozers provider rename`, `doozers toolset rename`), not from the name, so one driver
+(`rename::run` in the `doozers` crate) serves all four.
 
 1. **Validate, read-only.** Both names must be `[a-zA-Z0-9-]+`, and different ignoring case unless
    `old` is a stored toolset (see [Stored toolsets](#stored-toolsets)). `new` must not differ only
@@ -182,11 +182,11 @@ match), which makes it safe to repeat after a crash.
 
 ## Stored toolsets
 
-A toolset made in the web UI or with `giles toolset` is a remote MCP server with a row in `giles.db`
-and no table in `giles.toml`. `rename_instance` renames it when `kind` is `Kind::Toolset`,
-`giles.toml` doesn't configure `old` as a toolset, and the database has a toolset with that name,
-ignoring case. The name as stored is the old name from then on. What differs from an instance of
-`giles.toml`:
+A toolset made in the web UI or with `doozers toolset` is a remote MCP server with a row in
+`giles.db` and no table in `giles.toml`. `rename_instance` renames it when `kind` is
+`Kind::Toolset`, `giles.toml` doesn't configure `old` as a toolset, and the database has a toolset
+with that name, ignoring case. The name as stored is the old name from then on. What differs from an
+instance of `giles.toml`:
 
 - `giles.toml` isn't edited. `new` must not be configured there (`RenameError::NewIsConfigured`, or
   `RenameError::CaseCollision` when only the case differs) and must not be another stored toolset
@@ -221,7 +221,7 @@ ignoring case. The name as stored is the old name from then on. What differs fro
 
 ## Renaming while Giles runs
 
-`giles toolset rename` chooses its path by the data root's lock. If it can take the lock, no core
+`doozers toolset rename` chooses its path by the data root's lock. If it can take the lock, no core
 runs, and it does the offline rename above for any toolset, whether `giles.toml` or the database has
 it. If a core holds the lock, it calls the admin service's `RenameToolset`, which renames a stored
 toolset as described here and refuses a toolset of `giles.toml` (`ToolsetManagerError::Unsupported`)

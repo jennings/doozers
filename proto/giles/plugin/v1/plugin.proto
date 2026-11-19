@@ -58,7 +58,7 @@ message DescribeResponse {
   string name = 2;
   // The plugin's own version.
   string version = 3;
-  // Sandbox grants the plugin would like. Advisory only: shown in giles status, never applied.
+  // Sandbox grants the plugin would like. Advisory only: shown in doozers status, never applied.
   SandboxGrants requested_grants = 5;
   // What the kind service can do. Set to the variant matching kind.
   oneof capabilities {

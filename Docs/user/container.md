@@ -2,7 +2,7 @@
 
 Giles can run as a Linux container.
 
-The `latest` image holds the `giles` command and these first-party channel plugins:
+The `latest` image holds the `doozers` command and these first-party channel plugins:
 
 - [IRC](irc.md)
 - [Email](email.md)
@@ -77,7 +77,7 @@ Move `giles-home/secret.key` to `./giles-secret.key` before you start Giles with
 The plugin sandbox works with Docker's default security settings; no `--privileged` or extra
 capabilities are needed. It does need Landlock in the host's kernel, since a container shares the
 host's kernel ([Plugin sandbox check](running.md#plugin-sandbox-check)). Check the second line of
-`docker exec giles giles status`:
+`docker exec giles doozers status`:
 
 ```text
 Plugin sandbox: Landlock ABI 6 and seccomp filters
@@ -126,7 +126,7 @@ identities = ["web:owner"]
 
 [environment.docker]
 description = "Disposable Linux containers for running code and building software."
-address = "http://giles-environment-docker:7443"
+address = "http://doozers-environment-docker:7443"
 insecure = true
 auth = { bearer = { env = "GILES_ENVIRONMENT_DOCKER_TOKEN" } }
 ```
@@ -148,18 +148,18 @@ This pulls the published images. To build them from your checkout instead, run
 owns the socket.
 
 The web interface is on `http://127.0.0.1:8080`. Check that Giles reaches the plugin with
-`docker compose exec giles giles status`, which shows the `docker` instance as `running`.
+`docker compose exec giles doozers status`, which shows the `docker` instance as `running`.
 
 To [change the plugin's settings](docker-environment.md#change-the-plugins-settings), put them in
-`giles-environment-docker.toml` and add the file in `compose.override.yaml`, which Docker Compose
+`doozers-environment-docker.toml` and add the file in `compose.override.yaml`, which Docker Compose
 reads after `compose.yaml`:
 
 ```yaml
 services:
-  giles-environment-docker:
+  doozers-environment-docker:
     volumes:
-      - ./giles-environment-docker.toml:/etc/giles-environment-docker.toml:ro
-    command: ["--config", "/etc/giles-environment-docker.toml"]
+      - ./doozers-environment-docker.toml:/etc/doozers-environment-docker.toml:ro
+    command: ["--config", "/etc/doozers-environment-docker.toml"]
 ```
 
 Then run `docker compose up --detach` again.
