@@ -112,10 +112,6 @@ pub(crate) fn rsa_private_key(pair: &RsaKeypair) -> Result<rsa::RsaPrivateKey, s
 ///
 /// [`ssh_key::Error::Crypto`] when the key can't sign, or `rsa_hash` isn't SHA-256 or SHA-512 for
 /// an RSA key.
-#[allow(
-    dead_code,
-    reason = "only the SSH agent relay calls this, and it isn't built yet"
-)]
 pub(crate) fn sign(
     key: &PrivateKey,
     rsa_hash: HashAlg,

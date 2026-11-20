@@ -311,6 +311,7 @@ impl Workspaces {
             } else if super::elapsed(now, row.last_used_at) > entry.stop_after
                 && running.contains(&row.id)
             {
+                inner.relays.end(&row.id).await;
                 match client.stop_workspace(&row.id).await {
                     Ok(()) => {
                         tracing::info!(workspace = %row.id, environment = %entry.name, "stopped an idle workspace");
@@ -381,6 +382,7 @@ impl Workspaces {
                             .workspace_mark_gone(&row.id, DeleteReason::RemovedOutsideDoozers, now)
                             .await?;
                     if lost {
+                        inner.relays.end(&row.id).await;
                         tracing::warn!(
                             workspace = %row.id,
                             environment = %entry.name,

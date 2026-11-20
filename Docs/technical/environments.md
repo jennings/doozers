@@ -22,6 +22,12 @@ A workspace has one owner, and an owner has at most one workspace:
 conversation, a job session is a job. The core assigns the workspace id (`ws-` and 20 random hex
 digits) and the plugin labels its resources with it, so reconciliation needs no handle but the id.
 
+A workspace also has a **key user**, the user whose [SSH keys](ssh.md#how-a-workspace-gets-its-keys)
+its agent offers, or none. `workspaces::key_user(&Session, requester)` decides it from the turn that
+creates the workspace: a direct conversation's workspace gets the session's user, an isolated job
+run's gets the turn's requester (the creator of a runtime job, nobody for a config job), and a group
+conversation's gets none. It is stored in `workspaces.key_user` and never changes.
+
 ## States
 
 | State      | Meaning                                                                          | Holds the owner's slot |
@@ -43,9 +49,9 @@ to be rebuilt each time.)
 
 ## Calls
 
-- `create(owner, environment, options)`: the environment must be configured and connected, and the
-  owner must have no workspace (`WorkspaceError::AlreadyHasWorkspace` names it). It inserts a
-  `creating` row, calls the plugin, and makes the row `active`. The plugin call runs in its own
+- `create(owner, environment, options, key_user)`: the environment must be configured and connected,
+  and the owner must have no workspace (`WorkspaceError::AlreadyHasWorkspace` names it). It inserts
+  a `creating` row, calls the plugin, and makes the row `active`. The plugin call runs in its own
   task, so a turn that is cancelled halfway doesn't leave a row nobody finishes. If the plugin
   fails, the row becomes `deleting` (`creation_failed`) and the plugin is asked to delete what it
   may have made, so the owner can try again at once; the plugin's `InvalidRequest` (refused options)
@@ -55,16 +61,18 @@ to be rebuilt each time.)
   sweep or the next connection finishes it. Leases don't stop it: the owner's own turn holds one.
 - `recreate(owner, reason)`: what `/env reset` does ([Sessions and turns](sessions.md)). It checks
   that the workspace is `active` and its environment is configured and connected, so a reset that
-  can't work deletes nothing, then calls `delete` and `create` with the same environment and
-  options. It returns the discarded record and the creation's result, which can fail after the old
-  workspace is gone.
+  can't work deletes nothing, then calls `delete` and `create` with the same environment, options,
+  and key user. It returns the discarded record and the creation's result, which can fail after the
+  old workspace is gone.
 - `current(owner)` and `last_deleted(owner)`: what the owner has, and what it had, with when, why,
   environment, and options, so the model can say what happened and create it again.
 - `open(owner, slot)`: takes the turn's lease, calls `StartWorkspace`, notes the use
   (`last_used_at`), and returns the record, the environment's client, and a notice for the model
   when the workspace was started or recreated. The core tools call it before each workspace tool
-  call. If the plugin says the workspace doesn't exist, the row becomes `deleted`
-  (`removed_outside_doozers`) and the call fails with `WorkspaceError::Gone`.
+  call. On an environment that can relay, it also makes sure the workspace's
+  [ssh-agent relay](#the-ssh-agent-relay) is running. If the plugin says the workspace doesn't
+  exist, the row becomes `deleted` (`removed_outside_doozers`) and the call fails with
+  `WorkspaceError::Gone`.
 - The operator calls, in `workspaces/manage.rs`, for
   [the web UI's workspaces page](web-channel.md#workspaces-page): `overview()`, `stop_by_id(id)`,
   `delete_by_id(id)`, `managed_workspace(id)`, and `in_use(id)`. They act on `active` workspaces by
@@ -113,8 +121,8 @@ environment instance it:
    conversation, the newest message across every session of its key, ended ones included. If the
    owner has been inactive for longer than `delete_after`, the row becomes `deleting` (`inactive`)
    and the plugin deletes the workspace. Otherwise, if `last_used_at` is more than `stop_after` ago
-   and the plugin lists the workspace as running, the plugin stops it. A stopped workspace stays
-   `active` and `open` starts it again.
+   and the plugin lists the workspace as running, the plugin stops it, after ending its relay. A
+   stopped workspace stays `active` and `open` starts it again.
 
 While an instance's plugin is away, the sweep only prunes its rows: nothing is stopped or deleted
 (the plugin couldn't be told), and the delete of a `deleting` row waits for the connection. An
@@ -154,6 +162,31 @@ list, is gone, while asking first could mistake a workspace created in between f
 
 A failing `ListWorkspaces` ends the reconciliation of that instance with a warning; nothing is
 changed on a guess.
+
+## The ssh-agent relay
+
+An environment whose `Describe` reports `ssh_relay` ([the SSH page](ssh.md#the-agent-relay) has the
+stream and what the core answers) gets one relay task per workspace from `ssh::relay::Relays`, which
+`Workspaces` holds. The registry records the capability for each connected instance
+(`EnvironmentEntry::capabilities`), and the relay is opened whatever the workspace's key user, since
+known-hosts lookups use the same stream.
+
+- `open`, once `StartWorkspace` has succeeded, calls `Relays::ensure`. It starts a relay if the
+  workspace has none, if the last one ended (the plugin or the container restarted), or if
+  `StartWorkspace` said `Started` or `Recreated`, which makes the old relay's connections stale and
+  replaces it. It waits up to 10 seconds for the environment to open the relay. A relay that can't
+  be opened is logged, and the call goes on: the workspace works without it, and the next `open`
+  tries again.
+- `delete_in_plugin`, which every delete goes through (the owner's, an operator's, the sweep's, and
+  reconciliation's), `stop_by_id`, the sweep's stop, and reconciliation marking a workspace gone
+  call `Relays::end`. The task is aborted, which drops the streams and so ends the RPC. A turn that
+  is still running finds the relay gone and the workspace stopped or deleted the way it would
+  without a relay.
+- The task keeps one `ssh::Agent` for the workspace, with the per-connection state of its clients.
+  It drops a connection's state when the plugin sends `AgentClosed`, and all of it when the relay
+  ends.
+- Relays are in memory. A restart ends them with the process, and each workspace gets its relay
+  again at its next `open`.
 
 ## Job runs
 
@@ -215,7 +248,12 @@ environment and options.
 
 ### Lifecycle tools
 
-- `environment_create {plugin, options?}` checks the allowlist and calls `Workspaces::create`.
+- `environment_create {plugin, options?}` checks the allowlist and calls `Workspaces::create` with
+  the turn's key user (`workspaces::key_user`, from the session and the call's `requester`). For an
+  environment that can relay, its result and `environment_plugins` end each environment with an
+  `SSH keys:` line: the labels and types of the keys the workspace gets (the key user's, in the
+  order the agent offers them), or `none` with the reason (the user has added none, a group
+  conversation, a config job). The line never names a secret path or shows key material.
 - `environment_status` reads `current`, and asks the plugin's `ListWorkspaces` for the run state and
   disk use. It doesn't call `StartWorkspace`, so it doesn't start a stopped workspace.
 - `environment_reset {plugin?, options?}` resolves the target from the current workspace (options
@@ -268,13 +306,16 @@ and the lifecycle tools run alone.
 
 `workspaces/tests.rs` runs the service against an in-process environment (`workspaces/fake.rs`, with
 a manual clock) and a real store: ids and one workspace per owner, refused and failed creations,
-deleting with the plugin away and cleaning up on reconnect, opening (start notices, a lost
-workspace, a plugin that is away, waiting for a sweep), leases against the sweep, stopping after
-`stop_after`, deleting after `delete_after` with conversation activity keeping a workspace alive,
-pruning, each reconciliation rule and the grace period, startup recovery, the schedule and the
-connection watcher. `scheduler/tests.rs` covers the isolated run's deletion and a `dm` job's
-workspace staying; `doozers-store`'s tests cover the table, and the rename tests cover the rows
-moving.
+deleting with the plugin away and cleaning up on reconnect, the key user and its survival of a
+reset, the relay (opened on first use, replaced after a start or a recreate, opened again after it
+ended or failed to open, ended by each way a workspace stops or is deleted, never opened for an
+environment that can't relay, and agents that offer a workspace's key user's keys and nobody else's
+for conversations and job runs), opening (start notices, a lost workspace, a plugin that is away,
+waiting for a sweep), leases against the sweep, stopping after `stop_after`, deleting after
+`delete_after` with conversation activity keeping a workspace alive, pruning, each reconciliation
+rule and the grace period, startup recovery, the schedule and the connection watcher.
+`scheduler/tests.rs` covers the isolated run's deletion and a `dm` job's workspace staying;
+`doozers-store`'s tests cover the table, and the rename tests cover the rows moving.
 
 `core_tools/environment/tests.rs` runs each workspace tool against the same in-process environment
 (its `exec` streams scripted events, or hangs and records that its stream was dropped, and it keeps

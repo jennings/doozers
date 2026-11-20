@@ -70,6 +70,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "0012_ssh_keys",
         sql: include_str!("migrations/0012_ssh_keys.sql"),
     },
+    Migration {
+        name: "0013_workspace_key_user",
+        sql: include_str!("migrations/0013_workspace_key_user.sql"),
+    },
 ];
 
 /// The schema version this binary writes.
@@ -439,5 +443,53 @@ mod tests {
             [],
         );
         assert!(second.is_err(), "the one-active-workspace index came along");
+    }
+
+    #[test]
+    fn the_key_user_migration_backfills_conversations_from_their_direct_sessions() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &MIGRATIONS[..12], None).unwrap();
+        conn.execute_batch(
+            "INSERT INTO sessions (id, agent, kind, channel, conversation, user_id, started_at,
+                 ended_at)
+             VALUES (1, 'jeeves', 'direct', 'web', 'c1', 'old', 1, 2),
+                    (2, 'jeeves', 'direct', 'web', 'c1', 'owner', 3, NULL),
+                    (3, 'jeeves', 'group', 'chat', 'g1', NULL, 1, NULL),
+                    (4, 'jeeves', 'direct', 'web', 'c3', 'owner', 1, NULL),
+                    (5, 'jeeves', 'job', NULL, NULL, 'owner', 1, NULL);
+             INSERT INTO workspaces (id, environment, agent, channel, conversation, job_session,
+                 options, description, state, created_at, last_used_at, deleted_at, delete_reason)
+             VALUES ('ws-direct', 'box', 'jeeves', 'web', 'c1', NULL, '{}', 'a box', 'active', 1,
+                 1, NULL, NULL),
+                    ('ws-group', 'box', 'jeeves', 'chat', 'g1', NULL, '{}', 'a box', 'active', 1,
+                 1, NULL, NULL),
+                    ('ws-nosession', 'box', 'jeeves', 'web', 'c2', NULL, '{}', 'a box', 'active',
+                 1, 1, NULL, NULL),
+                    ('ws-old', 'box', 'jeeves', 'web', 'c3', NULL, '{}', 'a box', 'deleted', 1, 1,
+                 2, 'operator'),
+                    ('ws-job', 'box', NULL, NULL, NULL, 5, '{}', 'a box', 'active', 1, 1, NULL,
+                 NULL);",
+        )
+        .unwrap();
+
+        assert_eq!(migrate(&mut conn, MIGRATIONS, None).unwrap(), 12);
+        assert_eq!(user_version(&conn).unwrap(), SCHEMA_VERSION);
+        let rows: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, key_user FROM workspaces ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                ("ws-direct".to_owned(), Some("owner".to_owned())),
+                ("ws-group".to_owned(), None),
+                ("ws-job".to_owned(), None),
+                ("ws-nosession".to_owned(), None),
+                ("ws-old".to_owned(), Some("owner".to_owned())),
+            ]
+        );
     }
 }

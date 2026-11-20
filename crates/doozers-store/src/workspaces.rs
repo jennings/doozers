@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-use doozers_types::{AgentId, ConversationId, Timestamp, WorkspaceId};
+use doozers_types::{AgentId, ConversationId, Timestamp, UserId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::time::to_millis;
@@ -228,6 +228,9 @@ pub struct WorkspaceRecord {
     pub working_directory: Option<String>,
     /// What survives a stop and a recreate; `None` until it was created.
     pub persistence: Option<String>,
+    /// The user whose SSH keys the workspace gets, or `None` for no keys. Set when the workspace is
+    /// created and kept for its life.
+    pub key_user: Option<UserId>,
     /// Where it is in its life.
     pub state: WorkspaceState,
     /// When the row was inserted.
@@ -252,13 +255,15 @@ pub struct NewWorkspace {
     pub owner: WorkspaceOwner,
     /// The creation options, a JSON object.
     pub options: serde_json::Value,
+    /// The user whose SSH keys the workspace gets, or `None` for no keys.
+    pub key_user: Option<UserId>,
     /// Now: `created_at` and `last_used_at`.
     pub now: Timestamp,
 }
 
 const COLUMNS: &str = "id, environment, agent, channel, conversation, job_session, options, \
                        description, working_directory, persistence, state, created_at, \
-                       last_used_at, deleted_at, delete_reason";
+                       last_used_at, deleted_at, delete_reason, key_user";
 
 const OWNER_IS: &str = "agent IS ?1 AND channel IS ?2 AND conversation IS ?3 AND job_session IS ?4";
 
@@ -275,6 +280,7 @@ fn from_row(row: &Row<'_>) -> Result<WorkspaceRecord> {
         },
     };
     let reason: Option<String> = row.get(14)?;
+    let key_user: Option<String> = row.get(15)?;
     Ok(WorkspaceRecord {
         id: parse_id(row.get(0)?, WorkspaceId::new)?,
         environment: row.get(1)?,
@@ -288,6 +294,9 @@ fn from_row(row: &Row<'_>) -> Result<WorkspaceRecord> {
         last_used_at: get_time(row, 12)?,
         deleted_at: get_opt_time(row, 13)?,
         delete_reason: reason.as_deref().map(DeleteReason::parse).transpose()?,
+        key_user: key_user
+            .map(|user| parse_id(user, UserId::new))
+            .transpose()?,
     })
 }
 
@@ -358,8 +367,8 @@ impl Store {
             let now = to_millis(new.now);
             conn.prepare_cached(
                 "INSERT INTO workspaces (id, environment, agent, channel, conversation,
-                     job_session, options, state, created_at, last_used_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'creating', ?8, ?8)",
+                     job_session, options, key_user, state, created_at, last_used_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?9, 'creating', ?8, ?8)",
             )?
             .execute(params![
                 new.id.as_str(),
@@ -369,7 +378,8 @@ impl Store {
                 conversation,
                 job,
                 options,
-                now
+                now,
+                new.key_user.as_ref().map(UserId::as_str)
             ])?;
             require(conn, &new.id)
         })
@@ -677,6 +687,7 @@ mod tests {
             environment: "box".into(),
             owner,
             options: json!({"image": "alpine"}),
+            key_user: None,
             now: at(secs),
         }
     }
@@ -1078,6 +1089,45 @@ mod tests {
                 .workspace_owner_activity(&conversation("c2"))
                 .await
                 .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn a_workspace_keeps_the_user_whose_keys_it_gets() {
+        let (_dir, store) = store().await;
+        let owner = UserId::new("owner").unwrap();
+        let mut with_keys = new("ws-1", conversation("c1"), 1);
+        with_keys.key_user = Some(owner.clone());
+        let inserted = store.workspace_insert(with_keys).await.unwrap();
+        assert_eq!(inserted.key_user, Some(owner.clone()));
+        let none = store
+            .workspace_insert(new("ws-2", conversation("c2"), 1))
+            .await
+            .unwrap();
+        assert_eq!(none.key_user, None);
+
+        // Activating, touching, and deleting leave it alone, and it is read back from the table.
+        store
+            .workspace_activate(&id("ws-1"), "alpine", "/work", "files persist")
+            .await
+            .unwrap();
+        store.workspace_touch(&id("ws-1"), at(5)).await.unwrap();
+        let read = store.workspace(&id("ws-1")).await.unwrap().unwrap();
+        assert_eq!(read.key_user, Some(owner.clone()));
+        let deleted = store
+            .workspace_begin_delete(&id("ws-1"), DeleteReason::ModelDelete, at(6))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(deleted.key_user, Some(owner));
+        assert_eq!(
+            store
+                .workspace(&id("ws-2"))
+                .await
+                .unwrap()
+                .unwrap()
+                .key_user,
             None
         );
     }

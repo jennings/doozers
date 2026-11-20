@@ -123,7 +123,12 @@ impl TurnRunner for FakeRunner {
         let workspaces = self.workspaces.lock().unwrap().clone();
         if let Some(workspaces) = workspaces {
             workspaces
-                .create(&WorkspaceOwner::of_session(&turn.session), "box", json!({}))
+                .create(
+                    &WorkspaceOwner::of_session(&turn.session),
+                    "box",
+                    json!({}),
+                    None,
+                )
                 .await
                 .unwrap();
         }
@@ -263,7 +268,9 @@ impl Harness {
         let clock = Arc::new(TestClock {
             start: Instant::now(),
         });
-        let workspaces = Workspaces::new(store.clone(), registry.clone(), clock.clone());
+        let ssh_keys =
+            crate::ssh::SshKeys::for_tests(store.clone(), dir.path(), clock.clone()).await;
+        let workspaces = Workspaces::new(store.clone(), registry.clone(), clock.clone(), ssh_keys);
         let environment = Fake::new(crate::workspaces::fake::TestClock::new());
         registry
             .register_environment(

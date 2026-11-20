@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use doozers_store::{SessionKind, Store};
 use doozers_types::{
-    AgentId, Block, ConversationId, EnvironmentInfo, Error, Message, MessageMeta, Role, Timestamp,
-    WorkspaceDetail, WorkspaceId,
+    AgentId, Block, ConversationId, EnvironmentInfo, Error, Message, MessageMeta, RelayReply,
+    RelayRequest, Role, Timestamp, UserId, WorkspaceDetail, WorkspaceId,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -36,6 +36,7 @@ struct Harness {
     registry: Arc<Registry>,
     clock: Arc<TestClock>,
     fake: Arc<Fake>,
+    ssh_keys: SshKeys,
     workspaces: Workspaces,
 }
 
@@ -62,13 +63,20 @@ impl Harness {
         let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
         let clock = TestClock::new();
         let fake = Fake::new(clock.clone());
-        let workspaces = Workspaces::new(store.clone(), registry.clone(), clock.clone());
+        let ssh_keys = SshKeys::for_tests(store.clone(), dir.path(), clock.clone()).await;
+        let workspaces = Workspaces::new(
+            store.clone(),
+            registry.clone(),
+            clock.clone(),
+            ssh_keys.clone(),
+        );
         let harness = Self {
             _dir: dir,
             store,
             registry,
             clock,
             fake,
+            ssh_keys,
             workspaces,
         };
         harness.connect();
@@ -88,13 +96,39 @@ impl Harness {
             .unwrap();
     }
 
+    /// Connects `box` again, now as an environment that can relay ssh-agent requests.
+    fn connect_relaying(&self) {
+        self.registry
+            .register_environment(
+                &name("box"),
+                self.fake.clone(),
+                EnvironmentInfo {
+                    options_schema: json!({"type": "object"}),
+                },
+                crate::registry::EnvironmentCapabilities::new(true),
+            )
+            .unwrap();
+    }
+
     fn disconnect(&self) {
         self.registry.unregister_environment(&name("box")).unwrap();
     }
 
+    /// Creates a workspace for `owner` whose key user is `key_user`.
+    async fn create_for(
+        &self,
+        owner: &WorkspaceOwner,
+        key_user: Option<&UserId>,
+    ) -> WorkspaceRecord {
+        self.workspaces
+            .create(owner, "box", json!({"image": "alpine"}), key_user.cloned())
+            .await
+            .unwrap()
+    }
+
     async fn create(&self, owner: &WorkspaceOwner) -> WorkspaceRecord {
         self.workspaces
-            .create(owner, "box", json!({"image": "alpine"}))
+            .create(owner, "box", json!({"image": "alpine"}), None)
             .await
             .unwrap()
     }
@@ -197,7 +231,7 @@ async fn a_workspace_gets_a_core_assigned_id_the_plugin_uses_and_one_owner_has_o
 
     let err = h
         .workspaces
-        .create(&owner, "box", json!({}))
+        .create(&owner, "box", json!({}), None)
         .await
         .unwrap_err();
     assert!(
@@ -224,7 +258,7 @@ async fn create_refuses_what_cant_work_and_leaves_the_owner_free_to_retry() {
 
     let err = h
         .workspaces
-        .create(&owner, "nope", json!({}))
+        .create(&owner, "nope", json!({}), None)
         .await
         .unwrap_err();
     assert!(
@@ -233,13 +267,13 @@ async fn create_refuses_what_cant_work_and_leaves_the_owner_free_to_retry() {
     );
     let err = h
         .workspaces
-        .create(&owner, "far", json!({}))
+        .create(&owner, "far", json!({}), None)
         .await
         .unwrap_err();
     assert!(matches!(err, WorkspaceError::Unreachable { .. }), "{err}");
     let err = h
         .workspaces
-        .create(&owner, "box", json!(["image"]))
+        .create(&owner, "box", json!(["image"]), None)
         .await
         .unwrap_err();
     assert!(matches!(err, WorkspaceError::Refused(_)), "{err}");
@@ -251,7 +285,7 @@ async fn create_refuses_what_cant_work_and_leaves_the_owner_free_to_retry() {
         .fail_next_create(Error::InvalidRequest("unknown image \"nope\"".into()), true);
     let err = h
         .workspaces
-        .create(&owner, "box", json!({"image": "nope"}))
+        .create(&owner, "box", json!({"image": "nope"}), None)
         .await
         .unwrap_err();
     assert!(
@@ -272,7 +306,7 @@ async fn create_refuses_what_cant_work_and_leaves_the_owner_free_to_retry() {
         .fail_next_create(Error::unavailable("the engine is down"), false);
     let err = h
         .workspaces
-        .create(&chat("c2"), "box", json!({}))
+        .create(&chat("c2"), "box", json!({}), None)
         .await
         .unwrap_err();
     assert!(matches!(err, WorkspaceError::Environment(_)), "{err}");
@@ -303,7 +337,7 @@ async fn deleting_while_the_plugin_is_unreachable_frees_the_slot_and_cleans_up_o
     // The slot is free, but nothing can be created while the plugin is away.
     let err = h
         .workspaces
-        .create(&owner, "box", json!({}))
+        .create(&owner, "box", json!({}), None)
         .await
         .unwrap_err();
     assert!(matches!(err, WorkspaceError::Unreachable { .. }), "{err}");
@@ -818,6 +852,7 @@ async fn reconciliation_deletes_unknown_workspaces_only_after_the_grace_period()
             environment: "box".into(),
             owner: chat("c9"),
             options: json!({}),
+            key_user: None,
             now: h.clock_now(),
         })
         .await
@@ -884,6 +919,7 @@ async fn reconciliation_gives_up_on_a_creation_that_never_finished() {
                 environment: "box".into(),
                 owner,
                 options: json!({}),
+                key_user: None,
                 now: h.clock_now().checked_sub(ago).unwrap(),
             })
             .await
@@ -923,6 +959,7 @@ async fn a_row_made_active_after_the_snapshot_is_not_mistaken_for_a_lost_one() {
             environment: "box".into(),
             owner: chat("c1"),
             options: json!({}),
+            key_user: None,
             now: h.clock_now(),
         })
         .await
@@ -944,6 +981,7 @@ async fn startup_recovery_settles_what_the_previous_process_left() {
             environment: "box".into(),
             owner: chat("c1"),
             options: json!({}),
+            key_user: None,
             now: h.clock_now(),
         })
         .await
@@ -1093,7 +1131,7 @@ async fn options_round_trip_through_the_table_as_given() {
     let options: Value = json!({"image": "alpine", "env": {"A": ["1", 2, null]}, "n": 1.5});
     let record = h
         .workspaces
-        .create(&chat("c1"), "box", options.clone())
+        .create(&chat("c1"), "box", options.clone(), None)
         .await
         .unwrap();
     assert_eq!(h.record(&record.id).await.options, options);
@@ -1330,6 +1368,7 @@ async fn a_workspace_still_being_created_is_not_stopped_or_deleted_by_an_operato
             environment: "box".into(),
             owner: chat("c1"),
             options: json!({}),
+            key_user: None,
             now: h.clock_now(),
         })
         .await
@@ -1374,4 +1413,327 @@ async fn the_registry_keeps_the_capabilities_an_environment_plugin_reported() {
     assert!(ssh_relay(&h));
     h.connect();
     assert!(!ssh_relay(&h));
+}
+
+// ---- whose SSH keys a workspace gets, and its relay ----
+
+fn user(name: &str) -> UserId {
+    UserId::new(name).unwrap()
+}
+
+/// A request from client connection `connection` on a workspace's relay.
+fn agent_request(connection: u64, message: Vec<u8>) -> RelayRequest {
+    RelayRequest::Agent(doozers_types::AgentRequest {
+        connection,
+        message,
+    })
+}
+
+/// The agent message of the next reply on the relay of `id`.
+async fn agent_reply(h: &Harness, id: &WorkspaceId) -> Vec<u8> {
+    match h.fake.relay_reply(id).await.expect("the relay ended") {
+        RelayReply::Agent(reply) => reply.message,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// The labels of the keys the agent of workspace `id` offers on `connection`.
+async fn offered(h: &Harness, id: &WorkspaceId, connection: u64) -> Vec<String> {
+    h.fake.relay_send(id, agent_request(connection, vec![11]));
+    crate::ssh::agent_tests::labels(&agent_reply(h, id).await)
+}
+
+async fn open(h: &Harness, owner: &WorkspaceOwner) -> Opened {
+    h.workspaces
+        .open(owner, &LeaseSlot::default())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_key_user_comes_from_the_creating_turns_session_and_requester() {
+    let h = Harness::new().await;
+    let now = h.clock_now();
+    let session = |kind: SessionKind, user: Option<&str>| doozers_store::Session {
+        id: doozers_store::SessionId::new(1),
+        agent: AgentId::new("jeeves").unwrap(),
+        kind,
+        channel: (kind != SessionKind::Job).then(|| "web".to_owned()),
+        conversation: (kind != SessionKind::Job).then(|| ConversationId::new("c1").unwrap()),
+        user: user.map(user_id),
+        started_at: now,
+        ended_at: None,
+        last_message_at: None,
+    };
+    fn user_id(name: &str) -> UserId {
+        UserId::new(name).unwrap()
+    }
+    let owner = user("owner");
+    let alice = user("alice");
+
+    // A direct conversation: its user, whoever the requester is.
+    assert_eq!(
+        key_user(&session(SessionKind::Direct, Some("owner")), Some(&owner)),
+        Some(owner.clone())
+    );
+    assert_eq!(
+        key_user(&session(SessionKind::Direct, Some("owner")), None),
+        Some(owner.clone())
+    );
+    assert_eq!(
+        key_user(&session(SessionKind::Direct, Some("alice")), Some(&owner)),
+        Some(alice.clone())
+    );
+    assert_eq!(
+        key_user(&session(SessionKind::Direct, None), Some(&owner)),
+        None
+    );
+    // An isolated job run: the requester, the job's creator. A config job has none.
+    assert_eq!(
+        key_user(&session(SessionKind::Job, Some("owner")), Some(&alice)),
+        Some(alice.clone())
+    );
+    assert_eq!(
+        key_user(&session(SessionKind::Job, Some("owner")), None),
+        None
+    );
+    // A group conversation: none, whoever speaks.
+    assert_eq!(
+        key_user(&session(SessionKind::Group, None), Some(&owner)),
+        None
+    );
+    assert_eq!(
+        key_user(&session(SessionKind::Group, Some("owner")), Some(&owner)),
+        None
+    );
+}
+
+#[tokio::test]
+async fn a_workspace_keeps_its_key_user_through_a_reset() {
+    let h = Harness::new().await;
+    let owner = user("owner");
+    let first = h.create_for(&chat("c1"), Some(&owner)).await;
+    assert_eq!(first.key_user, Some(owner.clone()));
+    assert_eq!(h.record(&first.id).await.key_user, Some(owner.clone()));
+    let none = h.create_for(&chat("c2"), None).await;
+    assert_eq!(none.key_user, None);
+
+    for (conversation, expected) in [("c1", Some(owner.clone())), ("c2", None)] {
+        let reset = h
+            .workspaces
+            .recreate(&chat(conversation), DeleteReason::UserReset)
+            .await
+            .unwrap()
+            .unwrap();
+        let created = reset.created.unwrap();
+        assert_ne!(created.id, reset.discarded.id);
+        assert_eq!(created.key_user, expected, "{conversation}");
+        assert_eq!(h.record(&created.id).await.key_user, expected);
+    }
+}
+
+#[tokio::test]
+async fn opening_a_workspace_opens_one_relay_that_answers_with_the_key_users_keys() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let owner = user("owner");
+    let alice = user("alice");
+    h.ssh_keys
+        .generate(&owner, crate::ssh::KeyType::Ed25519, Some("laptop"))
+        .await
+        .unwrap();
+    h.ssh_keys
+        .generate(&alice, crate::ssh::KeyType::Ed25519, Some("hers"))
+        .await
+        .unwrap();
+
+    // Creating doesn't open it; the first open does, and a second open doesn't open another.
+    let record = h.create_for(&chat("c1"), Some(&owner)).await;
+    assert_eq!(h.fake.relay_calls(), 0);
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 1);
+    h.fake.relay_settled(&record.id, true).await;
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 1);
+    assert_eq!(offered(&h, &record.id, 1).await, ["laptop"]);
+
+    // A workspace without a key user gets a relay too, and an agent with no keys.
+    let group = h.create_for(&chat("group"), None).await;
+    open(&h, &chat("group")).await;
+    assert_eq!(h.fake.relay_calls(), 2);
+    assert!(offered(&h, &group.id, 1).await.is_empty());
+
+    // An isolated job run gets its creator's keys, and a config job's none.
+    let runtime_job = h.create_for(&job(41), Some(&alice)).await;
+    let config_job = h.create_for(&job(42), None).await;
+    open(&h, &job(41)).await;
+    open(&h, &job(42)).await;
+    assert_eq!(h.fake.relay_calls(), 4);
+    assert_eq!(offered(&h, &runtime_job.id, 1).await, ["hers"]);
+    assert!(offered(&h, &config_job.id, 1).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_closed_connection_is_forgotten() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let owner = user("owner");
+    h.ssh_keys
+        .generate(&owner, crate::ssh::KeyType::Ed25519, Some("laptop"))
+        .await
+        .unwrap();
+    let record = h.create_for(&chat("c1"), Some(&owner)).await;
+    open(&h, &chat("c1")).await;
+
+    // Connection 5 is bound as forwarded, so it sees no keys; connection 6 is unaffected.
+    let host = crate::ssh::agent_tests::ed25519_host();
+    let signature = crate::ssh::agent_tests::host_signature(&host, b"session");
+    let bind = crate::ssh::agent_tests::bind_request(host.public_key(), b"session", &signature, 1);
+    h.fake.relay_send(&record.id, agent_request(5, bind));
+    assert_eq!(agent_reply(&h, &record.id).await, [6]);
+    assert!(offered(&h, &record.id, 5).await.is_empty());
+    assert_eq!(offered(&h, &record.id, 6).await, ["laptop"]);
+
+    // The plugin says 5 closed: a new client that gets the number starts fresh.
+    h.fake.relay_send(
+        &record.id,
+        RelayRequest::AgentClosed(doozers_types::AgentClosed { connection: 5 }),
+    );
+    assert_eq!(offered(&h, &record.id, 5).await, ["laptop"]);
+}
+
+#[tokio::test]
+async fn a_relay_that_ended_is_opened_again_on_the_next_open() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let record = h.create_for(&chat("c1"), None).await;
+    open(&h, &chat("c1")).await;
+    h.fake.relay_settled(&record.id, true).await;
+
+    // The plugin ends it (a restart, say): the next open starts another.
+    h.fake.relay_end(&record.id);
+    h.fake.relay_settled(&record.id, false).await;
+    for _ in 0..500 {
+        if !h.workspaces.inner.relays.running(&record.id).await {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.fake.relay_calls(), 1);
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 2);
+    h.fake.relay_settled(&record.id, true).await;
+    assert!(offered(&h, &record.id, 1).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_relay_that_cant_be_opened_doesnt_fail_the_open_and_is_tried_again() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    h.create_for(&chat("c1"), None).await;
+    h.fake.fail_relays(true);
+    // The workspace is usable without it.
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 1);
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 2, "tried again on the next use");
+
+    h.fake.fail_relays(false);
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 3);
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 3, "and now it is open");
+}
+
+#[tokio::test]
+async fn a_workspace_that_was_started_or_recreated_gets_a_new_relay() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let owner = chat("c1");
+    let record = h.create_for(&owner, None).await;
+    open(&h, &owner).await;
+    assert_eq!(h.fake.relay_calls(), 1);
+    assert_eq!(h.fake.relays_dropped(), 0);
+
+    // Stopped behind the core's back: the open starts it, and the old relay is replaced even
+    // though it hadn't noticed.
+    h.fake.stop_workspace(&record.id).await.unwrap();
+    let opened = open(&h, &owner).await;
+    assert!(opened.notice.unwrap().contains("started again"));
+    assert_eq!(h.fake.relay_calls(), 2);
+    h.fake.relay_settled(&record.id, true).await;
+    eventually("the old relay is dropped", || h.fake.relays_dropped() == 1).await;
+
+    // The same for a recreated one.
+    h.fake.stop_workspace(&record.id).await.unwrap();
+    h.fake.recreate_next_start();
+    let opened = open(&h, &owner).await;
+    assert!(opened.notice.unwrap().contains("recreated"));
+    assert_eq!(h.fake.relay_calls(), 3);
+    eventually("the second relay is dropped", || {
+        h.fake.relays_dropped() == 2
+    })
+    .await;
+
+    // A running workspace keeps its relay.
+    open(&h, &owner).await;
+    assert_eq!(h.fake.relay_calls(), 3);
+}
+
+#[tokio::test]
+async fn deleting_stopping_and_the_sweep_end_the_relay() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+
+    // The owner's delete.
+    let first = h.create_for(&chat("c1"), None).await;
+    open(&h, &chat("c1")).await;
+    h.fake.relay_settled(&first.id, true).await;
+    h.workspaces
+        .delete(&chat("c1"), DeleteReason::ModelDelete)
+        .await
+        .unwrap();
+    h.fake.relay_settled(&first.id, false).await;
+    assert!(!h.workspaces.inner.relays.running(&first.id).await);
+
+    // An operator's stop, and the next call opening it again.
+    let second = h.create_for(&chat("c2"), None).await;
+    open(&h, &chat("c2")).await;
+    h.fake.relay_settled(&second.id, true).await;
+    h.workspaces.stop_by_id(&second.id).await.unwrap();
+    h.fake.relay_settled(&second.id, false).await;
+    assert_eq!(h.fake.running(&second.id), Some(false));
+    let calls = h.fake.relay_calls();
+    open(&h, &chat("c2")).await;
+    assert_eq!(h.fake.relay_calls(), calls + 1);
+    h.fake.relay_settled(&second.id, true).await;
+
+    // The sweep's stop of an idle workspace.
+    h.clock.advance(11 * MINUTE);
+    let report = h.workspaces.sweep_once().await;
+    assert_eq!(report.stopped, 1);
+    h.fake.relay_settled(&second.id, false).await;
+
+    // An operator's delete, and the sweep deleting an abandoned workspace.
+    let third = h.create_for(&chat("c3"), None).await;
+    open(&h, &chat("c3")).await;
+    h.fake.relay_settled(&third.id, true).await;
+    h.workspaces.delete_by_id(&third.id).await.unwrap();
+    h.fake.relay_settled(&third.id, false).await;
+    open(&h, &chat("c2")).await;
+    h.fake.relay_settled(&second.id, true).await;
+    h.clock.advance(8 * DAY);
+    let report = h.workspaces.sweep_once().await;
+    assert_eq!(report.deleted_inactive, 1);
+    h.fake.relay_settled(&second.id, false).await;
+}
+
+#[tokio::test]
+async fn an_environment_that_cant_relay_never_gets_one() {
+    let h = Harness::new().await;
+    let record = h.create_for(&chat("c1"), Some(&user("owner"))).await;
+    open(&h, &chat("c1")).await;
+    open(&h, &chat("c1")).await;
+    assert_eq!(h.fake.relay_calls(), 0);
+    assert!(!h.workspaces.inner.relays.running(&record.id).await);
 }

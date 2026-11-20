@@ -10,7 +10,7 @@ use std::time::Duration;
 use doozers_store::{DeleteReason, SessionId, SessionKind, Store};
 use doozers_types::{
     AgentId, Block, CallContext, ConversationId, Environment as _, EnvironmentInfo, ExecEvent,
-    ExecExit, Timestamp,
+    ExecExit, Timestamp, UserId,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -87,7 +87,9 @@ impl Setup {
         let store = Store::open(root.database_file()).await.unwrap();
         let clock = TestClock::new();
         let fake = Fake::new(clock.clone());
-        let workspaces = Workspaces::new(store, registry.clone(), clock);
+        let ssh_keys =
+            crate::ssh::SshKeys::for_tests(store.clone(), dir.path(), clock.clone()).await;
+        let workspaces = Workspaces::new(store, registry.clone(), clock, ssh_keys);
         registry
             .register_environment(
                 &name("box"),
@@ -128,6 +130,37 @@ impl Setup {
         Turn::new(session)
     }
 
+    /// A turn of `jeeves` in a session of `kind` that belongs to `user`: a conversation `chat`, or
+    /// an isolated job run for a job session.
+    fn session_turn(&self, kind: SessionKind, user: Option<&UserId>) -> Turn {
+        let job = kind == SessionKind::Job;
+        Turn::new(doozers_store::Session {
+            id: SessionId::new(7),
+            agent: AgentId::new("jeeves").unwrap(),
+            kind,
+            channel: (!job).then(|| "fake".to_owned()),
+            conversation: (!job).then(|| ConversationId::new("ssh-chat").unwrap()),
+            user: user.cloned(),
+            started_at: Timestamp::UNIX_EPOCH,
+            ended_at: None,
+            last_message_at: None,
+        })
+    }
+
+    /// `box` again, now an environment that can relay ssh-agent requests.
+    fn connect_relaying(&self) {
+        self.registry
+            .register_environment(
+                &name("box"),
+                self.fake.clone(),
+                EnvironmentInfo {
+                    options_schema: json!({"type": "object"}),
+                },
+                crate::registry::EnvironmentCapabilities::new(true),
+            )
+            .unwrap();
+    }
+
     /// A turn of `jeeves` in `chat`, which already has a workspace in `box`.
     async fn with_workspace(&self) -> (Turn, doozers_types::WorkspaceId) {
         let turn = self.turn("jeeves", "chat");
@@ -155,17 +188,26 @@ impl Setup {
 
 /// One turn: its context, shared by its calls (so they share a lease).
 #[derive(Clone)]
-struct Turn(Arc<TurnContext>);
+struct Turn(Arc<TurnContext>, Option<UserId>);
 
 impl Turn {
     fn new(session: doozers_store::Session) -> Self {
-        Self(Arc::new(TurnContext {
-            session,
-            reply: None,
-            skills: Arc::default(),
-            job: false,
-            lease: LeaseSlot::default(),
-        }))
+        Self(
+            Arc::new(TurnContext {
+                session,
+                reply: None,
+                skills: Arc::default(),
+                job: false,
+                lease: LeaseSlot::default(),
+            }),
+            None,
+        )
+    }
+
+    /// The turn as run for `requester`, the user whose message or runtime job started it.
+    fn requested_by(mut self, requester: &UserId) -> Self {
+        self.1 = Some(requester.clone());
+        self
     }
 
     fn owner(&self) -> WorkspaceOwner {
@@ -178,7 +220,7 @@ impl Turn {
             input,
             context: CallContext {
                 agent: self.0.session.agent.clone(),
-                requester: None,
+                requester: self.1.clone(),
                 conversation: None,
             },
             turn: self.0.clone(),
@@ -339,7 +381,7 @@ async fn a_tool_refuses_an_environment_the_agent_may_not_use() {
     // every tool refuses it.
     setup
         .workspaces
-        .create(&turn.owner(), "box", json!({}))
+        .create(&turn.owner(), "box", json!({}), None)
         .await
         .unwrap();
     for (tool, input) in [
@@ -1490,4 +1532,152 @@ async fn parallel_reads_share_the_turns_lease() {
     ok(&c);
     ok(&d);
     assert_eq!(turn.0.lease.held(), Some(id));
+}
+
+// -- SSH keys in the model's text --
+
+#[tokio::test]
+async fn the_model_is_told_which_ssh_keys_a_workspace_gets_by_label_and_type() {
+    let setup = Setup::new().await;
+    setup.connect_relaying();
+    let owner = UserId::new("owner").unwrap();
+    let keys = setup.workspaces.ssh_keys();
+    keys.generate(&owner, crate::ssh::KeyType::Ed25519, Some("work laptop"))
+        .await
+        .unwrap();
+    keys.generate(&owner, crate::ssh::KeyType::EcdsaP256, Some("ci"))
+        .await
+        .unwrap();
+    let plugins = setup.tool(EnvironmentPluginsTool);
+    let create = setup.tool(EnvironmentCreateTool);
+
+    // Before creating anything: what the workspace will get.
+    let turn = setup.session_turn(SessionKind::Direct, Some(&owner));
+    let listed = ok(&turn.run(&plugins, json!({})).await).to_owned();
+    // The whole sentence, so a stray run of spaces or a lost word shows.
+    const WHOLE_KEYS_LINE: &str = r#"SSH keys: "ci" (ECDSA P-256), "work laptop" (Ed25519). ssh and git over ssh in the workspace sign with them through the SSH agent; the private keys are never in the workspace."#;
+    assert!(listed.contains(WHOLE_KEYS_LINE), "{listed}");
+    // Nothing secret: no path of the secret store, no key material.
+    for forbidden in ["users/owner", "ssh-keys/", "PRIVATE KEY", "AAAA", "SHA256:"] {
+        assert!(!listed.contains(forbidden), "{forbidden} in {listed}");
+    }
+
+    // The created workspace says it too, and records whose keys it has.
+    let created = ok(&turn
+        .run(
+            &create,
+            json!({"plugin": "box", "options": {"image": "alpine"}}),
+        )
+        .await)
+    .to_owned();
+    assert!(created.contains(WHOLE_KEYS_LINE), "{created}");
+    let record = setup
+        .workspaces
+        .current(&turn.owner())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.key_user, Some(owner.clone()));
+
+    // A reset by the model creates the new workspace for the same user, and says so.
+    let reset = setup.tool(EnvironmentResetTool);
+    let output = ok(&turn.run(&reset, json!({})).await).to_owned();
+    assert!(output.contains(r#""work laptop" (Ed25519)"#), "{output}");
+    let record = setup
+        .workspaces
+        .current(&turn.owner())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.key_user, Some(owner));
+}
+
+#[tokio::test]
+async fn the_model_is_told_why_a_workspace_gets_no_ssh_keys() {
+    let setup = Setup::new().await;
+    setup.connect_relaying();
+    let owner = UserId::new("owner").unwrap();
+    let plugins = setup.tool(EnvironmentPluginsTool);
+    let create = setup.tool(EnvironmentCreateTool);
+
+    // A user with no keys.
+    let direct = setup.session_turn(SessionKind::Direct, Some(&owner));
+    let listed = ok(&direct.run(&plugins, json!({})).await).to_owned();
+    assert!(
+        listed.contains("SSH keys: none (the user has not added any SSH keys to Doozers)."),
+        "{listed}"
+    );
+
+    // A group conversation gets none, even though its speaker has keys.
+    setup
+        .workspaces
+        .ssh_keys()
+        .generate(&owner, crate::ssh::KeyType::Ed25519, Some("laptop"))
+        .await
+        .unwrap();
+    let group = setup
+        .session_turn(SessionKind::Group, None)
+        .requested_by(&owner);
+    let listed = ok(&group.run(&plugins, json!({})).await).to_owned();
+    assert!(
+        listed.contains("SSH keys: none (a group conversation's workspace gets no SSH keys)."),
+        "{listed}"
+    );
+    assert!(!listed.contains("laptop"), "{listed}");
+    let created = ok(&group
+        .run(&create, json!({"plugin": "box", "options": {}}))
+        .await)
+    .to_owned();
+    assert!(
+        created.contains("a group conversation's workspace gets no SSH keys"),
+        "{created}"
+    );
+    let record = setup
+        .workspaces
+        .current(&group.owner())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.key_user, None);
+
+    // A config job has no requester: none. A runtime job gets its creator's keys.
+    let config_job = setup.session_turn(SessionKind::Job, Some(&owner));
+    let listed = ok(&config_job.run(&plugins, json!({})).await).to_owned();
+    assert!(
+        listed.contains("SSH keys: none (a config job's workspace gets no SSH keys)."),
+        "{listed}"
+    );
+    let runtime_job = setup
+        .session_turn(SessionKind::Job, Some(&owner))
+        .requested_by(&owner);
+    let listed = ok(&runtime_job.run(&plugins, json!({})).await).to_owned();
+    assert!(
+        listed.contains(r#"SSH keys: "laptop" (Ed25519)."#),
+        "{listed}"
+    );
+}
+
+#[tokio::test]
+async fn an_environment_that_cant_relay_says_nothing_about_ssh_keys() {
+    let setup = Setup::new().await;
+    let owner = UserId::new("owner").unwrap();
+    let turn = setup.session_turn(SessionKind::Direct, Some(&owner));
+    let listed = ok(&turn
+        .run(&setup.tool(EnvironmentPluginsTool), json!({}))
+        .await)
+    .to_owned();
+    assert!(!listed.contains("SSH"), "{listed}");
+    let created = ok(&turn
+        .run(&setup.tool(EnvironmentCreateTool), json!({"plugin": "box"}))
+        .await)
+    .to_owned();
+    assert!(!created.contains("SSH"), "{created}");
+    // The workspace still records whose keys it would get.
+    let record = setup
+        .workspaces
+        .current(&turn.owner())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.key_user, Some(owner));
 }

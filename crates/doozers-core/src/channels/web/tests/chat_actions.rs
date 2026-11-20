@@ -50,7 +50,9 @@ impl Chats {
                 crate::registry::EnvironmentCapabilities::default(),
             )
             .unwrap();
-        let workspaces = Workspaces::new(env.store.clone(), env.registry.clone(), clock);
+        let ssh_keys =
+            crate::ssh::SshKeys::for_tests(env.store.clone(), env._dir.path(), clock.clone()).await;
+        let workspaces = Workspaces::new(env.store.clone(), env.registry.clone(), clock, ssh_keys);
         Self {
             env,
             activity: Arc::default(),
@@ -102,7 +104,7 @@ impl Chats {
     /// A workspace of `jeeves` in `chat`.
     async fn create_workspace(&self, chat: &ConversationId) -> WorkspaceId {
         self.workspaces
-            .create(&workspace_owner(chat), "box", json!({}))
+            .create(&workspace_owner(chat), "box", json!({}), None)
             .await
             .unwrap()
             .id

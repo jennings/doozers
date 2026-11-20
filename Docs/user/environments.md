@@ -71,6 +71,12 @@ Doozers keeps limits on what the agent sees, the same for every environment:
   refuses files over 8 MiB.
 - `find` and `grep` return at most 200 results, and `grep` cuts lines over 500 characters.
 
+## SSH
+
+A workspace on an environment that supports it can use your SSH keys for `ssh` and `git`.
+[SSH keys and SSH in workspaces](ssh.md#use-ssh-in-a-workspace) says which workspaces get keys and
+how to check that they work.
+
 ## See and delete workspaces
 
 **Workspaces** in the [web interface's admin pages](web.md#workspaces) lists every workspace with

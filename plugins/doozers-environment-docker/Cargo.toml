@@ -35,8 +35,11 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uuid = { version = "1.18.1", features = ["v4"] }
 
 [dev-dependencies]
+# The ssh-agent tests answer the relay with the core's own agent, over keys in a real secret store.
+doozers-core.workspace = true
 # The end-to-end test talks to the served plugin over gRPC.
 doozers-proto.workspace = true
+doozers-store.workspace = true
 prost-types.workspace = true
 tempfile.workspace = true
 toml.workspace = true

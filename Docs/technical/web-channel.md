@@ -872,14 +872,16 @@ the runtime's `Workspaces`. Like the other admin pages: the authentication middl
 every POST. [Environment workspaces](environments.md#calls) describes the calls behind it.
 
 - The list is one block per `creating` or `active` workspace, newest first, not a table: the fields
-  (environment, owner, created, last used, in use, disk used, description, working directory,
-  details) don't fit a table in the page's width. The owner is the agent (a link to its page if it
-  is configured), the channel, and the conversation, which links to `/chats/<id>` when the channel
-  is this web instance and the conversation is a chat id; a job run shows its session. Above the
-  list, each environment shows its free space, or why it isn't known (not connected, failed, no
-  longer configured). A workspace the plugin didn't answer for shows `unknown` for its state, disk
-  use, and details, and what Doozers stored of its description. There is no timeout of its own and
-  no cache: the page waits for the plugins like any call to them does.
+  (environment, owner, created, last used, in use, disk used, SSH keys, description, working
+  directory, details) don't fit a table in the page's width. **SSH keys** is the workspace's
+  `key_user` (the user whose keys its agent offers, [SSH](ssh.md#how-a-workspace-gets-its-keys)), or
+  `none`. The owner is the agent (a link to its page if it is configured), the channel, and the
+  conversation, which links to `/chats/<id>` when the channel is this web instance and the
+  conversation is a chat id; a job run shows its session. Above the list, each environment shows its
+  free space, or why it isn't known (not connected, failed, no longer configured). A workspace the
+  plugin didn't answer for shows `unknown` for its state, disk use, and details, and what Doozers
+  stored of its description. There is no timeout of its own and no cache: the page waits for the
+  plugins like any call to them does.
 - What a plugin reports (description, working directory, `details`) is the plugin's text: the
   template escapes it and nothing interprets it. `details` is rendered as a nested definition list
   in the plugin's order.
@@ -1162,15 +1164,15 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   environment connected as `box`, with `far` never connecting): anonymous requests get 401 and a
   non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
   token; the list shows the workspace with its live state, disk use, free space, description,
-  details, agent and web-chat links, and the job-run and other-channel owners without a chat link; a
-  failing or disconnected environment shows `unknown` and is named, with what Doozers stored still
-  shown; plugin text is escaped; stopping a workspace nothing is using needs no confirmation, and
-  stopping one a turn is using asks first (the button is a link, the page says what ends), then
-  stops without changing the row; deleting has a plain confirmation, or the in-use warning, then
-  deletes with the operator reason (stop first when in use, and the turn's next `open` fails), is
-  finished later when the environment is down, and leaves the page without the workspace; ids that
-  are gone, invalid, or still being created, and a stop with the environment down, answer as
-  described above.
+  details, whose SSH keys each workspace gets, agent and web-chat links, and the job-run and
+  other-channel owners without a chat link; a failing or disconnected environment shows `unknown`
+  and is named, with what Doozers stored still shown; plugin text is escaped; stopping a workspace
+  nothing is using needs no confirmation, and stopping one a turn is using asks first (the button is
+  a link, the page says what ends), then stops without changing the row; deleting has a plain
+  confirmation, or the in-use warning, then deletes with the operator reason (stop first when in
+  use, and the turn's next `open` fails), is finished later when the environment is down, and leaves
+  the page without the workspace; ids that are gone, invalid, or still being created, and a stop
+  with the environment down, answer as described above.
 - Toolset pages (`tests/toolsets.rs`, over the test configuration, a real `ToolsetManager` whose
   remote servers never answer, and the admin tests' fake service): anonymous requests get 401 and a
   non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF

@@ -26,7 +26,8 @@ mod tests;
 use std::fmt::Write as _;
 use std::sync::{Arc, Weak};
 
-use doozers_types::Block;
+use doozers_store::SessionKind;
+use doozers_types::{Block, UserId};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -34,7 +35,9 @@ use super::CoreCall;
 use crate::agent_loop::ToolOutput;
 use crate::registry::{EnvironmentEntry, Registry, RegistryError};
 use crate::runtime::Runtime;
-use crate::workspaces::{Opened, WorkspaceError, WorkspaceOwner, WorkspaceRecord, Workspaces};
+use crate::workspaces::{
+    self, Opened, WorkspaceError, WorkspaceOwner, WorkspaceRecord, Workspaces,
+};
 
 /// Registers the workspace tools with `runtime`'s registry.
 ///
@@ -79,6 +82,10 @@ pub(super) struct Scope {
     /// The agent's environments, in the order of its `environments`. Never empty.
     pub(super) allowed: Vec<EnvironmentEntry>,
     pub(super) owner: WorkspaceOwner,
+    /// The user whose SSH keys a workspace this turn creates gets.
+    pub(super) key_user: Option<UserId>,
+    /// Why the turn's workspace gets no keys when `key_user` is `None`.
+    no_keys_because: &'static str,
 }
 
 impl Env {
@@ -115,10 +122,61 @@ impl Env {
                 "agent `{agent}` has no environments"
             )));
         }
+        let session = &call.turn.session;
         Ok(Scope {
             allowed,
-            owner: WorkspaceOwner::of_session(&call.turn.session),
+            owner: WorkspaceOwner::of_session(session),
+            key_user: workspaces::key_user(session, call.context.requester.as_ref()),
+            no_keys_because: match session.kind {
+                SessionKind::Group => "a group conversation's workspace gets no SSH keys",
+                SessionKind::Job => "a config job's workspace gets no SSH keys",
+                _ => "this conversation has no user to take SSH keys from",
+            },
         })
+    }
+
+    /// The SSH keys line of a created workspace, ending in a newline, or nothing if its
+    /// environment can't relay SSH requests.
+    pub(super) async fn ssh_keys_section(
+        &self,
+        scope: &Scope,
+        entry: &EnvironmentEntry,
+        record: &WorkspaceRecord,
+    ) -> String {
+        if !entry.capabilities.ssh_relay {
+            return String::new();
+        }
+        let mut line = self.ssh_keys_line(scope, record.key_user.as_ref()).await;
+        line.push('\n');
+        line
+    }
+
+    /// What to tell the model about the SSH keys a workspace gets: the labels and types of
+    /// `key_user`'s keys, or that there are none and why. Never anything secret.
+    pub(super) async fn ssh_keys_line(&self, scope: &Scope, key_user: Option<&UserId>) -> String {
+        let Some(user) = key_user else {
+            return format!("SSH keys: none ({}).", scope.no_keys_because);
+        };
+        match self.workspaces.ssh_keys().agent_keys(user).await {
+            Ok(keys) if keys.is_empty() => {
+                "SSH keys: none (the user has not added any SSH keys to Doozers).".to_owned()
+            }
+            Ok(keys) => {
+                let list: Vec<String> = keys
+                    .iter()
+                    .map(|key| format!("{:?} ({})", key.label, key.type_label))
+                    .collect();
+                format!(
+                    "SSH keys: {}. ssh and git over ssh in the workspace sign with them through \
+                     the SSH agent; the private keys are never in the workspace.",
+                    list.join(", ")
+                )
+            }
+            Err(error) => {
+                tracing::warn!(%error, "cannot list the SSH keys for the model");
+                "SSH keys: unknown (they could not be read right now).".to_owned()
+            }
+        }
     }
 
     /// Opens the conversation's workspace for a call: checks that its environment is one of the
