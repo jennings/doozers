@@ -25,6 +25,7 @@ mod qr;
 mod render;
 mod routes;
 mod shell;
+mod ssh_keys;
 mod toolsets;
 mod workspaces;
 

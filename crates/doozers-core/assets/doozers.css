@@ -1198,6 +1198,46 @@ input.mono {
   }
 }
 
+/* A field with an icon button attached to its right edge, such as a public key and its copy
+ * button. Until the script shows the button, the field keeps its own rounded corners. */
+.input-group {
+  display: flex;
+
+  & > input {
+    flex: 1 1 auto;
+  }
+
+  &:has(> .input-group-button:not([hidden])) > input {
+    border-right: none;
+    border-radius: 8px 0 0 8px;
+  }
+}
+
+.input-group-button {
+  flex: none;
+  width: 44px;
+  height: 40px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--surface-inset);
+  color: var(--text-muted);
+
+  &:hover {
+    color: var(--text);
+  }
+
+  & .icon-copied,
+  &[data-copied] .icon-copy {
+    display: none;
+  }
+
+  &[data-copied] .icon-copied {
+    display: block;
+    color: var(--accent);
+  }
+}
+
 .check {
   display: flex;
   align-items: flex-start;

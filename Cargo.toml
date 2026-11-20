@@ -78,3 +78,11 @@ dbg_macro = "warn"
 todo = "warn"
 undocumented_unsafe_blocks = "warn"
 unimplemented = "warn"
+
+# RSA key generation (`doozers_core::ssh`) takes minutes unoptimized, which the SSH key tests would
+# pay for every RSA key they generate.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3

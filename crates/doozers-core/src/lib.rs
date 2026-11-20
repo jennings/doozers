@@ -33,6 +33,7 @@ pub mod scheduler;
 pub mod secrets;
 pub mod sessions;
 pub mod skills;
+pub mod ssh;
 mod stderr_lines;
 pub mod toolsets;
 pub mod workspaces;

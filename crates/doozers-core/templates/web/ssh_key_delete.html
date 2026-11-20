@@ -1,0 +1,36 @@
+{% extends "web/app.html" %}
+
+{% block title %}Delete {{ key.label }} - SSH keys - Doozers{% endblock %}
+
+{% block content %}
+<a class="back" href="{{ back }}">SSH keys</a>
+<section class="card confirm">
+<h1>Delete {{ key.label }}?</h1>
+<dl class="facts">
+{%- if admin %}
+<dt>Owner</dt>
+<dd><code>{{ key.user }}</code></dd>
+{%- endif %}
+<dt>Type</dt>
+<dd>{{ key.type_label }}</dd>
+<dt>Fingerprint</dt>
+<dd><code>{{ key.fingerprint }}</code></dd>
+<dt>Created</dt>
+<dd>{{ key.created }}</dd>
+<dt>Last used</dt>
+<dd>{{ key.last_used }}</dd>
+</dl>
+<ul>
+<li>Deletes the private key from Doozers. This can't be undone, and Doozers can't show the key again.</li>
+<li>Workspaces can no longer sign with it, so <code>ssh</code> and <code>git</code> over SSH stop working wherever only this key was accepted.</li>
+<li>Doesn't remove the public key from GitHub or servers. Remove it there too.</li>
+</ul>
+<div class="form-actions">
+<form method="post" action="{{ action }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button type="submit" class="button-danger-solid">Delete key</button>
+</form>
+<a class="button button-quiet" href="{{ back }}">Cancel</a>
+</div>
+</section>
+{% endblock %}

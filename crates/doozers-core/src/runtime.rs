@@ -19,6 +19,7 @@ use crate::routes::{Routes, RoutesError};
 use crate::scheduler::{JobChanges, OutboxDelivery, Scheduler, SchedulerOptions};
 use crate::secrets::{KeyError, KeyFile, LocalSecrets, SecretProvider};
 use crate::sessions::{Approvals, Clock, Sessions, SessionsOptions, SystemClock, TurnRunner};
+use crate::ssh::SshKeys;
 use crate::workspaces::{self, WorkspaceSweep, Workspaces};
 
 /// Startup failed.
@@ -118,6 +119,8 @@ pub struct Runtime {
     /// The environment workspaces owners hold (PLAN section 8.8): the service the workspace tools
     /// call. Its sweep starts with [`start_workspace_sweep`](Self::start_workspace_sweep).
     pub workspaces: Workspaces,
+    /// The SSH keys users keep: metadata in the database, private keys in [`secrets`](Self::secrets).
+    pub ssh_keys: SshKeys,
 }
 
 impl Runtime {
@@ -161,13 +164,15 @@ impl Runtime {
         let routes = Arc::new(Routes::open(store.clone(), registry.live_config().clone()).await?);
         let workspaces = Workspaces::new(store.clone(), registry.clone(), clock.clone());
         workspaces.recover().await.map_err(StartError::Workspaces)?;
+        let secrets: Arc<dyn SecretProvider> = Arc::new(secrets);
         let runtime = Self {
+            ssh_keys: SshKeys::new(store.clone(), secrets.clone(), clock.clone()),
             memory_dbs: MemoryDbs::new(root.clone(), mode),
             root,
             outbox: Outbox::new(store.clone(), registry.clone(), clock),
             store,
             blobs,
-            secrets: Arc::new(secrets),
+            secrets,
             registry,
             routes,
             jobs: JobChanges::default(),

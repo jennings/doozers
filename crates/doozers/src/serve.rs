@@ -220,6 +220,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
                 admin.clone(),
                 runtime.registry.clone(),
             );
+            let builder = web.install_ssh_keys(builder, runtime.ssh_keys.clone());
             web.install_workspaces(builder, runtime.workspaces.clone())
         }
         None => builder,

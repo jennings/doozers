@@ -1,5 +1,5 @@
 //! Static assets compiled into the binary: the vendored `htmx` and its SSE extension, the
-//! stylesheet, and the scripts of the new-agent form and the MCP server form.
+//! stylesheet, and the scripts of the new-agent form, the MCP server form, and the SSH keys page.
 //!
 //! Every asset's path changes whenever its content does (a version for the vendored files, a
 //! content hash for our own), so all of them are served as `immutable` for a year. Pages link them
@@ -107,14 +107,35 @@ pub fn mcp_server_form_script() -> Asset {
     }
 }
 
+const COPY_SCRIPT_BODY: &[u8] = include_bytes!("../../assets/copy-button.js");
+
+static COPY_SCRIPT_PATH: LazyLock<String> =
+    LazyLock::new(|| hashed_path("copy-button", COPY_SCRIPT_BODY, "js"));
+
+/// The URL path of the copy button's script: `/static/copy-button-<hash>.js`.
+pub fn copy_script_path() -> &'static str {
+    COPY_SCRIPT_PATH.as_str()
+}
+
+/// The copy button's script, at [`copy_script_path`]: it makes the SSH keys page's Copy buttons
+/// copy a public key.
+pub fn copy_script() -> Asset {
+    Asset {
+        path: copy_script_path(),
+        content_type: JAVASCRIPT,
+        body: COPY_SCRIPT_BODY,
+    }
+}
+
 /// Every asset.
-pub fn all() -> [Asset; 5] {
+pub fn all() -> [Asset; 6] {
     [
         HTMX,
         HTMX_SSE,
         stylesheet(),
         agent_form_script(),
         mcp_server_form_script(),
+        copy_script(),
     ]
 }
 

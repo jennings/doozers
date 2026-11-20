@@ -23,11 +23,14 @@ askama = "0.16.1"
 async-trait.workspace = true
 # AES-256-GCM for the local secret store (`secrets`); rustls already builds it.
 aws-lc-rs = { version = "1.18.2", default-features = false, features = ["aws-lc-sys"] }
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["multipart"] }
 # Media in provider requests and in MCP tool results.
 base64.workspace = true
 bytes.workspace = true
 croner = { version = "4.0.2", default-features = false, features = ["jiff"] }
+# Reading the private keys users upload as SSH keys (`ssh`): the PEM formats `ssh-key` doesn't
+# read, converted into its key types. Versions follow what `ssh-key` pulls in, so each builds once.
+ed25519-dalek = { version = "2", default-features = false, features = ["pkcs8"] }
 futures.workspace = true
 # The proto <-> domain conversions the admin service and the `RemoteChannel` adapter share with
 # plugins, the web channel's renderer, and (`tls`) the TLS client settings for remote plugins.
@@ -40,12 +43,24 @@ getrandom = "0.4.3"
 # The one-shot connector to a plugin's end of the socket pair (`plugin_host`).
 hyper-util.workspace = true
 jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo", "tzdb-bundle-always"] }
+# The key derivation of legacy OpenSSL-encrypted PEM keys (`ssh::formats`).
+md-5 = { version = "0.10", default-features = false }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
+p384 = { version = "0.13", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
+p521 = { version = "0.13.3", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
+# Decrypts `ENCRYPTED PRIVATE KEY` (PKCS#8 with PBES2) uploads; the SHA-1 PRF is what older OpenSSL
+# wrote.
+pkcs5 = { version = "0.7", default-features = false, features = ["pbes2", "sha1-insecure"] }
+pkcs8 = { version = "0.10", default-features = false, features = ["alloc", "encryption", "std"] }
 # `google.protobuf.Timestamp` in the admin service.
 prost-types.workspace = true
 # QR codes of channels that need linking, on the web admin pages (rendered to SVG by hand, so no
 # image features).
 qrcode = { version = "0.14.1", default-features = false, optional = true }
+# OS randomness for generating SSH keys.
+rand_core = { version = "0.6.4", features = ["getrandom"] }
 reqwest.workspace = true
+rsa = { version = "0.9", default-features = false, features = ["sha2", "std"] }
 rmcp = { version = "3.7.0", default-features = false, features = ["auth", "client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
 serde.workspace = true
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
@@ -53,6 +68,8 @@ serde_ignored = "0.1.14"
 serde_json.workspace = true
 serde_path_to_error = "0.1.20"
 sha2.workspace = true
+# SSH key generation, OpenSSH key files, fingerprints, and signatures (`ssh`). No DSA, no `sk-` keys.
+ssh-key = { version = "0.6.7", default-features = false, features = ["ecdsa", "ed25519", "encryption", "getrandom", "p256", "p384", "p521", "rsa", "std"] }
 # The tar half of a backup (`backup`); no extended attributes.
 tar = { version = "0.4", default-features = false }
 tempfile.workspace = true

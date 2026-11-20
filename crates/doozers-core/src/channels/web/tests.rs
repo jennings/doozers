@@ -49,6 +49,7 @@ mod chat_actions;
 mod jobs;
 mod memory;
 mod routes;
+mod ssh_keys;
 mod toolsets;
 mod workspaces;
 

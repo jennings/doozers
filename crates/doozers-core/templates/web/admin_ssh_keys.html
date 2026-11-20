@@ -1,0 +1,33 @@
+{% extends "web/app.html" %}
+
+{% block title %}SSH keys - Doozers{% endblock %}
+
+{% block content %}
+<h1>SSH keys</h1>
+{%- if let Some(notice) = notice %}
+<p class="banner banner-info" role="status">{{ notice }}</p>
+{%- endif %}
+<p class="lede">Every user's SSH keys. You see each key's details, never its private key, and you can't use anyone's key. Deleting a key, for example one of a user who left, removes it from Doozers at once. Its workspaces can no longer sign with it.</p>
+{%- if keys.is_empty() %}
+<p>No user has an SSH key.</p>
+{%- else %}
+<div class="table-wrap">
+<table class="table">
+<thead><tr><th>User</th><th>Label</th><th>Type</th><th>Fingerprint</th><th>Created</th><th>Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
+<tbody>
+{%- for key in keys %}
+<tr id="key-{{ key.id }}">
+<td data-label="User" class="m-title"><code>{{ key.user }}</code></td>
+<td data-label="Label">{{ key.label }}</td>
+<td data-label="Type">{{ key.type_label }}</td>
+<td data-label="Fingerprint"><code>{{ key.fingerprint }}</code></td>
+<td data-label="Created">{{ key.created }}</td>
+<td data-label="Last used">{{ key.last_used }}</td>
+<td class="row-actions"><a class="button button-small button-danger" href="/admin/ssh-keys/{{ key.id }}/delete">Delete</a></td>
+</tr>
+{%- endfor %}
+</tbody>
+</table>
+</div>
+{%- endif %}
+{% endblock %}

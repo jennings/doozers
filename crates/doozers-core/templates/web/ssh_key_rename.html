@@ -1,0 +1,23 @@
+{% extends "web/app.html" %}
+
+{% block title %}Rename {{ key.label }} - SSH keys - Doozers{% endblock %}
+
+{% block content %}
+<a class="back" href="/ssh-keys#key-{{ key.id }}">SSH keys</a>
+<h1>Rename {{ key.label }}</h1>
+{%- if let Some(error) = error %}
+<p class="banner banner-error" role="alert">{{ error }}</p>
+{%- endif %}
+<form class="card form" method="post" action="/ssh-keys/{{ key.id }}/rename">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="field">
+<label for="label">Label</label>
+<input id="label" name="label" value="{{ label }}" maxlength="100" required>
+<p class="help">Up to 100 characters. The label is the comment of the public key you copy. Renaming it doesn't change the key, so a copy you already registered keeps working.</p>
+</div>
+<div class="form-actions">
+<button type="submit" class="button-primary">Rename</button>
+<a class="button button-quiet" href="/ssh-keys#key-{{ key.id }}">Cancel</a>
+</div>
+</form>
+{% endblock %}
