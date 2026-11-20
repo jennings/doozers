@@ -96,6 +96,27 @@ pub trait Environment: Send + Sync {
             "this environment doesn't relay ssh-agent requests".to_owned(),
         ))
     }
+
+    /// Fetches the host key `host:port` presents for algorithm `key_type` (an SSH name such as
+    /// `ssh-ed25519`), as `ssh-keyscan` does, on behalf of workspace `id`. Returns the key's SSH
+    /// wire blob. The core records a workspace's first use of a host only if the key the workspace
+    /// was offered equals it, so the scan must be made from a network the workspace can't
+    /// influence (the plugin's own), never from inside the workspace.
+    ///
+    /// The default implementation refuses: only an environment that declares the `ssh_relay`
+    /// capability implements it.
+    async fn scan_host_key(
+        &self,
+        id: &WorkspaceId,
+        host: &str,
+        port: u16,
+        key_type: &str,
+    ) -> Result<Vec<u8>> {
+        let _ = (id, host, port, key_type);
+        Err(crate::Error::InvalidRequest(
+            "this environment doesn't scan SSH host keys".to_owned(),
+        ))
+    }
 }
 
 /// What an environment instance is, declared once.
@@ -294,6 +315,8 @@ pub struct GrepResult {
 pub enum RelayReply {
     /// The answer to an [`AgentRequest`].
     Agent(AgentReply),
+    /// The answer to a [`KnownHostsRequest`].
+    KnownHosts(KnownHostsReply),
 }
 
 /// What an environment sends on an [`Environment::relay`], from a workspace's clients.
@@ -304,6 +327,8 @@ pub enum RelayRequest {
     Agent(AgentRequest),
     /// A client disconnected.
     AgentClosed(AgentClosed),
+    /// `ssh` in the workspace asks which host keys the core trusts for a host.
+    KnownHosts(KnownHostsRequest),
 }
 
 /// The longest ssh-agent message a relay carries, in bytes (OpenSSH's limit).
@@ -333,4 +358,43 @@ pub struct AgentReply {
 pub struct AgentClosed {
     /// The connection that ended.
     pub connection: u64,
+}
+
+/// The longest host string a [`KnownHostsRequest`] carries: a 253-character name, with brackets and
+/// a port.
+pub const MAX_KNOWN_HOST: usize = 270;
+
+/// The longest host key blob a relay carries, in bytes. An RSA 16384-bit key is about 2 KiB.
+pub const MAX_HOST_KEY: usize = 16 * 1024;
+
+/// The most keys a [`KnownHostsReply`] carries.
+pub const MAX_KNOWN_HOST_KEYS: usize = 64;
+
+/// `ssh` in a workspace asks which host keys the core trusts for a host: one call of its
+/// `KnownHostsCommand`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KnownHostsRequest {
+    /// Names the lookup within one relay. The environment chooses it; several may be pending.
+    pub id: u64,
+    /// The host exactly as `ssh` gave it: a name or address, or `[host]:port` for a port other than
+    /// 22. At most [`MAX_KNOWN_HOST`] bytes.
+    pub host: String,
+    /// The port.
+    pub port: u16,
+    /// The SSH algorithm name of the key the server offered. Empty when `ssh` only asks which keys
+    /// are stored, to choose the algorithms to offer: the core records nothing then.
+    pub key_type: String,
+    /// The key the server offered, as an SSH wire blob of at most [`MAX_HOST_KEY`] bytes. Empty
+    /// exactly when `key_type` is.
+    pub key: Vec<u8>,
+}
+
+/// The host keys the core trusts for the host of the [`KnownHostsRequest`] with this `id`, as SSH
+/// wire blobs. None if it trusts none, which makes `ssh` refuse the connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KnownHostsReply {
+    /// The id of the request this answers.
+    pub id: u64,
+    /// The keys, at most [`MAX_KNOWN_HOST_KEYS`].
+    pub keys: Vec<Vec<u8>>,
 }

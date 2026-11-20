@@ -1,0 +1,34 @@
+{% extends "web/app.html" %}
+
+{% block title %}Delete {{ key.host }} - Known SSH hosts - Doozers{% endblock %}
+
+{% block content %}
+<a class="back" href="/admin/ssh-hosts#host-{{ key.id }}">Known SSH hosts</a>
+<section class="card confirm">
+<h1>Delete the key of <code>{{ key.host }}</code>?</h1>
+<dl class="facts">
+<dt>Environment</dt>
+<dd><code>{{ environment }}</code></dd>
+<dt>Key type</dt>
+<dd><code>{{ key.key_type }}</code></dd>
+<dt>Fingerprint</dt>
+<dd><code>{{ key.fingerprint }}</code></dd>
+<dt>First seen</dt>
+<dd>{{ key.first_seen }}, {{ key.origin }}</dd>
+<dt>Last used</dt>
+<dd>{{ key.last_used }}</dd>
+</dl>
+<ul>
+<li>Once the host has no key left, the next connection from a workspace in <code>{{ environment }}</code> trusts whatever key the host presents then, and Doozers records it. Delete a key only if the server's key changed on purpose, or you don't trust the key any more.</li>
+<li>Other keys of the same host stay, and workspaces keep trusting them.</li>
+<li>Workspaces in other environments aren't affected.</li>
+</ul>
+<div class="form-actions">
+<form method="post" action="/admin/ssh-hosts/{{ key.id }}/delete">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button type="submit" class="button-danger-solid">Delete key</button>
+</form>
+<a class="button button-quiet" href="/admin/ssh-hosts#host-{{ key.id }}">Cancel</a>
+</div>
+</section>
+{% endblock %}

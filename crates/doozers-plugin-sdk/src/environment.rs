@@ -17,8 +17,9 @@ use doozers_proto::environment::v1::{
     FindRequest as PbFindRequest, FindResponse, GrepRequest as PbGrepRequest, GrepResponse,
     InfoRequest, InfoResponse, ListWorkspacesRequest, ListWorkspacesResponse, ReadFileRequest,
     ReadFileResponse, RelayReply as PbRelayReply, RelayRequest as PbRelayRequest,
-    StartWorkspaceRequest, StartWorkspaceResponse, StopWorkspaceRequest, StopWorkspaceResponse,
-    WriteFileRequest, WriteFileResponse,
+    ScanHostKeyRequest as PbScanHostKeyRequest, ScanHostKeyResponse, StartWorkspaceRequest,
+    StartWorkspaceResponse, StopWorkspaceRequest, StopWorkspaceResponse, WriteFileRequest,
+    WriteFileResponse,
 };
 use doozers_proto::plugin::v1::{DescribeResponse, PluginKind, describe_response};
 use doozers_types::{Environment, ExecEvent, Result, WorkspaceId};
@@ -36,7 +37,8 @@ use crate::convert::environment::{
     exec_event_to_proto, exec_request_from_proto, find_request_from_proto, find_result_to_proto,
     grep_request_from_proto, grep_result_to_proto, info_to_proto, options_from_proto,
     read_file_to_proto, relay_open_from_proto, relay_reply_from_proto, relay_request_to_proto,
-    start_outcome_to_proto, workspace_list_to_proto, workspace_to_proto,
+    scan_host_key_request_from_proto, scan_host_key_to_proto, start_outcome_to_proto,
+    workspace_list_to_proto, workspace_to_proto,
 };
 use crate::convert::status_from_error;
 use crate::remote::RemoteServer;
@@ -161,10 +163,13 @@ impl EnvironmentPlugin {
         self
     }
 
-    /// Declares that the plugin implements [`Environment::relay`]: each workspace has an ssh-agent
-    /// socket (`SSH_AUTH_SOCK`) whose requests the plugin relays to the core, which signs them
-    /// with the workspace user's SSH keys. `Describe` reports it, and the core opens a relay for
-    /// each workspace it starts. Without it the core never calls `relay`.
+    /// Declares that the plugin implements [`Environment::relay`] and
+    /// [`Environment::scan_host_key`]: each workspace has an ssh-agent socket (`SSH_AUTH_SOCK`)
+    /// whose requests the plugin relays to the core, which signs them with the workspace user's SSH
+    /// keys, and `ssh` in the workspace asks the core which host keys it trusts through the same
+    /// relay. [`scan_host_key`](crate::ssh::scan_host_key) does the scanning. `Describe` reports
+    /// it, and the core opens a relay for each workspace it starts. Without it the core never calls
+    /// either method.
     pub fn ssh_relay(mut self) -> Self {
         self.ssh_relay = true;
         self
@@ -639,6 +644,20 @@ impl EnvironmentService for EnvironmentServer {
     }
 
     type RelayStream = BoxStream<'static, Result<PbRelayRequest, Status>>;
+
+    async fn scan_host_key(
+        &self,
+        request: Request<PbScanHostKeyRequest>,
+    ) -> Result<Response<ScanHostKeyResponse>, Status> {
+        let environment = self.0.environment()?;
+        let (id, host, port, key_type) =
+            scan_host_key_request_from_proto(request.into_inner()).map_err(status_from_error)?;
+        let key = environment
+            .scan_host_key(&id, &host, port, &key_type)
+            .await
+            .map_err(status_from_error)?;
+        Ok(Response::new(scan_host_key_to_proto(key)))
+    }
 
     async fn relay(
         &self,

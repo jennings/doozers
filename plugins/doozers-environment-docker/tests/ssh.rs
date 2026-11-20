@@ -3,8 +3,9 @@
 //!
 //! `ssh-keygen -Y sign` signs through the agent socket with no network, once `openssh-client` is
 //! installed in the workspace. The `sshd` test starts a second container on the same engine
-//! network, running `sshd` with the key's public half in `authorized_keys`, and logs in to it with
-//! `ssh -o StrictHostKeyChecking=accept-new`.
+//! network, running `sshd` with the key's public half in `authorized_keys`, and logs in to it: the
+//! host's key is trusted on first use through the core's known hosts, as for every workspace
+//! (`known_hosts.rs` tests that part on its own).
 //!
 //! The tests skip, saying why, when no Docker API socket answers or the engine can't reach the
 //! network to install packages. `DOOZERS_REQUIRE_DOCKER=1` turns both into failures: the harness
@@ -12,165 +13,10 @@
 
 mod support;
 
-use std::sync::Arc;
-use std::time::Duration;
-
-use bollard::Docker;
-use bollard::models::{ContainerCreateBody, HostConfig};
-use bollard::query_parameters::{
-    CreateContainerOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
-};
-use doozers_core::paths::DataRoot;
-use doozers_core::secrets::{KeyFile, LocalSecrets, SecretPath, SecretProvider};
-use doozers_core::sessions::{Clock, SystemClock};
-use doozers_core::ssh::{Agent, KeyType, SshKey, SshKeys};
-use doozers_environment_docker::SSH_AGENT_SOCKET;
-use doozers_store::Store;
-use doozers_types::{AgentReply, Environment, RelayReply, RelayRequest, UserId};
-use futures::StreamExt;
-use support::{IMAGE, Scope, harness, wid};
-
-/// Whether a step that needs the network must work, instead of skipping the test.
-fn network_required() -> bool {
-    std::env::var("DOOZERS_REQUIRE_DOCKER").is_ok_and(|value| !value.is_empty())
-}
-
-/// Ends the test for a network step that failed: a skip with the reason, or a failure when the
-/// network is required.
-fn network_failed(what: &str, detail: &str) {
-    assert!(
-        !network_required(),
-        "DOOZERS_REQUIRE_DOCKER is set, but {what} failed: {detail}"
-    );
-    eprintln!("skipping: {what} failed (no network?): {detail}");
-}
-
-/// The core's side: keys in a secret store, and the agent answering one workspace's relay.
-struct Core {
-    _dir: tempfile::TempDir,
-    owner: UserId,
-    keys: SshKeys,
-    secrets: Arc<LocalSecrets>,
-    relay: tokio::task::JoinHandle<()>,
-}
-
-impl Core {
-    /// A secret store and keys service in a temporary directory.
-    async fn new() -> (Self, Arc<dyn Clock>) {
-        let dir = tempfile::tempdir().unwrap();
-        let root = DataRoot::new(dir.path(), dir.path()).unwrap();
-        let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
-        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-        let secrets = Arc::new(
-            LocalSecrets::open(
-                store.clone(),
-                &KeyFile::new(&root, &root.secret_key_file()),
-                clock.clone(),
-            )
-            .await
-            .unwrap(),
-        );
-        let keys = SshKeys::new(store, secrets.clone(), clock.clone());
-        let core = Self {
-            _dir: dir,
-            owner: UserId::new("owner").unwrap(),
-            keys,
-            secrets,
-            relay: tokio::spawn(async {}),
-        };
-        (core, clock)
-    }
-
-    async fn generate(&self, kind: KeyType, label: &str) -> SshKey {
-        self.keys
-            .generate(&self.owner, kind, Some(label))
-            .await
-            .unwrap()
-    }
-
-    /// Opens the relay of workspace `id` and answers it with an agent for `user`, as the core's
-    /// relay task does.
-    async fn serve(
-        &mut self,
-        scope: &Scope,
-        clock: Arc<dyn Clock>,
-        id: &str,
-        user: Option<UserId>,
-    ) {
-        let mut agent = Agent::new(self.keys.clone(), clock, wid(id), user);
-        let (replies, incoming) = futures::channel::mpsc::unbounded::<RelayReply>();
-        let mut requests = scope
-            .env
-            .relay(&wid(id), incoming.boxed())
-            .await
-            .expect("opening the relay");
-        self.relay.abort();
-        self.relay = tokio::spawn(async move {
-            while let Some(Ok(request)) = requests.next().await {
-                match request {
-                    RelayRequest::Agent(request) => {
-                        let message = agent.handle(request.connection, &request.message).await;
-                        let reply = RelayReply::Agent(AgentReply {
-                            connection: request.connection,
-                            message,
-                        });
-                        if replies.unbounded_send(reply).is_err() {
-                            break;
-                        }
-                    }
-                    RelayRequest::AgentClosed(closed) => agent.close(closed.connection),
-                    _ => {}
-                }
-            }
-        });
-    }
-
-    /// The private key text of `key`, as the secret store holds it.
-    async fn private_key(&self, key: &SshKey) -> String {
-        let path = SecretPath::new(format!("users/{}/ssh-keys/{}", key.user, key.id)).unwrap();
-        self.secrets
-            .get(&path)
-            .await
-            .unwrap()
-            .expect("the key's secret")
-            .expose()
-            .to_owned()
-    }
-}
-
-impl Drop for Core {
-    fn drop(&mut self) {
-        self.relay.abort();
-    }
-}
-
-/// A workspace with an OpenSSH client with `packages` installed, or `None` after skipping.
-async fn workspace_with(scope: &Scope, id: &str, packages: &str) -> Option<String> {
-    let id = scope.workspace(id).await;
-    let installed = scope
-        .run(&id, &format!("apk add --no-cache {packages} 2>&1"))
-        .await;
-    if installed.code != 0 {
-        network_failed(
-            &format!("installing {packages} in the workspace"),
-            installed.stdout.trim(),
-        );
-        return None;
-    }
-    Some(id)
-}
-
-/// Waits until the helper's socket is there.
-async fn wait_for_socket(scope: &Scope, id: &str) {
-    let probe = format!("test -S {SSH_AGENT_SOCKET}");
-    for _ in 0..100 {
-        if scope.run(id, &probe).await.code == 0 {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("the agent socket never appeared");
-}
+use doozers_core::ssh::KeyType;
+use doozers_types::{Environment, UserId};
+use support::ssh::{Core, Sshd, network_failed, wait_for_socket, workspace_with};
+use support::{harness, wid};
 
 #[tokio::test]
 async fn ssh_keygen_signs_through_the_agent_and_no_private_key_is_in_the_workspace() {
@@ -336,126 +182,6 @@ async fn a_workspace_without_a_key_user_sees_an_agent_with_no_keys() {
     );
 }
 
-/// A container running `sshd` that accepts one key for the user `tester`. Removed when dropped.
-struct Sshd {
-    docker: Docker,
-    name: String,
-    address: String,
-}
-
-impl Sshd {
-    /// Starts it and waits until it listens; `Err` says what went wrong (an install that
-    /// failed, usually for lack of network).
-    async fn start(docker: Docker, name: &str, authorized_key: &str) -> Result<Self, String> {
-        let script = format!(
-            "set -e\n\
-             apk add --no-cache openssh >/dev/null\n\
-             ssh-keygen -A >/dev/null\n\
-             adduser -D tester\n\
-             echo \"tester:$(head -c 18 /dev/urandom | base64)\" | chpasswd\n\
-             mkdir -p /home/tester/.ssh\n\
-             echo '{authorized_key}' > /home/tester/.ssh/authorized_keys\n\
-             chown -R tester:tester /home/tester/.ssh\n\
-             chmod 700 /home/tester/.ssh\n\
-             chmod 600 /home/tester/.ssh/authorized_keys\n\
-             exec /usr/sbin/sshd -D -e -p 2222 -o PasswordAuthentication=no \
-                 -o KbdInteractiveAuthentication=no\n"
-        );
-        let body = ContainerCreateBody {
-            image: Some(IMAGE.to_owned()),
-            cmd: Some(vec!["sh".to_owned(), "-c".to_owned(), script]),
-            host_config: Some(HostConfig {
-                network_mode: Some("bridge".to_owned()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        docker
-            .create_container(
-                Some(CreateContainerOptionsBuilder::default().name(name).build()),
-                body,
-            )
-            .await
-            .map_err(|e| format!("creating the sshd container: {e}"))?;
-        let mut sshd = Self {
-            docker,
-            name: name.to_owned(),
-            address: String::new(),
-        };
-        sshd.docker
-            .start_container(name, None)
-            .await
-            .map_err(|e| format!("starting the sshd container: {e}"))?;
-        for _ in 0..180 {
-            let inspected = sshd
-                .docker
-                .inspect_container(name, None)
-                .await
-                .map_err(|e| format!("inspecting the sshd container: {e}"))?;
-            let running = inspected
-                .state
-                .as_ref()
-                .and_then(|state| state.running)
-                .unwrap_or(false);
-            if !running {
-                return Err(format!(
-                    "the sshd container stopped: {}",
-                    sshd.logs().await.trim()
-                ));
-            }
-            if sshd.logs().await.contains("Server listening") {
-                sshd.address = inspected
-                    .network_settings
-                    .and_then(|settings| settings.networks)
-                    .and_then(|networks| {
-                        networks
-                            .into_values()
-                            .filter_map(|network| network.ip_address)
-                            .find(|address| !address.is_empty())
-                    })
-                    .ok_or("the sshd container has no address")?;
-                return Ok(sshd);
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-        Err(format!("sshd never listened: {}", sshd.logs().await.trim()))
-    }
-
-    async fn logs(&self) -> String {
-        let options = LogsOptionsBuilder::default()
-            .stdout(true)
-            .stderr(true)
-            .build();
-        let mut stream = self.docker.logs(&self.name, Some(options));
-        let mut text = String::new();
-        while let Some(Ok(chunk)) = stream.next().await {
-            text.push_str(&chunk.to_string());
-        }
-        text
-    }
-}
-
-impl Drop for Sshd {
-    fn drop(&mut self) {
-        let docker = self.docker.clone();
-        let name = self.name.clone();
-        // A runtime of its own: this may run while the test's runtime is shutting down.
-        let _ = std::thread::spawn(move || {
-            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            else {
-                return;
-            };
-            runtime.block_on(async {
-                let options = RemoveContainerOptionsBuilder::default().force(true).build();
-                let _ = docker.remove_container(&name, Some(options)).await;
-            });
-        })
-        .join();
-    }
-}
-
 #[tokio::test]
 async fn ssh_logs_in_to_an_sshd_container_with_a_key_that_never_enters_the_workspace() {
     let Some(harness) = harness() else { return };
@@ -477,10 +203,7 @@ async fn ssh_logs_in_to_an_sshd_container_with_a_key_that_never_enters_the_works
             return;
         }
     };
-    let ssh = format!(
-        "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -p 2222 tester@{}",
-        sshd.address
-    );
+    let ssh = format!("ssh -o BatchMode=yes -p 2222 tester@{}", sshd.address);
 
     // The agent signs for the login.
     assert_eq!(

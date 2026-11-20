@@ -9,23 +9,32 @@
 //! ends and, one connection at a time, when the environment reports a client closed.
 //!
 //! A relay is opened for every workspace on a capable environment, whatever its key user: a
-//! workspace without keys gets an agent that offers none.
+//! workspace without keys gets an agent that offers none, and `ssh` there still asks which host
+//! keys it trusts.
+//!
+//! The agent's requests are answered one after another, but known-hosts lookups (issue #138) are
+//! answered each in a task of its own, because a first use waits for the environment to scan the
+//! host and a slow server must not hold up the agent requests on the same relay. Every request is
+//! untrusted workspace input, so at most [`MAX_LOOKUPS`] lookups run at once and one past that is
+//! answered with no key.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use doozers_types::{
-    AgentReply, Environment, RelayReply, RelayRequest, Result as EnvResult, UserId, WorkspaceId,
+    AgentReply, Environment, KnownHostsReply, KnownHostsRequest, RelayReply, RelayRequest,
+    Result as EnvResult, WorkspaceId,
 };
 use futures::StreamExt as _;
 use futures::stream::BoxStream;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tracing::{debug, warn};
 
 use super::SshKeys;
 use super::agent::Agent;
+use super::known_hosts::{Caller, KnownHosts};
 use crate::sessions::Clock;
 
 /// How long [`Relays::ensure`] waits for the environment to open the relay. A workspace is usable
@@ -35,6 +44,10 @@ pub(crate) const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 /// How many replies wait to be sent back to the environment.
 const REPLY_QUEUE: usize = 16;
 
+/// How many known-hosts lookups of one relay run at once. A lookup past this is answered with no
+/// key, so `ssh` refuses the connection, instead of queueing without bound.
+pub(crate) const MAX_LOOKUPS: usize = 16;
+
 /// What the relay of one workspace is doing. The async lock is held while a relay is being
 /// opened, so two calls never open two.
 type Slot = Arc<tokio::sync::Mutex<Option<JoinHandle<()>>>>;
@@ -42,15 +55,17 @@ type Slot = Arc<tokio::sync::Mutex<Option<JoinHandle<()>>>>;
 /// The relay tasks of every workspace. Dropping it ends them all.
 pub(crate) struct Relays {
     keys: SshKeys,
+    known_hosts: KnownHosts,
     clock: Arc<dyn Clock>,
     slots: Mutex<HashMap<WorkspaceId, Slot>>,
 }
 
 impl Relays {
-    /// Relays that answer from `keys` and stamp key use with `clock`.
-    pub(crate) fn new(keys: SshKeys, clock: Arc<dyn Clock>) -> Self {
+    /// Relays that answer from `keys` and `known_hosts` and stamp key use with `clock`.
+    pub(crate) fn new(keys: SshKeys, known_hosts: KnownHosts, clock: Arc<dyn Clock>) -> Self {
         Self {
             keys,
+            known_hosts,
             clock,
             slots: Mutex::new(HashMap::new()),
         }
@@ -65,17 +80,17 @@ impl Relays {
             .clone()
     }
 
-    /// Makes sure the relay of workspace `id` is running on `client`, whose workspace gets the
-    /// keys of `user`. Starts one if none runs, or the last ended, or `restart` says the workspace
-    /// was started or recreated since. A relay that can't be opened is logged and left for the
-    /// next call: the workspace is usable without it.
+    /// Makes sure the relay of `workspace` is running on `client`. The workspace gets the keys of
+    /// its `user`, and the host keys of its environment. Starts one if none runs, or the last
+    /// ended, or `restart` says the workspace was started or recreated since. A relay that can't
+    /// be opened is logged and left for the next call: the workspace is usable without it.
     pub(crate) async fn ensure(
         &self,
         client: &Arc<dyn Environment>,
-        id: &WorkspaceId,
-        user: Option<&UserId>,
+        workspace: Caller,
         restart: bool,
     ) {
+        let id = &workspace.workspace;
         let slot = self.slot(id);
         let mut running = slot.lock().await;
         if let Some(task) = running.take() {
@@ -105,10 +120,15 @@ impl Relays {
             self.keys.clone(),
             self.clock.clone(),
             id.clone(),
-            user.cloned(),
+            workspace.user.clone(),
         );
         debug!(workspace = %id, "opened the SSH agent relay");
-        *running = Some(tokio::spawn(serve(agent, requests, replies)));
+        let hosts = HostLookups {
+            known_hosts: self.known_hosts.clone(),
+            environment: client.clone(),
+            caller: workspace,
+        };
+        *running = Some(tokio::spawn(serve(agent, hosts, requests, replies)));
     }
 
     /// Ends the relay of workspace `id`, if one runs. The environment sees its streams end.
@@ -172,13 +192,46 @@ fn replies_stream(outgoing: mpsc::Receiver<RelayReply>) -> BoxStream<'static, Re
     .boxed()
 }
 
-/// Answers `requests` until they end or the environment stops reading replies.
+/// What a known-hosts lookup needs.
+#[derive(Clone)]
+struct HostLookups {
+    known_hosts: KnownHosts,
+    /// The environment that scans a new host's key.
+    environment: Arc<dyn Environment>,
+    caller: Caller,
+}
+
+impl HostLookups {
+    /// The reply to `request`.
+    async fn answer(&self, request: &KnownHostsRequest) -> RelayReply {
+        let keys = self
+            .known_hosts
+            .lookup(self.environment.as_ref(), &self.caller, request)
+            .await;
+        RelayReply::KnownHosts(KnownHostsReply {
+            id: request.id,
+            keys,
+        })
+    }
+}
+
+/// Answers `requests` until they end or the environment stops reading replies. Agent requests are
+/// answered in order; each known-hosts lookup runs in a task of its own, and the tasks end with
+/// the relay.
 async fn serve(
     mut agent: Agent,
+    hosts: HostLookups,
     mut requests: BoxStream<'static, EnvResult<RelayRequest>>,
     replies: mpsc::Sender<RelayReply>,
 ) {
-    while let Some(request) = requests.next().await {
+    let mut lookups: JoinSet<()> = JoinSet::new();
+    loop {
+        let request = tokio::select! {
+            request = requests.next() => request,
+            // Reaps finished lookups, so the count below is of those still running.
+            Some(_) = lookups.join_next(), if !lookups.is_empty() => continue,
+        };
+        let Some(request) = request else { break };
         match request {
             Ok(RelayRequest::Agent(request)) => {
                 let message = agent.handle(request.connection, &request.message).await;
@@ -191,6 +244,27 @@ async fn serve(
                 }
             }
             Ok(RelayRequest::AgentClosed(closed)) => agent.close(closed.connection),
+            Ok(RelayRequest::KnownHosts(request)) => {
+                if lookups.len() >= MAX_LOOKUPS {
+                    warn!(
+                        workspace = %hosts.caller.workspace,
+                        "too many known-hosts lookups at once; answering one with no key"
+                    );
+                    let reply = RelayReply::KnownHosts(KnownHostsReply {
+                        id: request.id,
+                        keys: Vec::new(),
+                    });
+                    if replies.send(reply).await.is_err() {
+                        break;
+                    }
+                    continue;
+                }
+                let (hosts, replies) = (hosts.clone(), replies.clone());
+                lookups.spawn(async move {
+                    let reply = hosts.answer(&request).await;
+                    let _ = replies.send(reply).await;
+                });
+            }
             Ok(_) => {}
             Err(error) => {
                 debug!(%error, "the SSH agent relay failed");

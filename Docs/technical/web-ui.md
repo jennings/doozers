@@ -136,8 +136,8 @@ From top to bottom:
    tall with 12 px side padding and radius 8 px. The current page's link has the "nav current" fill,
    white text, weight 600, and `aria-current="page"`. The others are secondary text with no fill.
    - **You**: Chats, Scheduled jobs, Connections, SSH keys.
-   - **Admin (owner only)**: Status, Plugins, Agents, Routes, MCP servers, Workspaces, SSH keys.
-     It's shown only to a user who may administer.
+   - **Admin (owner only)**: Status, Plugins, Agents, Routes, MCP servers, Workspaces, SSH keys,
+     Known SSH hosts. It's shown only to a user who may administer.
 3. The user footer, pushed to the bottom with a top border: a 30 px initial badge, the user's id,
    and **Log out**. Log out appears only for a cookie login, since a proxy login can't log out.
    Today the id is always `owner`. This is where user information goes once there are other users.

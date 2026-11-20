@@ -162,7 +162,8 @@ It has no async runtime. It exists because the container can't be assumed to hav
 | `find`, `grep` | Search with `globset`, `ignore`, and `regex`; JSON lines out, ending in `{"truncated":bool}` |
 | `read`, `write` | Whole-file access; `read` prints `{"size":N}` and then up to `--max` bytes |
 | `df` | Free bytes where a path lives |
-| `ssh-agent [--socket PATH]` | Serve `SSH_AUTH_SOCK` and carry its messages over standard input and output as [frames](#the-ssh-agent-relay) |
+| `ssh-agent [--socket PATH]` | Serve `SSH_AUTH_SOCK` and a second socket for `known-hosts`, and carry their messages over standard input and output as [frames](#the-ssh-agent-relay) |
+| `known-hosts [--socket PATH] HOST PORT TYPE KEY` | `ssh`'s `KnownHostsCommand`: ask the core, through the second socket, which host keys it trusts, and print them as `known_hosts` lines |
 
 `find` and `grep` walk with `ignore` configured to skip `.git` and honor `.gitignore` files whether
 or not a `.git` exists, include dotfiles, and sort the paths as strings so the order doesn't depend
@@ -268,6 +269,11 @@ main thread reads replies from standard input and queues them. A client that doe
 replies fills its queue and is closed, so it can't hold up the replies of other clients. When
 standard input ends the helper removes its socket and exits.
 
+The same process listens on a second socket, `/.doozers/run/known-hosts.sock` (mode 0666, stale file
+removed first), which the `known-hosts` subcommand uses. Each connection to it is one lookup of the
+host keys `ssh` trusts, and the helper carries it to the plugin as a kind 4 frame and back as a kind
+5 frame. [SSH](ssh.md#known-hosts) says what the core answers.
+
 The plugin sends the helper's frames on as `RelayRequest`s and writes the core's replies to the
 helper as frames. Dropping the stream the plugin returns, or the core ending its replies, closes the
 helper's standard input, which ends the exec. The stream ends when the exec does, for example when
@@ -284,13 +290,88 @@ u32 BE length of the rest | u8 kind | u64 BE connection | payload
 | 1 | helper to plugin | A request: the payload is one agent message without its own length prefix |
 | 2 | helper to plugin | The connection ended; no payload |
 | 3 | plugin to helper | A reply: the payload is one agent message for the connection |
-| 4, 5 | | Reserved for known-hosts lookups |
+| 4 | helper to plugin | A known-hosts lookup: `connection` names the lookup and the payload is the request below |
+| 5 | plugin to helper | The answer to lookup `connection`: the payload is the answer below |
 
 The length counts the kind, the connection id, and the payload. An agent message is at most 256 KiB
 (OpenSSH's limit), and a client that sends a longer one is disconnected. A frame of an unknown kind
-is skipped by both sides. The helper numbers connections from 1 and never reuses a number. The
-helper and the plugin each have their own encoder and decoder, because the helper is a static binary
-with no dependencies, and each has tests for the format.
+is skipped by both sides. The helper numbers connections from 1 and never reuses a number, and
+numbers lookups in a separate series. The helper and the plugin each have their own encoder and
+decoder, because the helper is a static binary with no dependencies, and each has tests for the
+format.
+
+The payload of a lookup and its answer are the `known-hosts` command's request and answer on the
+socket, which the helper doesn't look inside:
+
+```text
+request: u32 BE port | string host | string key type | string key
+answer:  u32 BE count | count * string key
+string:  u32 BE length | bytes
+```
+
+The key type and the key are empty strings when `ssh` only asks for the stored keys (it passes the
+literal `NONE` for `%t` and `%K`). The keys of an answer are SSH public key blobs. The plugin turns
+a kind 4 frame into a `KnownHostsRequest` and the core's `KnownHostsReply` into a kind 5 frame. A
+frame is at most 2 MiB, and a request the plugin can't decode is answered with no key.
+
+The helper holds at most 64 lookups waiting for the plugin and closes one that gets no answer in 60
+seconds, which makes the command fail. A client of the socket has 10 seconds to send its request.
+The command exits 1 with a message on standard error and prints nothing when the socket is missing,
+the relay ends, or the answer isn't valid, so `ssh` refuses the connection. When the relay isn't
+reachable, the message says that the Doozers relay isn't reachable at
+`/.doozers/run/known-hosts.sock` and that the helper is refusing the connection. `ssh` then prints
+`KnownHostsCommand ... failed, status 1` and `KnownHostsCommand failed`, and gives up before it
+checks host keys.
+
+## SSH configuration
+
+`ssh` in a workspace has to ask the core which host keys to trust. The plugin writes
+`/etc/ssh/ssh_config.d/doozers.conf` into the container, whose writable layer holds it, so the file
+is written again whenever the container could have lost it:
+
+```text
+KnownHostsCommand /.doozers/bin/doozers-workspace-helper known-hosts %H %p %t %K
+UserKnownHostsFile /dev/null
+GlobalKnownHostsFile /dev/null
+StrictHostKeyChecking yes
+```
+
+- **When.** When a container is created (`create_container`, which creation and recreation both
+  use), at start when the container was started, and when the relay opens, which covers a workspace
+  that was running before the plugin wrote the file. A failure when the relay opens is logged and
+  the relay goes on.
+- **The `Include` line.** `ssh` reads `ssh_config.d` only if `/etc/ssh/ssh_config` includes it. The
+  `openssh-client` packages of Debian, Ubuntu, Alpine, and Fedora do (checked for Alpine 3.20). If
+  the file exists and has no `Include` of that directory, the plugin puts
+  `Include /etc/ssh/ssh_config.d/*.conf` at its top, so it applies to every host. The plugin never
+  creates `ssh_config`.
+- **Options.** `UserKnownHostsFile` and `GlobalKnownHostsFile` are `/dev/null`, so a file in the
+  workspace can't add trust, and `StrictHostKeyChecking yes` makes `ssh` refuse a host that the
+  command returns no key for, without asking anyone.
+- **OpenSSH 8.5.** `KnownHostsCommand` is new in 8.5. An older `ssh` rejects the file, so it can't
+  connect at all.
+
+The file is a default for the model's commands. Anyone in the workspace can override it with `-o`
+options, or root can edit it, but that only changes what that `ssh` trusts. The core records a new
+host only after its own scan, whatever the workspace sends.
+
+## Host key scans
+
+`scan_host_key(id, host, port, key_type)` fetches a server's host key as `ssh-keyscan` would, with
+the SDK's `scan_host_key` and a 10 second timeout, from the machine the plugin runs on. It first
+checks that the workspace exists and is running (`NotFound` if it doesn't exist, `InvalidRequest` if
+it is stopped). A failed scan is `Unavailable` and says what failed, and a key type the scan doesn't
+support is `InvalidRequest`.
+
+The scan deliberately isn't made from inside the workspace. A workspace's root can rewrite
+`/etc/hosts` or `/etc/resolv.conf`, so a scan through them would confirm whatever fake key the
+workspace was offered for `github.com`, and the core would record it for every workspace of the
+instance. From the plugin's network the workspace can't influence the scan.
+
+A host that only the workspace's container network reaches, such as another container or a private
+server, can't be scanned from the plugin's machine. Its first connection is refused with
+`Host key verification failed` and nothing is recorded, until an admin pins its key on the Known SSH
+hosts page ([SSH](ssh.md#admin-page-and-pinning)).
 
 ## Tests
 
@@ -306,10 +387,21 @@ relay replaces it first. `ssh.rs` answers the relay with the core's own agent
 (`doozers_core::ssh::Agent`, so the plugin has `doozers-core` as a dev-dependency) over keys in a
 real secret store. It runs `ssh-keygen -Y sign` and `-Y verify` through the socket for Ed25519,
 ECDSA, and RSA keys, checks that no private key text is in the container's files or configuration,
-and logs in with `ssh -o StrictHostKeyChecking=accept-new` to an `sshd` in a second container on the
-engine's default network, which also shows a forwarded agent getting no keys. A step that needs the
-network (the image, installing `openssh-client` or `sshd`) skips, printing why, when it fails,
-unless `DOOZERS_REQUIRE_DOCKER=1` is set: the harness has pulled its image by then, so a failure is
-real. They skip, printing why, when no socket answers (`DOOZERS_REQUIRE_DOCKER=1` makes that a
-failure, as in [CI](ci.md)). The helper comes from `DOOZERS_HELPER_DIR` or is cross-built for the
-engine's architecture.
+and logs in with `ssh` to an `sshd` in a second container on the engine's default network, which
+also shows a forwarded agent getting no keys. `known_hosts.rs` runs `ssh` in workspaces against the
+core's own `KnownHosts` over a real store. It covers these cases:
+
+- a first use that is recorded and then used by a second workspace
+- a changed host key refused with `REMOTE HOST IDENTIFICATION HAS CHANGED`, and trusted again after
+  the host is deleted
+- a pinned key, and a wrong pin
+- a key that differs from the plugin's scan, which isn't recorded
+- failing closed with no relay (`KnownHostsCommand failed`)
+- `ssh_config.d` inclusion on Debian, Ubuntu, Alpine, and Fedora
+
+It also tests the scan against an `sshd` port the test publishes, next to the SDK's own `sshd`
+tests. A step that needs the network (the image, installing `openssh-client` or `sshd`) skips,
+printing why, when it fails, unless `DOOZERS_REQUIRE_DOCKER=1` is set: the harness has pulled its
+image by then, so a failure is real. They skip, printing why, when no socket answers
+(`DOOZERS_REQUIRE_DOCKER=1` makes that a failure, as in [CI](ci.md)). The helper comes from
+`DOOZERS_HELPER_DIR` or is cross-built for the engine's architecture.

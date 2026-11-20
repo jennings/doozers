@@ -41,6 +41,7 @@ use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 use crate::registry::{EnvironmentEntry, Registry};
 use crate::sessions::Clock;
 use crate::ssh::SshKeys;
+use crate::ssh::known_hosts::{Caller, KnownHosts};
 use crate::ssh::relay::Relays;
 
 pub use doozers_store::{DeleteReason, WorkspaceOwner, WorkspaceRecord, WorkspaceState};
@@ -197,6 +198,8 @@ struct Inner {
     clock: Arc<dyn Clock>,
     /// The users' SSH keys: the workspace tools tell the model which ones a workspace gets.
     ssh_keys: SshKeys,
+    /// The host keys workspaces trust: `ssh` asks for them through the relay.
+    known_hosts: KnownHosts,
     /// The ssh-agent relay of each workspace on an environment that can relay.
     relays: Relays,
     /// One lock per workspace that has been leased: leases take the shared side, the sweep the
@@ -222,11 +225,13 @@ impl Workspaces {
         clock: Arc<dyn Clock>,
         ssh_keys: SshKeys,
     ) -> Self {
+        let known_hosts = KnownHosts::new(store.clone(), clock.clone());
         Self {
             inner: Arc::new(Inner {
                 store,
                 registry: Arc::downgrade(&registry),
-                relays: Relays::new(ssh_keys.clone(), clock.clone()),
+                relays: Relays::new(ssh_keys.clone(), known_hosts.clone(), clock.clone()),
+                known_hosts,
                 ssh_keys,
                 clock,
                 locks: Mutex::default(),
@@ -253,6 +258,11 @@ impl Workspaces {
     /// The users' SSH keys, which a workspace's agent offers.
     pub fn ssh_keys(&self) -> &SshKeys {
         &self.inner.ssh_keys
+    }
+
+    /// The SSH host keys workspaces trust, per environment instance.
+    pub fn known_hosts(&self) -> &KnownHosts {
+        &self.inner.known_hosts
     }
 
     /// The owner's workspace, if it has one (`creating` or `active`).
@@ -526,10 +536,13 @@ impl Workspaces {
                 outcome,
                 StartOutcome::Started { .. } | StartOutcome::Recreated { .. }
             );
-            inner
-                .relays
-                .ensure(&client, &record.id, record.key_user.as_ref(), restarted)
-                .await;
+            let caller = Caller {
+                environment: record.environment.clone(),
+                workspace: record.id.clone(),
+                agent: self.owner_agent(&record.owner).await,
+                user: record.key_user.clone(),
+            };
+            inner.relays.ensure(&client, caller, restarted).await;
         }
         let mut record = record;
         record.last_used_at = record.last_used_at.max(now);
@@ -538,6 +551,21 @@ impl Workspaces {
             client,
             notice: notice(&outcome),
         })
+    }
+
+    /// The agent a workspace's owner is, for what a host key's first connection records: a
+    /// conversation's agent, or a job run's session's. `None` if the session is gone.
+    async fn owner_agent(&self, owner: &WorkspaceOwner) -> Option<String> {
+        match owner {
+            WorkspaceOwner::Conversation { agent, .. } => Some(agent.to_string()),
+            WorkspaceOwner::Job { session } => match self.inner.store.session(*session).await {
+                Ok(session) => session.map(|session| session.agent.to_string()),
+                Err(error) => {
+                    tracing::warn!(%error, "cannot read a job session's agent");
+                    None
+                }
+            },
+        }
     }
 
     /// The configured, connected environment `name`.

@@ -1,0 +1,67 @@
+{% extends "web/app.html" %}
+
+{% block title %}Known SSH hosts - Doozers{% endblock %}
+
+{% block content %}
+<h1>Known SSH hosts</h1>
+{%- if let Some(notice) = notice %}
+<p class="banner banner-info" role="status">{{ notice }}</p>
+{%- endif %}
+{%- if let Some(error) = error %}
+<p class="banner banner-error" role="alert">{{ error }}</p>
+{%- endif %}
+<p class="lede">The SSH servers whose host keys workspaces trust. The first connection to a host from a workspace records the key Doozers sees for it, and every later connection from a workspace in the same environment must present that key. Each environment keeps its own list, because the same name can reach different servers from different networks.</p>
+{#- A host is written as ssh and known_hosts write it: the name alone on port 22, else [name]:port. #}
+{%- if groups.is_empty() %}
+<p>No workspace has connected to an SSH host yet, and you haven't pinned a key.</p>
+{%- else %}
+{%- for group in groups %}
+<section aria-labelledby="environment-{{ loop.index }}">
+<h2 id="environment-{{ loop.index }}">Environment <code>{{ group.environment }}</code></h2>
+<div class="table-wrap">
+<table class="table">
+<thead><tr><th>Host</th><th>Key type</th><th>Fingerprint</th><th>First seen</th><th>Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
+<tbody>
+{%- for key in group.keys %}
+<tr id="host-{{ key.id }}">
+<td data-label="Host" class="m-title"><code>{{ key.host }}</code></td>
+<td data-label="Key type"><code>{{ key.key_type }}</code></td>
+<td data-label="Fingerprint"><code>{{ key.fingerprint }}</code></td>
+<td data-label="First seen">{{ key.first_seen }}<br><span class="muted">{{ key.origin }}</span></td>
+<td data-label="Last used">{{ key.last_used }}</td>
+<td class="row-actions"><a class="button button-small button-danger" href="/admin/ssh-hosts/{{ key.id }}/delete" aria-label="Delete the {{ key.key_type }} key of {{ key.host }} in {{ group.environment }}">Delete</a></td>
+</tr>
+{%- endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{%- endfor %}
+{%- endif %}
+
+<h2>Add a host key</h2>
+{%- if environments.is_empty() %}
+<p>No environments are configured, so there is no workspace to add a host key for.</p>
+{%- else %}
+<form class="card form" method="post" action="/admin/ssh-hosts/add">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="field">
+<label for="add-environment">Environment</label>
+<select id="add-environment" name="environment">
+{%- for name in environments %}
+<option value="{{ name }}"{% if *name == environment %} selected{% endif %}>{{ name }}</option>
+{%- endfor %}
+</select>
+</div>
+<div class="field">
+<label for="add-line">Line</label>
+<textarea id="add-line" name="line" rows="3" class="mono" autocomplete="off" spellcheck="false" placeholder="github.com ssh-ed25519 AAAAC3...">
+{{ line }}</textarea>
+<p class="help">Paste one <code>known_hosts</code> line, such as the one <code>ssh-keyscan</code> prints or a server publishes, to trust the key before any workspace connects. Hashed host names (<code>|1|</code>), markers such as <code>@cert-authority</code>, and wildcard patterns aren't supported. A line that lists several hosts pins the key for each.</p>
+</div>
+<div class="form-actions">
+<button type="submit" class="button-primary">Add</button>
+</div>
+</form>
+{%- endif %}
+{% endblock %}

@@ -10,16 +10,25 @@
 //! - `1` request (helper to plugin): one agent message without its length prefix.
 //! - `2` closed (helper to plugin): the connection ended; no payload.
 //! - `3` reply (plugin to helper): one agent message for the connection.
+//! - `4` lookup (helper to plugin): `ssh` asks which host keys to trust. `connection` names the
+//!   lookup, and the payload is `u32 BE port | string host | string key type | string key`, where
+//!   a `string` is `u32 BE length | bytes` and the key type and key are empty when `ssh` only asks
+//!   for the stored keys.
+//! - `5` lookup reply (plugin to helper): the payload is `u32 BE count | count * string key`, the
+//!   keys as SSH wire blobs.
 //!
-//! Kinds 4 and 5 are reserved for known-hosts lookups, and a frame of any kind the plugin doesn't
-//! know is skipped. The helper has its own copy of the format (`agent.rs` in the helper crate):
-//! the two crates share nothing, because the helper is a static binary with no dependencies.
+//! A frame of any kind the plugin doesn't know is skipped. A lookup that doesn't decode is answered
+//! with no key at once, which makes `ssh` refuse the connection instead of waiting for the helper's
+//! timeout. The helper has its own copy of the format (`agent.rs` and `known_hosts.rs` in the
+//! helper crate): the two crates share nothing, because the helper is a static binary with no
+//! dependencies.
 
 use bollard::body_full;
 use bollard::query_parameters::UploadToContainerOptionsBuilder;
 use bytes::{Buf as _, Bytes, BytesMut};
 use doozers_types::{
-    AgentClosed, AgentRequest, MAX_AGENT_MESSAGE, RelayReply, RelayRequest, WorkspaceId,
+    AgentClosed, AgentRequest, KnownHostsReply, KnownHostsRequest, MAX_AGENT_MESSAGE, MAX_HOST_KEY,
+    MAX_KNOWN_HOST, MAX_KNOWN_HOST_KEYS, RelayReply, RelayRequest, WorkspaceId,
 };
 use futures::StreamExt as _;
 use futures::stream::{self, BoxStream};
@@ -38,6 +47,16 @@ const KIND_REQUEST: u8 = 1;
 const KIND_CLOSED: u8 = 2;
 /// Plugin to helper: an agent reply.
 const KIND_REPLY: u8 = 3;
+/// Helper to plugin: a known-hosts lookup.
+const KIND_LOOKUP: u8 = 4;
+/// Plugin to helper: the answer to a lookup.
+const KIND_LOOKUP_REPLY: u8 = 5;
+
+/// The longest payload of any frame: room for the most keys of the longest size a reply holds.
+const MAX_PAYLOAD: usize = 2 * 1024 * 1024;
+
+/// The longest key type name a lookup carries.
+const MAX_KEY_TYPE: usize = 128;
 
 /// A frame's header after its length: kind and connection.
 const HEADER_LEN: usize = 1 + 8;
@@ -63,9 +82,9 @@ impl std::fmt::Display for FrameError {
     }
 }
 
-/// Encodes a frame. `None` if the payload is longer than an agent message.
+/// Encodes a frame. `None` if the payload is longer than a frame holds.
 pub(crate) fn encode_frame(kind: u8, connection: u64, payload: &[u8]) -> Option<Vec<u8>> {
-    if payload.len() > MAX_AGENT_MESSAGE {
+    if payload.len() > MAX_PAYLOAD {
         return None;
     }
     let rest = u32::try_from(HEADER_LEN + payload.len()).ok()?;
@@ -95,7 +114,7 @@ impl Decoder {
             return Ok(None);
         };
         let rest = u32::from_be_bytes(*length) as usize;
-        if !(HEADER_LEN..=HEADER_LEN + MAX_AGENT_MESSAGE).contains(&rest) {
+        if !(HEADER_LEN..=HEADER_LEN + MAX_PAYLOAD).contains(&rest) {
             return Err(FrameError(format!(
                 "a frame of {rest} bytes is outside the allowed range"
             )));
@@ -115,18 +134,84 @@ impl Decoder {
     }
 }
 
+/// What a frame from the helper means.
+#[derive(Debug, PartialEq, Eq)]
+enum Incoming {
+    /// Something for the core.
+    ForCore(RelayRequest),
+    /// A lookup that doesn't decode: the helper is answered with no key.
+    BadLookup(u64),
+    /// Nothing: a kind the plugin doesn't know, or one that isn't the helper's to send.
+    Skip,
+}
+
 /// What a frame from the helper means to the core, if anything.
-fn request_of(frame: Frame) -> Option<RelayRequest> {
+fn incoming(frame: Frame) -> Incoming {
     match frame.kind {
-        KIND_REQUEST => Some(RelayRequest::Agent(AgentRequest {
+        KIND_REQUEST if frame.payload.len() <= MAX_AGENT_MESSAGE => {
+            Incoming::ForCore(RelayRequest::Agent(AgentRequest {
+                connection: frame.connection,
+                message: frame.payload.to_vec(),
+            }))
+        }
+        KIND_CLOSED => Incoming::ForCore(RelayRequest::AgentClosed(AgentClosed {
             connection: frame.connection,
-            message: frame.payload.to_vec(),
         })),
-        KIND_CLOSED => Some(RelayRequest::AgentClosed(AgentClosed {
-            connection: frame.connection,
-        })),
-        _ => None,
+        KIND_LOOKUP => match decode_lookup(frame.connection, &frame.payload) {
+            Some(request) => Incoming::ForCore(RelayRequest::KnownHosts(request)),
+            None => Incoming::BadLookup(frame.connection),
+        },
+        _ => Incoming::Skip,
     }
+}
+
+/// One SSH `string` from the front of `input`, and what follows it.
+fn take_string(input: &[u8]) -> Option<(&[u8], &[u8])> {
+    let (length, rest) = input.split_first_chunk::<4>()?;
+    let length = u32::from_be_bytes(*length) as usize;
+    (rest.len() >= length).then(|| rest.split_at(length))
+}
+
+/// The lookup a kind 4 payload carries, or `None` if it doesn't decode or breaks the limits the
+/// core relies on: a host of 1 to [`MAX_KNOWN_HOST`] bytes, a port from 1 to 65535, a key of at
+/// most [`MAX_HOST_KEY`] bytes, and a key type exactly when there is a key.
+fn decode_lookup(id: u64, payload: &[u8]) -> Option<KnownHostsRequest> {
+    let (port, rest) = payload.split_first_chunk::<4>()?;
+    let port = u16::try_from(u32::from_be_bytes(*port))
+        .ok()
+        .filter(|port| *port != 0)?;
+    let (host, rest) = take_string(rest)?;
+    let (key_type, rest) = take_string(rest)?;
+    let (key, rest) = take_string(rest)?;
+    if !rest.is_empty()
+        || host.is_empty()
+        || host.len() > MAX_KNOWN_HOST
+        || key.len() > MAX_HOST_KEY
+        || key_type.len() > MAX_KEY_TYPE
+        || key_type.is_empty() != key.is_empty()
+    {
+        return None;
+    }
+    Some(KnownHostsRequest {
+        id,
+        host: String::from_utf8(host.to_vec()).ok()?,
+        port,
+        key_type: String::from_utf8(key_type.to_vec()).ok()?,
+        key: key.to_vec(),
+    })
+}
+
+/// The payload of a kind 5 frame for `keys`.
+fn encode_answer(keys: &[Vec<u8>]) -> Vec<u8> {
+    let mut answer = u32::try_from(keys.len())
+        .unwrap_or(u32::MAX)
+        .to_be_bytes()
+        .to_vec();
+    for key in keys {
+        answer.extend_from_slice(&u32::try_from(key.len()).unwrap_or(u32::MAX).to_be_bytes());
+        answer.extend_from_slice(key);
+    }
+    answer
 }
 
 impl DockerEnvironment {
@@ -189,6 +274,11 @@ impl DockerEnvironment {
     ) -> Result<BoxStream<'static, Result<RelayRequest>>> {
         let container = self.running_container(id).await?;
         self.refresh_helper(&container).await?;
+        // Covers workspaces that were running before the plugin wrote this configuration, and an
+        // `ssh_config` that appeared after it.
+        if let Err(error) = self.configure_ssh(&container).await {
+            warn!(workspace = id, %error, "cannot write the workspace's ssh configuration");
+        }
         let Attached { output, input, .. } = self
             .start_exec(
                 &container,
@@ -258,12 +348,24 @@ async fn pump(
                     decoder.push(&message);
                     loop {
                         match decoder.next_frame() {
-                            Ok(Some(frame)) => {
-                                let Some(request) = request_of(frame) else { continue };
-                                if requests.send(Ok(request)).await.is_err() {
-                                    break 'relay;
+                            Ok(Some(frame)) => match incoming(frame) {
+                                Incoming::ForCore(request) => {
+                                    if requests.send(Ok(request)).await.is_err() {
+                                        break 'relay;
+                                    }
                                 }
-                            }
+                                Incoming::BadLookup(id) => {
+                                    warn!(%workspace, lookup = id, "a known-hosts lookup didn't decode; answering with no key");
+                                    let answer = RelayReply::KnownHosts(KnownHostsReply {
+                                        id,
+                                        keys: Vec::new(),
+                                    });
+                                    if write_reply(&mut input, answer).await.is_err() {
+                                        break 'relay;
+                                    }
+                                }
+                                Incoming::Skip => {}
+                            },
                             Ok(None) => break,
                             Err(error) => {
                                 warn!(%workspace, %error, "the ssh-agent helper sent a bad frame");
@@ -285,23 +387,45 @@ async fn pump(
     let _ = input.shutdown().await;
 }
 
-/// Sends one reply to the helper. A reply longer than an agent message is dropped with a warning,
-/// since the helper would refuse it.
+/// Sends one reply to the helper. An agent reply longer than an agent message, and a lookup
+/// answer with more keys or longer keys than the protocol allows, are dropped with a warning,
+/// since the helper would refuse them. (A dropped lookup answer ends in the helper's timeout, and
+/// `ssh` refusing the connection.)
 async fn write_reply(
     input: &mut (impl AsyncWrite + Unpin),
     reply: RelayReply,
 ) -> std::io::Result<()> {
-    let RelayReply::Agent(reply) = reply else {
-        return Ok(());
+    let frame = match reply {
+        RelayReply::Agent(reply) => {
+            let frame = (reply.message.len() <= MAX_AGENT_MESSAGE)
+                .then(|| encode_frame(KIND_REPLY, reply.connection, &reply.message))
+                .flatten();
+            if frame.is_none() {
+                warn!(
+                    connection = reply.connection,
+                    bytes = reply.message.len(),
+                    "dropping an ssh-agent reply longer than an agent message"
+                );
+            }
+            frame
+        }
+        RelayReply::KnownHosts(KnownHostsReply { id, keys }) => {
+            let fits = keys.len() <= MAX_KNOWN_HOST_KEYS
+                && keys.iter().all(|key| key.len() <= MAX_HOST_KEY);
+            let frame = fits
+                .then(|| encode_frame(KIND_LOOKUP_REPLY, id, &encode_answer(&keys)))
+                .flatten();
+            if frame.is_none() {
+                warn!(
+                    lookup = id,
+                    "dropping a known-hosts answer that is too long"
+                );
+            }
+            frame
+        }
+        _ => None,
     };
-    let Some(frame) = encode_frame(KIND_REPLY, reply.connection, &reply.message) else {
-        warn!(
-            connection = reply.connection,
-            bytes = reply.message.len(),
-            "dropping an ssh-agent reply longer than an agent message"
-        );
-        return Ok(());
-    };
+    let Some(frame) = frame else { return Ok(()) };
     input.write_all(&frame).await?;
     input.flush().await
 }
@@ -372,42 +496,187 @@ mod tests {
         let mut decoder = Decoder::default();
         decoder.push(&[0, 0, 0, 4, 1, 0, 0, 0]);
         assert!(decoder.next_frame().is_err());
-        // Longer than the largest message and its header.
+        // Longer than the largest payload and its header.
         let mut decoder = Decoder::default();
-        let too_long = u32::try_from(HEADER_LEN + MAX_AGENT_MESSAGE + 1).unwrap();
+        let too_long = u32::try_from(HEADER_LEN + MAX_PAYLOAD + 1).unwrap();
         decoder.push(&too_long.to_be_bytes());
         assert!(decoder.next_frame().is_err());
     }
 
     #[test]
-    fn the_largest_message_fits_and_a_larger_one_is_not_encoded() {
-        let largest = vec![0u8; MAX_AGENT_MESSAGE];
-        let frame = encode_frame(KIND_REPLY, 1, &largest).unwrap();
-        assert_eq!(decode_all(&[&frame])[0].payload.len(), MAX_AGENT_MESSAGE);
-        assert!(encode_frame(KIND_REPLY, 1, &vec![0u8; MAX_AGENT_MESSAGE + 1]).is_none());
+    fn the_largest_payload_fits_and_a_larger_one_is_not_encoded() {
+        let largest = vec![0u8; MAX_PAYLOAD];
+        let frame = encode_frame(KIND_LOOKUP_REPLY, 1, &largest).unwrap();
+        assert_eq!(decode_all(&[&frame])[0].payload.len(), MAX_PAYLOAD);
+        assert!(encode_frame(KIND_LOOKUP_REPLY, 1, &vec![0u8; MAX_PAYLOAD + 1]).is_none());
+        // The most keys of the longest size a reply holds fit a frame.
+        let answer = encode_answer(&vec![vec![0u8; MAX_HOST_KEY]; MAX_KNOWN_HOST_KEYS]);
+        assert!(answer.len() <= MAX_PAYLOAD);
+    }
+
+    fn frame(kind: u8, payload: &[u8]) -> Frame {
+        Frame {
+            kind,
+            connection: 7,
+            payload: Bytes::copy_from_slice(payload),
+        }
+    }
+
+    fn string(out: &mut Vec<u8>, bytes: &[u8]) {
+        out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        out.extend_from_slice(bytes);
+    }
+
+    fn lookup_payload(port: u32, host: &str, key_type: &str, key: &[u8]) -> Vec<u8> {
+        let mut payload = port.to_be_bytes().to_vec();
+        string(&mut payload, host.as_bytes());
+        string(&mut payload, key_type.as_bytes());
+        string(&mut payload, key);
+        payload
     }
 
     #[test]
     fn requests_and_closes_reach_the_core_and_other_kinds_are_skipped() {
-        let frame = |kind, payload: &'static [u8]| Frame {
-            kind,
-            connection: 7,
-            payload: Bytes::from_static(payload),
-        };
         assert_eq!(
-            request_of(frame(KIND_REQUEST, &[11])),
-            Some(RelayRequest::Agent(AgentRequest {
+            incoming(frame(KIND_REQUEST, &[11])),
+            Incoming::ForCore(RelayRequest::Agent(AgentRequest {
                 connection: 7,
                 message: vec![11]
             }))
         );
         assert_eq!(
-            request_of(frame(KIND_CLOSED, &[])),
-            Some(RelayRequest::AgentClosed(AgentClosed { connection: 7 }))
+            incoming(frame(KIND_CLOSED, &[])),
+            Incoming::ForCore(RelayRequest::AgentClosed(AgentClosed { connection: 7 }))
         );
-        // A reply isn't something the helper sends; 4 and 5 are reserved; 99 is unknown.
-        for kind in [KIND_REPLY, 4, 5, 99] {
-            assert_eq!(request_of(frame(kind, b"x")), None, "kind {kind}");
+        // A reply isn't something the helper sends; 6 and 99 are unknown.
+        for kind in [KIND_REPLY, KIND_LOOKUP_REPLY, 6, 99] {
+            assert_eq!(incoming(frame(kind, b"x")), Incoming::Skip, "kind {kind}");
         }
+        // An agent request over the limit never reaches the core.
+        assert_eq!(
+            incoming(frame(KIND_REQUEST, &vec![0; MAX_AGENT_MESSAGE + 1])),
+            Incoming::Skip
+        );
+    }
+
+    #[test]
+    fn a_lookup_decodes_into_a_known_hosts_request_with_the_helpers_id() {
+        assert_eq!(
+            incoming(frame(
+                KIND_LOOKUP,
+                &lookup_payload(2222, "[git.example]:2222", "ssh-ed25519", &[1, 2, 3])
+            )),
+            Incoming::ForCore(RelayRequest::KnownHosts(KnownHostsRequest {
+                id: 7,
+                host: "[git.example]:2222".into(),
+                port: 2222,
+                key_type: "ssh-ed25519".into(),
+                key: vec![1, 2, 3],
+            }))
+        );
+        // The call that only asks for the stored keys.
+        assert_eq!(
+            incoming(frame(
+                KIND_LOOKUP,
+                &lookup_payload(22, "git.example", "", &[])
+            )),
+            Incoming::ForCore(RelayRequest::KnownHosts(KnownHostsRequest {
+                id: 7,
+                host: "git.example".into(),
+                port: 22,
+                key_type: String::new(),
+                key: Vec::new(),
+            }))
+        );
+    }
+
+    #[test]
+    fn lookups_that_break_the_limits_are_answered_not_relayed() {
+        let long_host = "h".repeat(MAX_KNOWN_HOST + 1);
+        let long_type = "t".repeat(MAX_KEY_TYPE + 1);
+        let long_key = vec![0u8; MAX_HOST_KEY + 1];
+        let mut trailing = lookup_payload(22, "git.example", "", &[]);
+        trailing.push(0);
+        let mut not_utf8 = lookup_payload(22, "x", "", &[]);
+        not_utf8[8] = 0xff;
+        let cases = [
+            lookup_payload(0, "git.example", "", &[]),
+            lookup_payload(65536, "git.example", "", &[]),
+            lookup_payload(22, "", "", &[]),
+            lookup_payload(22, &long_host, "", &[]),
+            lookup_payload(22, "git.example", &long_type, &[1]),
+            lookup_payload(22, "git.example", "ssh-ed25519", &long_key),
+            lookup_payload(22, "git.example", "ssh-ed25519", &[]),
+            lookup_payload(22, "git.example", "", &[1]),
+            trailing,
+            not_utf8,
+            vec![0, 0, 0],
+            Vec::new(),
+        ];
+        for payload in cases {
+            assert_eq!(
+                incoming(frame(KIND_LOOKUP, &payload)),
+                Incoming::BadLookup(7),
+                "{payload:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_answer_is_a_count_then_keys() {
+        assert_eq!(encode_answer(&[]), [0, 0, 0, 0]);
+        assert_eq!(
+            encode_answer(&[vec![1, 2], vec![3]]),
+            [0, 0, 0, 2, 0, 0, 0, 2, 1, 2, 0, 0, 0, 1, 3]
+        );
+    }
+
+    #[tokio::test]
+    async fn replies_become_frames_and_oversized_ones_are_dropped() {
+        let written = |reply| async {
+            let mut out = Vec::new();
+            write_reply(&mut out, reply).await.unwrap();
+            out
+        };
+        assert_eq!(
+            written(RelayReply::Agent(doozers_types::AgentReply {
+                connection: 3,
+                message: vec![12]
+            }))
+            .await,
+            encode_frame(KIND_REPLY, 3, &[12]).unwrap()
+        );
+        assert_eq!(
+            written(RelayReply::KnownHosts(KnownHostsReply {
+                id: 4,
+                keys: vec![vec![9]]
+            }))
+            .await,
+            encode_frame(KIND_LOOKUP_REPLY, 4, &[0, 0, 0, 1, 0, 0, 0, 1, 9]).unwrap()
+        );
+        assert!(
+            written(RelayReply::Agent(doozers_types::AgentReply {
+                connection: 3,
+                message: vec![0; MAX_AGENT_MESSAGE + 1]
+            }))
+            .await
+            .is_empty()
+        );
+        assert!(
+            written(RelayReply::KnownHosts(KnownHostsReply {
+                id: 4,
+                keys: vec![Vec::new(); MAX_KNOWN_HOST_KEYS + 1]
+            }))
+            .await
+            .is_empty()
+        );
+        assert!(
+            written(RelayReply::KnownHosts(KnownHostsReply {
+                id: 4,
+                keys: vec![vec![0; MAX_HOST_KEY + 1]]
+            }))
+            .await
+            .is_empty()
+        );
     }
 }

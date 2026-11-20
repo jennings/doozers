@@ -15,9 +15,10 @@ use std::time::Duration;
 use doozers_proto::environment::v1 as pb;
 use doozers_types::{
     AgentClosed, AgentReply, AgentRequest, EnvironmentInfo, ExecEvent, ExecExit, ExecRequest,
-    FindRequest, FindResult, GrepMatch, GrepRequest, GrepResult, MAX_AGENT_MESSAGE, ReadFile,
-    RelayReply, RelayRequest, Result, StartOutcome, Workspace, WorkspaceDetail, WorkspaceId,
-    WorkspaceList, WorkspaceState,
+    FindRequest, FindResult, GrepMatch, GrepRequest, GrepResult, KnownHostsReply,
+    KnownHostsRequest, MAX_AGENT_MESSAGE, MAX_HOST_KEY, MAX_KNOWN_HOST, MAX_KNOWN_HOST_KEYS,
+    ReadFile, RelayReply, RelayRequest, Result, StartOutcome, Workspace, WorkspaceDetail,
+    WorkspaceId, WorkspaceList, WorkspaceState,
 };
 
 use super::{invalid, timestamp_from_proto, timestamp_to_proto};
@@ -376,6 +377,9 @@ pub fn relay_reply_to_proto(reply: RelayReply) -> Result<pb::RelayReply> {
             connection,
             message,
         }),
+        RelayReply::KnownHosts(KnownHostsReply { id, keys }) => {
+            pb::relay_reply::Message::KnownHosts(pb::KnownHostsReply { id, keys })
+        }
         other => return Err(invalid(format!("relay reply {other:?} has no wire form"))),
     };
     Ok(pb::RelayReply {
@@ -392,6 +396,21 @@ pub fn relay_reply_from_proto(reply: pb::RelayReply) -> Result<RelayReply> {
             Ok(RelayReply::Agent(AgentReply {
                 connection: reply.connection,
                 message: reply.message,
+            }))
+        }
+        Some(pb::relay_reply::Message::KnownHosts(reply)) => {
+            if reply.keys.len() > MAX_KNOWN_HOST_KEYS {
+                return Err(invalid(format!(
+                    "a known-hosts reply of {} keys is over the {MAX_KNOWN_HOST_KEYS}-key limit",
+                    reply.keys.len()
+                )));
+            }
+            for key in &reply.keys {
+                check_host_key(key)?;
+            }
+            Ok(RelayReply::KnownHosts(KnownHostsReply {
+                id: reply.id,
+                keys: reply.keys,
             }))
         }
         Some(pb::relay_reply::Message::Open(_)) => {
@@ -414,6 +433,19 @@ pub fn relay_request_to_proto(request: RelayRequest) -> Result<pb::RelayRequest>
         RelayRequest::AgentClosed(AgentClosed { connection }) => {
             pb::relay_request::Message::AgentClosed(pb::AgentClosed { connection })
         }
+        RelayRequest::KnownHosts(KnownHostsRequest {
+            id,
+            host,
+            port,
+            key_type,
+            key,
+        }) => pb::relay_request::Message::KnownHosts(pb::KnownHostsRequest {
+            id,
+            host,
+            port: u32::from(port),
+            key_type,
+            key,
+        }),
         other => return Err(invalid(format!("relay request {other:?} has no wire form"))),
     };
     Ok(pb::RelayRequest {
@@ -437,8 +469,100 @@ pub fn relay_request_from_proto(request: pb::RelayRequest) -> Result<RelayReques
                 connection: closed.connection,
             }))
         }
+        Some(pb::relay_request::Message::KnownHosts(request)) => Ok(RelayRequest::KnownHosts(
+            known_hosts_request_from_proto(request)?,
+        )),
         None => Err(invalid("relay request: missing or unknown")),
     }
+}
+
+/// A wire `KnownHostsRequest` to `KnownHostsRequest`. A host over [`MAX_KNOWN_HOST`] bytes, a key
+/// over [`MAX_HOST_KEY`], a port outside 1 to 65535, and a key without a type (or a type without a
+/// key) are invalid.
+fn known_hosts_request_from_proto(request: pb::KnownHostsRequest) -> Result<KnownHostsRequest> {
+    if request.host.is_empty() || request.host.len() > MAX_KNOWN_HOST {
+        return Err(invalid(format!(
+            "a known-hosts host of {} bytes is empty or over the {MAX_KNOWN_HOST}-byte limit",
+            request.host.len()
+        )));
+    }
+    check_host_key(&request.key)?;
+    if request.key_type.len() > MAX_KEY_TYPE {
+        return Err(invalid("a known-hosts key type is too long"));
+    }
+    if request.key_type.is_empty() != request.key.is_empty() {
+        return Err(invalid(
+            "a known-hosts request has a key type or a key without the other",
+        ));
+    }
+    Ok(KnownHostsRequest {
+        id: request.id,
+        host: request.host,
+        port: port_from_proto(request.port)?,
+        key_type: request.key_type,
+        key: request.key,
+    })
+}
+
+fn port_from_proto(port: u32) -> Result<u16> {
+    u16::try_from(port)
+        .ok()
+        .filter(|port| *port != 0)
+        .ok_or_else(|| invalid(format!("{port} is not a port")))
+}
+
+fn check_host_key(key: &[u8]) -> Result<()> {
+    if key.len() > MAX_HOST_KEY {
+        return Err(invalid(format!(
+            "a host key of {} bytes is over the {MAX_HOST_KEY}-byte limit",
+            key.len()
+        )));
+    }
+    Ok(())
+}
+
+/// A workspace id and a host to scan to the wire request.
+pub fn scan_host_key_request_to_proto(
+    id: &WorkspaceId,
+    host: &str,
+    port: u16,
+    key_type: &str,
+) -> pb::ScanHostKeyRequest {
+    pb::ScanHostKeyRequest {
+        workspace_id: id.to_string(),
+        host: host.to_owned(),
+        port: u32::from(port),
+        key_type: key_type.to_owned(),
+    }
+}
+
+/// A wire `ScanHostKeyRequest` to the workspace, host, port, and key type to scan.
+pub fn scan_host_key_request_from_proto(
+    request: pb::ScanHostKeyRequest,
+) -> Result<(WorkspaceId, String, u16, String)> {
+    if request.host.is_empty() || request.host.len() > MAX_KNOWN_HOST {
+        return Err(invalid("the host to scan is empty or too long"));
+    }
+    if request.key_type.is_empty() || request.key_type.len() > MAX_KEY_TYPE {
+        return Err(invalid("the key type to scan is empty or too long"));
+    }
+    Ok((
+        WorkspaceId::new(request.workspace_id)?,
+        request.host,
+        port_from_proto(request.port)?,
+        request.key_type,
+    ))
+}
+
+/// The scanned host key as a `ScanHostKeyResponse`.
+pub fn scan_host_key_to_proto(key: Vec<u8>) -> pb::ScanHostKeyResponse {
+    pb::ScanHostKeyResponse { key }
+}
+
+/// A `ScanHostKeyResponse` to the key. A key over [`MAX_HOST_KEY`] bytes is invalid.
+pub fn scan_host_key_from_proto(response: pb::ScanHostKeyResponse) -> Result<Vec<u8>> {
+    check_host_key(&response.key)?;
+    Ok(response.key)
 }
 
 fn check_agent_message(message: &[u8]) -> Result<()> {
@@ -450,6 +574,9 @@ fn check_agent_message(message: &[u8]) -> Result<()> {
     }
     Ok(())
 }
+
+/// The longest SSH algorithm name a relay carries.
+const MAX_KEY_TYPE: usize = 128;
 
 /// The wire's empty string is a path that was left out.
 fn non_empty(path: String) -> Option<String> {
@@ -505,10 +632,102 @@ mod tests {
                 message: vec![11],
             }),
             RelayRequest::AgentClosed(AgentClosed { connection: 7 }),
+            RelayRequest::KnownHosts(KnownHostsRequest {
+                id: 3,
+                host: "[git.example]:2222".into(),
+                port: 2222,
+                key_type: "ssh-ed25519".into(),
+                key: vec![0, 0, 0, 11],
+            }),
+            // The preference-list call carries no key.
+            RelayRequest::KnownHosts(KnownHostsRequest {
+                id: 4,
+                host: "git.example".into(),
+                port: 22,
+                key_type: String::new(),
+                key: Vec::new(),
+            }),
         ] {
             let wire = relay_request_to_proto(request.clone()).unwrap();
             assert_eq!(relay_request_from_proto(wire).unwrap(), request);
         }
+
+        let reply = RelayReply::KnownHosts(KnownHostsReply {
+            id: 3,
+            keys: vec![vec![1, 2], vec![3]],
+        });
+        let wire = relay_reply_to_proto(reply.clone()).unwrap();
+        assert_eq!(relay_reply_from_proto(wire).unwrap(), reply);
+    }
+
+    #[test]
+    fn invalid_known_hosts_messages_are_refused() {
+        let request = |edit: fn(&mut pb::KnownHostsRequest)| {
+            let mut request = pb::KnownHostsRequest {
+                id: 1,
+                host: "git.example".into(),
+                port: 22,
+                key_type: "ssh-ed25519".into(),
+                key: vec![1],
+            };
+            edit(&mut request);
+            relay_request_from_proto(pb::RelayRequest {
+                message: Some(pb::relay_request::Message::KnownHosts(request)),
+            })
+        };
+        assert!(request(|_| {}).is_ok());
+        assert!(request(|r| r.host.clear()).is_err());
+        assert!(request(|r| r.host = "h".repeat(MAX_KNOWN_HOST + 1)).is_err());
+        assert!(request(|r| r.port = 0).is_err());
+        assert!(request(|r| r.port = 65536).is_err());
+        assert!(request(|r| r.key = vec![0; MAX_HOST_KEY + 1]).is_err());
+        assert!(request(|r| r.key_type.clear()).is_err());
+        assert!(request(|r| r.key.clear()).is_err());
+        assert!(request(|r| r.key_type = "k".repeat(MAX_KEY_TYPE + 1)).is_err());
+
+        let reply = |keys: Vec<Vec<u8>>| {
+            relay_reply_from_proto(pb::RelayReply {
+                message: Some(pb::relay_reply::Message::KnownHosts(pb::KnownHostsReply {
+                    id: 1,
+                    keys,
+                })),
+            })
+        };
+        assert!(reply(vec![vec![0; MAX_HOST_KEY]; MAX_KNOWN_HOST_KEYS]).is_ok());
+        assert!(reply(vec![Vec::new(); MAX_KNOWN_HOST_KEYS + 1]).is_err());
+        assert!(reply(vec![vec![0; MAX_HOST_KEY + 1]]).is_err());
+    }
+
+    #[test]
+    fn scan_host_key_messages_round_trip_and_refuse_bad_input() {
+        let wire = scan_host_key_request_to_proto(&id("ws-1"), "git.example", 22, "ssh-ed25519");
+        assert_eq!(
+            scan_host_key_request_from_proto(wire.clone()).unwrap(),
+            (
+                id("ws-1"),
+                "git.example".to_owned(),
+                22,
+                "ssh-ed25519".to_owned()
+            )
+        );
+        for edit in [
+            (|r: &mut pb::ScanHostKeyRequest| r.host.clear()) as fn(&mut _),
+            |r| r.port = 0,
+            |r| r.port = 70000,
+            |r| r.key_type.clear(),
+            |r| r.workspace_id = "Not Valid".into(),
+        ] {
+            let mut bad = wire.clone();
+            edit(&mut bad);
+            assert!(scan_host_key_request_from_proto(bad).is_err());
+        }
+        assert_eq!(
+            scan_host_key_from_proto(scan_host_key_to_proto(vec![1, 2])).unwrap(),
+            [1, 2]
+        );
+        assert!(
+            scan_host_key_from_proto(scan_host_key_to_proto(vec![0; MAX_HOST_KEY + 1])).is_err()
+        );
     }
 
     #[test]

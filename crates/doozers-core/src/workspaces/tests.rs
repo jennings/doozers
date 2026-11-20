@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
-use super::fake::{Fake, TestClock};
+use super::fake::{Fake, Scan, TestClock};
 use super::*;
 use crate::blobs::SweepSchedule;
 use crate::config::{Config, InstanceName, LoadOptions};
@@ -1736,4 +1736,175 @@ async fn an_environment_that_cant_relay_never_gets_one() {
     open(&h, &chat("c1")).await;
     assert_eq!(h.fake.relay_calls(), 0);
     assert!(!h.workspaces.inner.relays.running(&record.id).await);
+}
+
+// ---- known hosts over the relay ----
+
+/// A key as `ssh` offers it: its type and its wire blob.
+fn host_key() -> (String, Vec<u8>) {
+    let host = crate::ssh::agent_tests::ed25519_host();
+    (
+        host.public_key().algorithm().as_str().to_owned(),
+        host.public_key().to_bytes().unwrap(),
+    )
+}
+
+fn known_hosts_request(id: u64, host: &str, key: &(String, Vec<u8>)) -> RelayRequest {
+    RelayRequest::KnownHosts(doozers_types::KnownHostsRequest {
+        id,
+        host: host.to_owned(),
+        port: 22,
+        key_type: key.0.clone(),
+        key: key.1.clone(),
+    })
+}
+
+/// The next reply on the relay of `id`, which must be a known-hosts one.
+async fn known_hosts_reply(h: &Harness, id: &WorkspaceId) -> doozers_types::KnownHostsReply {
+    match h.fake.relay_reply(id).await.expect("the relay ended") {
+        RelayReply::KnownHosts(reply) => reply,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_lookup_on_the_relay_records_the_host_for_the_workspaces_environment_and_owner() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let owner = user("owner");
+    let record = h.create_for(&chat("c1"), Some(&owner)).await;
+    open(&h, &chat("c1")).await;
+    let key = host_key();
+    h.fake
+        .scan_returns("github.com", 22, Scan::Key(key.1.clone()));
+
+    h.fake
+        .relay_send(&record.id, known_hosts_request(7, "github.com", &key));
+    let reply = known_hosts_reply(&h, &record.id).await;
+    assert_eq!((reply.id, reply.keys), (7, vec![key.1.clone()]));
+
+    let rows = h.workspaces.known_hosts().all().await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].environment, "box");
+    assert_eq!(rows[0].host, "github.com");
+    assert_eq!(rows[0].first_workspace.as_deref(), Some(record.id.as_str()));
+    assert_eq!(rows[0].first_agent.as_deref(), Some("jeeves"));
+    assert_eq!(rows[0].first_user.as_deref(), Some("owner"));
+    // The scan was asked of the workspace's own environment, for the workspace.
+    let scans = h.fake.scans();
+    assert_eq!(scans.len(), 1);
+    assert_eq!(scans[0].0, record.id);
+
+    // A workspace without a key user records no user, and the stored key answers it.
+    let group = h.create_for(&chat("group"), None).await;
+    open(&h, &chat("group")).await;
+    h.fake
+        .relay_send(&group.id, known_hosts_request(1, "github.com", &key));
+    assert_eq!(known_hosts_reply(&h, &group.id).await.keys, [key.1]);
+    assert_eq!(h.fake.scans().len(), 1, "a known host isn't scanned again");
+}
+
+#[tokio::test]
+async fn a_slow_scan_doesnt_hold_up_agent_requests_on_the_same_relay() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let owner = user("owner");
+    h.ssh_keys
+        .generate(&owner, crate::ssh::KeyType::Ed25519, Some("laptop"))
+        .await
+        .unwrap();
+    let record = h.create_for(&chat("c1"), Some(&owner)).await;
+    open(&h, &chat("c1")).await;
+    let key = host_key();
+    let gate = Arc::new(tokio::sync::Notify::new());
+    h.fake
+        .scan_returns("slow.example", 22, Scan::Gated(gate.clone(), key.1.clone()));
+
+    h.fake
+        .relay_send(&record.id, known_hosts_request(1, "slow.example", &key));
+    // Wait until the scan is running, then ask the agent: it answers while the scan waits.
+    for _ in 0..500 {
+        if !h.fake.scans().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.fake.scans().len(), 1);
+    assert_eq!(offered(&h, &record.id, 1).await, ["laptop"]);
+
+    // Releasing the scan answers the lookup.
+    gate.notify_one();
+    let reply = known_hosts_reply(&h, &record.id).await;
+    assert_eq!((reply.id, reply.keys), (1, vec![key.1]));
+}
+
+#[tokio::test]
+async fn lookups_past_the_in_flight_cap_are_answered_with_no_key() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let record = h.create_for(&chat("c1"), None).await;
+    open(&h, &chat("c1")).await;
+    let key = host_key();
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let cap = crate::ssh::relay::MAX_LOOKUPS as u64;
+    for id in 1..=cap + 1 {
+        h.fake.scan_returns(
+            &format!("h{id}.example"),
+            22,
+            Scan::Gated(gate.clone(), key.1.clone()),
+        );
+    }
+    // The first `cap` lookups wait on their scans.
+    for id in 1..=cap {
+        h.fake.relay_send(
+            &record.id,
+            known_hosts_request(id, &format!("h{id}.example"), &key),
+        );
+    }
+    for _ in 0..500 {
+        if h.fake.scans().len() as u64 == cap {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.fake.scans().len() as u64, cap);
+
+    // One more is refused at once, without a scan.
+    h.fake.relay_send(
+        &record.id,
+        known_hosts_request(cap + 1, &format!("h{}.example", cap + 1), &key),
+    );
+    let refused = known_hosts_reply(&h, &record.id).await;
+    assert_eq!((refused.id, refused.keys.len()), (cap + 1, 0));
+    assert_eq!(h.fake.scans().len() as u64, cap);
+
+    // The others finish once their scans do, and make room for a new lookup.
+    for _ in 0..cap {
+        gate.notify_one();
+    }
+    let mut answered = Vec::new();
+    for _ in 0..cap {
+        let reply = known_hosts_reply(&h, &record.id).await;
+        assert_eq!(reply.keys, vec![key.1.clone()]);
+        answered.push(reply.id);
+    }
+    answered.sort_unstable();
+    assert_eq!(answered, (1..=cap).collect::<Vec<_>>());
+    h.fake
+        .relay_send(&record.id, known_hosts_request(99, "h1.example", &key));
+    assert_eq!(known_hosts_reply(&h, &record.id).await.keys, [key.1]);
+}
+
+#[tokio::test]
+async fn a_lookup_that_names_no_host_the_core_knows_gets_no_key() {
+    let h = Harness::new().await;
+    h.connect_relaying();
+    let record = h.create_for(&chat("c1"), None).await;
+    open(&h, &chat("c1")).await;
+    let key = host_key();
+    h.fake
+        .relay_send(&record.id, known_hosts_request(3, "no route", &key));
+    let reply = known_hosts_reply(&h, &record.id).await;
+    assert_eq!((reply.id, reply.keys.len()), (3, 0));
+    assert!(h.workspaces.known_hosts().all().await.unwrap().is_empty());
 }

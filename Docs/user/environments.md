@@ -73,9 +73,11 @@ Doozers keeps limits on what the agent sees, the same for every environment:
 
 ## SSH
 
-A workspace on an environment that supports it can use your SSH keys for `ssh` and `git`.
+A workspace on an environment that supports it can use your SSH keys for `ssh` and `git`, and `ssh`
+there trusts the server host keys that Doozers records.
 [SSH keys and SSH in workspaces](ssh.md#use-ssh-in-a-workspace) says which workspaces get keys and
-how to check that they work.
+how to check that they work, and [Host keys in a workspace](ssh.md#host-keys-in-a-workspace) covers
+the host keys.
 
 ## See and delete workspaces
 

@@ -33,6 +33,7 @@ mod search;
 mod secrets;
 mod sessions;
 mod ssh_keys;
+mod ssh_known_hosts;
 mod time;
 mod toolsets;
 mod usage;
@@ -65,6 +66,7 @@ pub use search::{SNIPPET_ELLIPSIS, SNIPPET_END, SNIPPET_START, SearchHit, Search
 pub use secrets::{SealedValue, SecretRecord, WrappedKey};
 pub use sessions::{Session, SessionId, SessionKey, SessionKind, SessionSummary};
 pub use ssh_keys::{NewSshKey, SshKeyId, SshKeyRecord};
+pub use ssh_known_hosts::{KnownHostId, KnownHostRecord, NewKnownHost};
 pub use toolsets::StoredToolset;
 pub use usage::{AgentUsage, ModelUsage, UsageRecord};
 pub use web_sessions::WebSession;

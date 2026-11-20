@@ -473,6 +473,14 @@ button to copy each public key, and **Rename** and **Delete**. The owner also ha
 **Admin**, which lists every user's keys. [SSH keys](ssh.md) covers the page and how to add a public
 key to GitHub.
 
+## Known SSH hosts
+
+**Known SSH hosts** under **Admin** lists the SSH servers whose host keys the workspaces trust, for
+each environment, with each key's type and fingerprint, when and by whom it was first recorded, and
+when it was last used. **Delete** forgets a key after a confirmation, and **Add** trusts a key you
+paste before any workspace connects. [SSH keys](ssh.md#known-ssh-hosts) covers what a host's first
+connection does and when to delete or add a key. Only the owner can open the page.
+
 ## Workspaces
 
 **Workspaces** in the sidebar lists the [workspaces](environments.md) your agents have, so you can

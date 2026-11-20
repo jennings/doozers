@@ -137,14 +137,14 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 13)
+## Schema (version 14)
 
 The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
 table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`,
-`archived_conversations`, and `ssh_keys`, which `0002_blobs.sql`, `0003_routes.sql`,
-`0004_toolsets.sql`, `0005_workspaces.sql`, `0007_secrets.sql`, `0009_archived_conversations.sql`,
-and `0012_ssh_keys.sql` add (`0013_workspace_key_user.sql` adds `workspaces.key_user`). This is
-their outline.
+`archived_conversations`, `ssh_keys`, and `ssh_known_hosts`, which `0002_blobs.sql`,
+`0003_routes.sql`, `0004_toolsets.sql`, `0005_workspaces.sql`, `0007_secrets.sql`,
+`0009_archived_conversations.sql`, `0012_ssh_keys.sql`, and `0014_ssh_known_hosts.sql` add
+(`0013_workspace_key_user.sql` adds `workspaces.key_user`). This is their outline.
 
 | Table          | Columns and rules                                                                    |
 | -------------- | ------------------------------------------------------------------------------------ |
@@ -167,6 +167,7 @@ their outline.
 | `secret_key`   | One row, once the secret store has a data key: `source` (the key source that wrapped it), `algorithm`, `nonce`, `wrapped`, `created_at`. |
 | `archived_conversations` | The conversations their user archived: (`channel`, `conversation`) as the primary key, `archived_at`. No foreign key, since a conversation is a set of sessions. See [Conversations](#conversations). |
 | `ssh_keys`     | The metadata of users' SSH keys: `id` (`AUTOINCREMENT`, never reused), `user_id`, `label`, `algorithm`, `public_key`, `fingerprint`, `created_at`, `last_used_at`. `UNIQUE (user_id, fingerprint)`. The private keys are secrets. See [SSH keys](#ssh-keys). |
+| `ssh_known_hosts` | The SSH host keys workspaces trust, one set per environment instance: `id` (`AUTOINCREMENT`, never reused), `environment`, `host` (lowercased, no brackets or port), `port`, `key_type`, `public_key` (base64 blob), `fingerprint`, `first_seen_at`, `first_workspace`, `first_agent`, `first_user` (null for a pinned key), `added_by` (the admin who pinned it, else null), `last_used_at`. `UNIQUE (environment, host, port, public_key)`. See [Known SSH hosts](#known-ssh-hosts). |
 
 `identities` and `pairings` are deferred with multi-user support (PLAN 1.1, D49) and don't exist
 yet.
@@ -448,21 +449,22 @@ take the kind and touch only that kind's places:
   `spec` JSON.
 - A provider is named in `usage.provider` and in the `provider` field of an assistant message's
   `meta` JSON.
-- An environment is named in `workspaces.environment`. `workspaces.channel` also names the channel
-  of a conversation that owns a workspace (a job run's workspace has no channel).
+- An environment is named in `workspaces.environment` and `ssh_known_hosts.environment`.
+  `workspaces.channel` also names the channel of a conversation that owns a workspace (a job run's
+  workspace has no channel).
 - A toolset is named in none of these. A stored toolset is a row of its own in `toolsets`.
 
 Nothing else holds one: `inbox.payload` and `outbox.payload` carry conversations and text but no
 instance name, and identities use the namespace the channel reports, not the instance name.
 
 `instance_rows(kind)` returns, per name, how many rows of that kind use it: sessions, inbox, and
-outbox rows, and workspaces for a channel, usage rows for a provider, workspaces for an environment,
-and nothing for a toolset. Workspace rows count in every state, so a `deleted` row the sweep hasn't
-pruned yet still holds its environment's name. It's what the rename commands read to see which names
-have data. It leaves `routes.channel` out on purpose: routes are settings, not data, and a route to
-a removed instance is kept (the routes page flags it), so counting it would keep that name from
-being given to another instance. `instance_routes` returns, per channel instance, how many routes
-name it; `doozers channel rename` reads it to see that a name is used.
+outbox rows, and workspaces for a channel, usage rows for a provider, workspaces and known SSH hosts
+for an environment, and nothing for a toolset. Workspace rows count in every state, so a `deleted`
+row the sweep hasn't pruned yet still holds its environment's name. It's what the rename commands
+read to see which names have data. It leaves `routes.channel` out on purpose: routes are settings,
+not data, and a route to a removed instance is kept (the routes page flags it), so counting it would
+keep that name from being given to another instance. `instance_routes` returns, per channel
+instance, how many routes name it; `doozers channel rename` reads it to see that a name is used.
 
 `rename_instance(kind, old, new, hook)` moves the kind's places to the new name in one `IMMEDIATE`
 transaction, runs `hook` inside it after the updates and before the commit, and returns the number
@@ -587,6 +589,27 @@ secret.
 | `ssh_key_rename(id, label)`             | Sets the label. `false` if there is no such key.                 |
 | `ssh_key_delete(id)`                    | Deletes the row. `false` if there is none.                       |
 | `ssh_key_touch_used(id, now)`           | Sets `last_used_at`. `false` if there is no such key.            |
+
+## Known SSH hosts
+
+`ssh_known_hosts` holds the host keys that `ssh` in a workspace trusts, one set per environment
+instance ([SSH](ssh.md#known-hosts)). A row is one key of one host: a host may have a key of each
+type, and `UNIQUE (environment, host, port, public_key)` allows no key twice. The core normalizes
+the host, parses and fingerprints the key, and decides what a lookup means. The store enforces the
+uniqueness and makes the two ways in atomic. `id` is `AUTOINCREMENT`, so a deleted key's id is never
+reused and a page that was open before a delete can't delete the next key recorded. Rows move with
+`doozers environment rename` (`InstanceRows::known_hosts`, `RenamedRows::known_hosts`), and a
+[backup](backups.md) holds them with the rest of `doozers.db`.
+
+| Method                                         | Contract                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| `known_host_record_first_use(new, now)`        | Adds the key with `first_seen_at = now`, only if the environment has no key for the host and port yet, and returns it. `None`, and nothing changes, if it has one: the key offered is then a match or a mismatch for the core to judge, never new trust. |
+| `known_host_pin(new, now)`                     | Adds the key whether or not the host has others, and returns it. `None` if this exact key is already stored for the host and port. |
+| `known_hosts_for(environment, host, port)`     | The keys of the host and port, oldest first.                     |
+| `known_hosts_all()`                            | Every key, by environment, host, port, then oldest first: the order of the admin page. |
+| `known_host(id)`                               | The key `id`, if any.                                            |
+| `known_host_touch_used(id, now)`               | Sets `last_used_at`. `false` if there is no such key.            |
+| `known_host_delete(id)`                        | Deletes the row. `false` if there is none.                       |
 
 ## Workspaces
 

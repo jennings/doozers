@@ -323,7 +323,8 @@ converting it, so it accepts any handle, and it never trusts one: it fetches the
 the `doozers_types::Environment` its `configure` closure returns. The closure gets the same
 `Configure` as a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and the plugin's
 `EnvironmentCapabilities`: the builder method `EnvironmentPlugin::ssh_relay()` sets `ssh_relay`, and
-nothing else is set.
+nothing else is set. The capability means the plugin serves `Relay` for ssh-agent requests and
+known-hosts lookups, and `ScanHostKey`; the SDK has no separate switch for them.
 
 - `Configure` calls the closure under a lock, as for channels, answers with an empty identity
   namespace, and marks `EnvironmentService` serving. A repeated identical `Configure` (same instance
@@ -344,7 +345,14 @@ nothing else is set.
   message the SDK can't convert ends it too. What the plugin's stream yields is sent to the core,
   and dropping it, which tonic does when the core cancels the call, is the plugin's cue to stop. The
   default `Environment::relay` refuses with `InvalidRequest`, so a plugin without the capability
-  needs nothing.
+  needs nothing. The replies include a `KnownHostsReply` for each `KnownHostsRequest` the plugin
+  sent. The conversions refuse a lookup or a reply over the
+  [size limits](protocols.md#mapping-to-doozers-types) of the messages.
+- `ScanHostKey` calls `Environment::scan_host_key` with the workspace id, host, port, and key type
+  and returns the key blob. An empty or over-long host or key type, and a port outside 1 to 65535,
+  are `INVALID_ARGUMENT`. The default refuses with `InvalidRequest`, so a plugin without the
+  capability needs nothing, and a plugin with it usually calls
+  [`scan_host_key`](#ssh-host-key-scan).
 - Errors map as in [Conversions and errors](#conversions-and-errors). `convert::environment` has the
   field conversions in both directions (see
   [gRPC Protocols](protocols.md#mapping-to-doozers-types)).
@@ -403,11 +411,17 @@ no client certificates). A plugin that needs no TLS can turn the feature off.
 
 `doozers_plugin_sdk::ssh::scan_host_key(host, port, key_type, timeout)` fetches the host key an SSH
 server presents, as `ssh-keyscan` does, and returns the key blob (the SSH wire encoding that
-`known_hosts` holds in base64). An environment plugin uses it to check a workspace's first use of a
-host from its own network: it scans the host and compares the result with the key the workspace's
-`ssh` was offered. `key_type` is what OpenSSH's `KnownHostsCommand` passes as `%t`: `ssh-ed25519`,
+`known_hosts` holds in base64). An environment plugin uses it to implement
+`Environment::scan_host_key`, which the core calls to check a workspace's first use of a host: it
+scans the host and the core compares the result with the key the workspace's `ssh` was offered.
+`key_type` is what OpenSSH's `KnownHostsCommand` passes as `%t`: `ssh-ed25519`,
 `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`, or `ssh-rsa`. Certificates,
 `sk-` keys, DSA, and every other name are refused before anything is sent.
+
+The scan runs from the machine the plugin runs on. A plugin shouldn't scan through the workspace's
+own network, because a workspace's root controls name resolution there and could make the scan
+confirm a fake key ([Docker environment](environment-docker.md#host-key-scans)). A host that only
+the workspace's network reaches can't be scanned, and an admin pins its key.
 
 The scan is a minimal SSH client over tokio TCP. It exchanges identification strings (RFC 4253
 section 4.2, skipping lines before the server's, with a cap on their length and number), sends a
@@ -424,7 +438,7 @@ key's private half, so a server can't present a key it saw elsewhere. The key's 
 the one asked for. The scan sends `DISCONNECT` as soon as the signature checks out, without
 `NEWKEYS`, and authenticates nothing.
 
-- The whole call, connecting included, is bounded by `timeout`.
+- The whole call is bounded by `timeout`, connecting included for `scan_host_key`.
 - Each error names its step: `connect`, `banner`, `key exchange`, `no common algorithm`,
   `disconnected by the server`, `host key`, `bad signature`, or a timeout. Text the server sent
   appears only as an excerpt of at most 64 bytes with everything but printable ASCII escaped.

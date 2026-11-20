@@ -26,6 +26,7 @@ rename must move each of them.
 | `outbox.instance`                            | The channel a proactive send routes to         | Updates in the transaction (channels)     |
 | `workspaces.channel`                         | The channel of a conversation that owns a workspace (null for a job run's) | Updates in the transaction (channels) |
 | `workspaces.environment`                     | The environment instance that holds a workspace | Updates in the transaction (environments) |
+| `ssh_known_hosts.environment`                | The environment instance whose workspaces trust a host key | Updates in the transaction (environments) |
 | `usage.provider`                             | The provider instance of a request             | Updates in the transaction (providers)     |
 | `messages.meta` `$.provider`                 | The provider that wrote an assistant message   | Updates in the transaction (providers)     |
 | `jobs.spec` `$.conversation.channel`         | The channel of the conversation a runtime job was scheduled in | Updates in the transaction (channels) |
@@ -134,8 +135,9 @@ comes from the command (`doozers channel rename`, `doozers environment rename`,
      message says that `doozers.toml` has no `[<kind>.<old>]` table and that the kind has no data
      under the name. When `doozers.toml` configures the name as another kind, it adds a hint that
      names that table and that kind's rename command.
-   - `new` must have no data of the command's kind: no database rows, no `data/<kind>/<new>`, and,
-     for a channel, no `groups/<new>` (routes that name `new` don't count; a group directory is a
+   - `new` must have no data of the command's kind: no database rows (the conflict error lists them,
+     including `ssh_known_hosts` rows for an environment), no `data/<kind>/<new>`, and, for a
+     channel, no `groups/<new>` (routes that name `new` don't count; a group directory is a
      channel's, so it doesn't keep a provider or toolset from taking the name). The memory databases
      aren't checked: nothing in their schema is unique over the owner, and an interrupted run
      (below) legitimately leaves some of them already renamed. The exception is an interrupted
@@ -169,7 +171,8 @@ comes from the command (`doozers channel rename`, `doozers environment rename`,
    update with the names swapped in each database that changed; then files rewritten from the text
    read in step 1, and moves reversed) and the error returns, which rolls the transaction back. If
    the commit itself fails after the hook, the caller undoes the journal too.
-4. The report lists what changed, for the command to print.
+4. The report lists what changed, for the command to print. For an environment, the database line is
+   `N workspaces, M known SSH hosts` (`RenamedRows::workspaces` and `RenamedRows::known_hosts`).
 
 Why this order. The database transaction is the only step that can't be undone by hand-editing, so
 it is the one that is held open until everything else worked: every failure the code can observe

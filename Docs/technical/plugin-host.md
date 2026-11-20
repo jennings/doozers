@@ -478,8 +478,10 @@ crash, or a failed check), supervision calls `Launch::ended`, which calls
 `Registry::unregister_environment`, so an environment is reachable only while its plugin is.
 Dropping the stream `exec` returns drops the gRPC call, which cancels it. `relay` sends `open` first
 and then the replies, scrubs failures of the instance's secrets like the other calls, and ends its
-stream when the plugin ends the call. Dropping that stream also ends the messages it sends, because
-the call's request half would otherwise keep the call alive.
+stream when the plugin ends the call. `scan_host_key` calls `ScanHostKey` and scrubs its failures
+the same way. The relay's known-hosts lookups and the scans they cause are answered by
+`ssh::known_hosts` ([SSH](ssh.md#known-hosts)). Dropping that stream also ends the messages it
+sends, because the call's request half would otherwise keep the call alive.
 
 The capabilities are kept with the schema: they stay while the plugin is down and a new connection
 replaces them.

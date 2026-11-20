@@ -112,8 +112,7 @@ pub async fn scan_host_key(
     key_type: &str,
     timeout: Duration,
 ) -> Result<Vec<u8>, ScanError> {
-    let kind = HostKeyKind::from_key_type(key_type)
-        .ok_or_else(|| ScanError::UnsupportedKeyType(excerpt(key_type.as_bytes())))?;
+    let kind = host_key_kind(key_type)?;
     let scan = async {
         let stream = TcpStream::connect((host, port))
             .await
@@ -125,6 +124,11 @@ pub async fn scan_host_key(
     tokio::time::timeout(timeout, scan)
         .await
         .unwrap_or(Err(ScanError::Timeout(timeout)))
+}
+
+fn host_key_kind(key_type: &str) -> Result<HostKeyKind, ScanError> {
+    HostKeyKind::from_key_type(key_type)
+        .ok_or_else(|| ScanError::UnsupportedKeyType(excerpt(key_type.as_bytes())))
 }
 
 /// Runs the scan over an established connection.

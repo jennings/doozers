@@ -16,7 +16,7 @@ Each package lives in `proto/doozers/<package>/v1/<package>.proto`; the `buf` mo
 | `doozers.plugin.v1` | `PluginService` (`Describe`, `Configure`, `Shutdown`, blob transfer)  | `doozers_proto::plugin::v1`   |
 | `doozers.provider.v1` | `ProviderCapabilities` only; `ProviderService` comes with provider plugins | `doozers_proto::provider::v1` |
 | `doozers.channel.v1` | `ChannelService` (`Events`, `Send`) and `ChannelCapabilities`          | `doozers_proto::channel::v1`  |
-| `doozers.environment.v1` | `EnvironmentService` (workspaces, `Exec`, files, `Find`, `Grep`, `Relay`) and `EnvironmentCapabilities` | `doozers_proto::environment::v1` |
+| `doozers.environment.v1` | `EnvironmentService` (workspaces, `Exec`, files, `Find`, `Grep`, `Relay`, `ScanHostKey`) and `EnvironmentCapabilities` | `doozers_proto::environment::v1` |
 | `doozers.admin.v1`  | `AdminService`, served by the core on `run/admin.sock`                | `doozers_proto::admin::v1`    |
 
 Every gRPC plugin serves `doozers.plugin.v1.PluginService`, `grpc.health.v1.Health` (from the
@@ -154,19 +154,22 @@ calls the service and implements the trait.
 | `find`, `grep`                                   | `Find`, `Grep`; a `None` path is `""`, `glob` is `optional` |
 | `Environment::relay(id, replies)`                | `Relay`: bidirectional stream of `RelayReply` (core to plugin) and `RelayRequest` (plugin to core) |
 | `RelayReply::Agent`, `RelayRequest::{Agent, AgentClosed}` | `AgentReply`, `AgentRequest`, `AgentClosed`: `connection` and the message `bytes` |
+| `RelayRequest::KnownHosts`, `RelayReply::KnownHosts` | `KnownHostsRequest { id, host, port, key_type, key }`, `KnownHostsReply { id, keys }` |
+| `Environment::scan_host_key(id, host, port, key_type)` | `ScanHostKey`: `ScanHostKeyRequest { workspace_id, host, port, key_type }` to `ScanHostKeyResponse { key }` |
 
 Errors are gRPC statuses, converted the way the channel kind's are: `INVALID_ARGUMENT` is
 `Error::InvalidRequest` (a refused request, or options the environment rejects), `NOT_FOUND` is
 `Error::NotFound`, `UNAVAILABLE` is `Error::Unavailable`, and anything else is `Error::Other`. The
 core may show the message to the model.
 
-`Relay` carries the ssh-agent requests of a running workspace's clients to the core. It exists only
-for a plugin whose `EnvironmentCapabilities.ssh_relay` is set, and the core never calls it
-otherwise. The core's first message is `RelayOpen { workspace_id }`, which `Environment::relay`
-takes as its `id` argument, so the domain `RelayReply` has only the replies. The plugin then sends
-`AgentRequest { connection, message }` for each message a client of the workspace's `SSH_AUTH_SOCK`
-sends, and `AgentClosed { connection }` when that client disconnects. The core answers each request
-with an `AgentReply` for the same `connection`; a reply for a connection that has closed is dropped.
+`Relay` carries the ssh-agent requests of a running workspace's clients, and the known-hosts lookups
+of its `ssh`, to the core. It exists only for a plugin whose `EnvironmentCapabilities.ssh_relay` is
+set, and the core never calls it otherwise. The core's first message is
+`RelayOpen { workspace_id }`, which `Environment::relay` takes as its `id` argument, so the domain
+`RelayReply` has only the replies. The plugin then sends `AgentRequest { connection, message }` for
+each message a client of the workspace's `SSH_AUTH_SOCK` sends, and `AgentClosed { connection }`
+when that client disconnects. The core answers each request with an `AgentReply` for the same
+`connection`; a reply for a connection that has closed is dropped.
 
 - A message is one ssh-agent protocol message without its 4-byte length, at most 256 KiB (OpenSSH's
   limit). The SDK's conversions refuse a longer one.
@@ -177,6 +180,29 @@ with an `AgentReply` for the same `connection`; a reply for a connection that ha
   `NOT_FOUND` and one that isn't running is `INVALID_ARGUMENT`.
 - The message names follow the direction of the traffic, which is why `buf lint` is told to accept
   them as the RPC's request and response type.
+
+A known-hosts lookup is a `KnownHostsRequest` from the plugin, one for each call of `ssh`'s
+`KnownHostsCommand`, and the core answers it with a `KnownHostsReply` of the same `id`. Lookups are
+answered concurrently, so replies may come in any order. [SSH](ssh.md#known-hosts) says what the
+core answers.
+
+- `host` is exactly what `ssh` gave as `%H`: a name or address, or `[host]:port` for a port other
+  than 22. `port` is `%p`. `key_type` and `key` are the algorithm name and the SSH wire blob the
+  server offered, or both empty when `ssh` only asks which keys are stored.
+- The reply's `keys` are SSH wire blobs, none if the core trusts none, which makes `ssh` refuse the
+  connection.
+- The plugin chooses `id` and never reuses it within a relay. A reply for an id the plugin doesn't
+  wait for is dropped.
+- A host is at most 270 bytes and a key at most 16 KiB, and a reply has at most 64 keys. The SDK's
+  conversions refuse more, and a request that doesn't convert is an error on the stream, which ends
+  the relay.
+
+`ScanHostKey` is a unary call for the same capability. The core calls it on a workspace's first
+connection to a host, to learn the key the plugin sees for `host:port` from where the workspace
+runs, as `ssh-keyscan` would, with `key_type` the only host key algorithm offered. It answers with
+the key blob. Errors use the usual mapping: the Docker plugin answers `INVALID_ARGUMENT` for a key
+type it doesn't scan, `NOT_FOUND` for a workspace it doesn't hold, and `UNAVAILABLE` for a scan that
+fails. The core records the host only if the blob equals the key `ssh` was offered.
 
 `Exec` ends in one `exit` event. A plugin's stream that ends without one is a plugin bug, which the
 SDK reports as `INTERNAL`. Cancelling the call, which is how the core stops a command, drops the
