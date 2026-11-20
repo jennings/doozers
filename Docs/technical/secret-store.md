@@ -7,9 +7,10 @@ Code: `crates/doozers-core/src/secrets/` (`doozers_core::secrets`), with its row
 The secret store holds named credentials that the core injects into the components using them.
 Stored remote toolsets keep their credentials in it ([Toolsets](toolsets.md#credentials)), and
 users' OAuth tokens for them in each user's space
-([Each user's sign-in](toolsets.md#each-users-sign-in)). In `doozers.toml`, `{ secret = "name" }`
-references still resolve against `secrets.toml` ([Configuration](config.md#secrets)) until the
-reference and migration work lands.
+([Each user's sign-in](toolsets.md#each-users-sign-in)). Each user's SSH private keys are in their
+space too, at `users/<user>/ssh-keys/<id>` ([SSH keys](ssh.md)). In `doozers.toml`,
+`{ secret = "name" }` references still resolve against `secrets.toml`
+([Configuration](config.md#secrets)) until the reference and migration work lands.
 
 ## Paths
 

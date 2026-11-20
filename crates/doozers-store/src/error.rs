@@ -97,6 +97,12 @@ pub enum Error {
     /// again.
     #[error("the toolset changed since it was loaded")]
     StaleToolset,
+    /// The user already has an SSH key with that fingerprint.
+    #[error("the user already has this SSH key, labelled {label:?}")]
+    SshKeyExists {
+        /// The label of the key they have.
+        label: String,
+    },
     /// A memory's content is longer than the limit.
     #[error("memory content is {chars} characters; the limit is {max}")]
     MemoryTooLong {

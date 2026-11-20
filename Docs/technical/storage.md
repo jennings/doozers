@@ -137,13 +137,13 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 11)
+## Schema (version 12)
 
 The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
-table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`, and
-`archived_conversations`, which `0002_blobs.sql`, `0003_routes.sql`, `0004_toolsets.sql`,
-`0005_workspaces.sql`, `0007_secrets.sql`, and `0009_archived_conversations.sql` add. This is their
-outline.
+table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`,
+`archived_conversations`, and `ssh_keys`, which `0002_blobs.sql`, `0003_routes.sql`,
+`0004_toolsets.sql`, `0005_workspaces.sql`, `0007_secrets.sql`, `0009_archived_conversations.sql`,
+and `0012_ssh_keys.sql` add. This is their outline.
 
 | Table          | Columns and rules                                                                    |
 | -------------- | ------------------------------------------------------------------------------------ |
@@ -165,6 +165,7 @@ outline.
 | `secrets`      | The local secret store: `path` (primary key), `description`, `algorithm`, `nonce`, `ciphertext` (the sealed value), `created_at`, `created_by`, `updated_at`, `updated_by` (user ids, null when no user did it). See [Secrets](#secrets). |
 | `secret_key`   | One row, once the secret store has a data key: `source` (the key source that wrapped it), `algorithm`, `nonce`, `wrapped`, `created_at`. |
 | `archived_conversations` | The conversations their user archived: (`channel`, `conversation`) as the primary key, `archived_at`. No foreign key, since a conversation is a set of sessions. See [Conversations](#conversations). |
+| `ssh_keys`     | The metadata of users' SSH keys: `id` (`AUTOINCREMENT`, never reused), `user_id`, `label`, `algorithm`, `public_key`, `fingerprint`, `created_at`, `last_used_at`. `UNIQUE (user_id, fingerprint)`. The private keys are secrets. See [SSH keys](#ssh-keys). |
 
 `identities` and `pairings` are deferred with multi-user support (PLAN 1.1, D49) and don't exist
 yet.
@@ -565,6 +566,26 @@ core's business (`doozers_core::secrets`), so no plaintext value ever reaches `d
 Paths are compared byte for byte, because the core admits only lowercase paths. `secret_records`
 selects the range from `under/` up to `under0` (`0` follows `/` in ASCII), so `ssh` lists `ssh/prod`
 but not `ssh-old/a` or `ssh` itself.
+
+## SSH keys
+
+`ssh_keys` holds the metadata of the SSH keys users keep ([SSH keys](ssh.md)). The private key of
+key `id` is the secret `users/<user>/ssh-keys/<id>`, which the core writes and reads through the
+[secret store](secret-store.md): the store never sees key material, and checks nothing about the
+public key or the fingerprint. The core parses keys and hands the results over. `id` is
+`AUTOINCREMENT`, so a deleted key's id is never reused and a new key never meets an old key's
+secret.
+
+| Method                                  | Contract                                                         |
+| --------------------------------------- | ---------------------------------------------------------------- |
+| `ssh_key_insert(new, now)`              | Adds the key with `created_at = now` and no `last_used_at`, and returns it. `Error::SshKeyExists`, with the existing key's label, if the user has the fingerprint. Another user may hold it. |
+| `ssh_key(id)`                           | The key `id`, whoever owns it, if any.                           |
+| `ssh_keys(user)`                        | The user's keys, oldest first: the order of the web page.         |
+| `ssh_keys_by_recent_use(user)`          | The user's keys in agent order: `last_used_at` newest first, keys never used last, ties by `created_at` newest first, then `id`. |
+| `ssh_keys_all()`                        | Every user's keys, by user, then oldest first.                   |
+| `ssh_key_rename(id, label)`             | Sets the label. `false` if there is no such key.                 |
+| `ssh_key_delete(id)`                    | Deletes the row. `false` if there is none.                       |
+| `ssh_key_touch_used(id, now)`           | Sets `last_used_at`. `false` if there is no such key.            |
 
 ## Workspaces
 

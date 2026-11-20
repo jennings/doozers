@@ -12,27 +12,31 @@ pub(super) enum Nav {
     Chats,
     Jobs,
     Connections,
+    SshKeys,
     Status,
     Plugins,
     Agents,
     Routes,
     McpServers,
     Workspaces,
+    AdminSshKeys,
 }
 
 /// The links of the "You" group, then of the "Admin" group: (page, label, href).
-const YOU: [(Nav, &str, &str); 3] = [
+const YOU: [(Nav, &str, &str); 4] = [
     (Nav::Chats, "Chats", "/"),
     (Nav::Jobs, "Scheduled jobs", "/jobs"),
     (Nav::Connections, "Connections", "/connections"),
+    (Nav::SshKeys, "SSH keys", "/ssh-keys"),
 ];
-const ADMIN: [(Nav, &str, &str); 6] = [
+const ADMIN: [(Nav, &str, &str); 7] = [
     (Nav::Status, "Status", "/admin"),
     (Nav::Plugins, "Plugins", "/admin/plugins"),
     (Nav::Agents, "Agents", "/admin/agents"),
     (Nav::Routes, "Routes", "/admin/routes"),
     (Nav::McpServers, "MCP servers", "/admin/mcp-servers"),
     (Nav::Workspaces, "Workspaces", "/admin/workspaces"),
+    (Nav::AdminSshKeys, "SSH keys", "/admin/ssh-keys"),
 ];
 
 /// What `app.html` needs: every page that extends it has a `shell` field.
@@ -128,7 +132,10 @@ mod tests {
         assert_eq!(
             labels(&shell),
             [
-                ("You", vec!["Chats", "Scheduled jobs", "Connections"]),
+                (
+                    "You",
+                    vec!["Chats", "Scheduled jobs", "Connections", "SSH keys"]
+                ),
                 (
                     "Admin (owner only)",
                     vec![
@@ -137,7 +144,8 @@ mod tests {
                         "Agents",
                         "Routes",
                         "MCP servers",
-                        "Workspaces"
+                        "Workspaces",
+                        "SSH keys"
                     ]
                 ),
             ]
@@ -162,7 +170,10 @@ mod tests {
         let shell = Shell::new(&user("guest"), Nav::Jobs);
         assert_eq!(
             labels(&shell),
-            [("You", vec!["Chats", "Scheduled jobs", "Connections"])]
+            [(
+                "You",
+                vec!["Chats", "Scheduled jobs", "Connections", "SSH keys"]
+            )]
         );
         assert_eq!(
             (shell.user.as_str(), shell.initial.as_str()),

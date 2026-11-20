@@ -135,9 +135,9 @@ From top to bottom:
 2. Navigation groups. Each has a label (11 px, uppercase, 0.08em tracking, faint) and links 40 px
    tall with 12 px side padding and radius 8 px. The current page's link has the "nav current" fill,
    white text, weight 600, and `aria-current="page"`. The others are secondary text with no fill.
-   - **You**: Chats, Scheduled jobs, Connections.
-   - **Admin (owner only)**: Status, Plugins, Agents, Routes, MCP servers, Workspaces. It's shown
-     only to a user who may administer.
+   - **You**: Chats, Scheduled jobs, Connections, SSH keys.
+   - **Admin (owner only)**: Status, Plugins, Agents, Routes, MCP servers, Workspaces, SSH keys.
+     It's shown only to a user who may administer.
 3. The user footer, pushed to the bottom with a top border: a 30 px initial badge, the user's id,
    and **Log out**. Log out appears only for a cookie login, since a proxy login can't log out.
    Today the id is always `owner`. This is where user information goes once there are other users.
@@ -376,6 +376,9 @@ view, except the chat page's approvals. Inside a table, every action is a `butto
 - Controls are 40 px tall with 12 px side padding, radius 8 px, the control border, the inset
   surface, and the text color. Textareas resize vertically. A disabled control uses the disabled
   surface and faint text.
+- `.input-group` attaches an icon button to a field's right edge (`.input-group-button`, 44 px wide,
+  the inset surface), such as the copy button of a public key. The field loses its right corners
+  only while the button is shown.
 - `.field-row` puts two fields side by side (a two-column grid with a 16 px gap). It becomes one
   column on narrow screens.
 - `.control-row` puts two controls under one label, such as the authentication choice and its token.

@@ -1017,6 +1017,46 @@ answer is `no-store`.
   start or finish is a 502 page with the reason, and a toolset that isn't there or isn't running is
   a 404.
 
+## SSH keys pages
+
+In `ssh_keys.rs`: `web.install_ssh_keys(builder, ssh_keys)`, which `serve` calls with
+`Runtime::ssh_keys`. The pages are a thin layer over the `SshKeys` service
+([SSH keys](ssh.md#permissions)). **SSH keys** is for every logged-in user, who sees and changes
+only their own keys, and the admin page is for the owner. Every answer is `no-store`, every `POST`
+is `check_csrf`-checked, and every form works without JavaScript.
+
+| Route                                | Does                                                              |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| `GET /ssh-keys`                      | the user's keys with the generate and upload forms; `?notice=` names what just happened |
+| `POST /ssh-keys/generate`            | `check_csrf`, then `generate` the chosen `type` with the `label`; 303 back |
+| `POST /ssh-keys/upload`              | `multipart/form-data` of `csrf`, `key_text`, `key_file`, `passphrase`, and `label`; `upload` the file, else the text; 303 back |
+| `GET`, `POST /ssh-keys/<id>/rename`  | the label form; `check_csrf`, then `rename`; 303 back             |
+| `GET`, `POST /ssh-keys/<id>/delete`  | the confirmation; `check_csrf`, then `delete`; 303 back           |
+| `GET /admin/ssh-keys`                | every user's keys: details only (`may_administer`)                |
+| `GET`, `POST /admin/ssh-keys/<id>/delete` | the confirmation; `check_csrf`, then `delete_any`; 303 to the admin list |
+
+- **No private key.** A key's card shows its public key in `authorized_keys` form
+  (`<algorithm> <base64> <label>`) in a read-only field, with a copy button and the fingerprint. The
+  admin page shows neither the public key nor a copy button. No route, header, or error carries a
+  private key.
+- **Copy button.** The button is an icon (`aria-label="Copy public key"`) attached to the field's
+  right edge (`.input-group`). `assets/copy-button.js` unhides each `button[data-copy-from]` and
+  copies the value of the field it names; for 1.5 s afterwards the button shows a check mark and its
+  label is "Copied". Without the script the buttons stay `hidden`, and the field keeps its own
+  rounded corners and is text to select. The script is loaded `defer` through the layout's `head`
+  block, like the form scripts.
+- **The upload.** The route allows a body of about 144 KiB (`UPLOAD_BODY_LIMIT`: twice the key's 64
+  KiB, with room for the other fields), and a bigger one is a 413 before the key is read. The
+  handler reads every field, then checks the CSRF token, which is a form field here, before it
+  parses anything. A file wins over pasted text.
+- **Errors.** A form that fails (a bad label or type, an unreadable key, a wrong passphrase, a key
+  the user already has) renders the page again with the reason: 400, or 409 for a duplicate. It
+  keeps the label and type that were typed, never the key text or the passphrase. A key id that
+  isn't the user's, doesn't exist, or isn't a number is a 404 "No such SSH key" on every route, so
+  an id of someone else's key reveals nothing. A user id that can't name a secret is a 409 page, and
+  anything else is a logged 500. The owner's admin routes answer 403 to anyone else and 404 to an
+  unknown id.
+
 ## Templates and styles
 
 Templates are in `crates/doozers-core/templates/web/`, and the design they follow is in

@@ -466,6 +466,13 @@ lists those globs. Rewrite them, for example to `github__*`, and try again.
 You can't rename a server that you configure in `doozers.toml` here. Stop Doozers and run
 [`doozers toolset rename`](cli.md#rename-a-toolset) for that.
 
+## SSH keys
+
+**SSH keys** in the sidebar lists your own SSH keys, with the forms to generate or upload one, a
+button to copy each public key, and **Rename** and **Delete**. The owner also has **SSH keys** under
+**Admin**, which lists every user's keys. [SSH keys](ssh.md) covers the page and how to add a public
+key to GitHub.
+
 ## Workspaces
 
 **Workspaces** in the sidebar lists the [workspaces](environments.md) your agents have, so you can
