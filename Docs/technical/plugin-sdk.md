@@ -399,6 +399,46 @@ not be able to read. `server_config(cert_chain_pem, key_pem)` is a remote plugin
 (the chain with the server's certificate first; a PKCS #8, PKCS #1, or SEC1 key that must match it;
 no client certificates). A plugin that needs no TLS can turn the feature off.
 
+## SSH host key scan
+
+`doozers_plugin_sdk::ssh::scan_host_key(host, port, key_type, timeout)` fetches the host key an SSH
+server presents, as `ssh-keyscan` does, and returns the key blob (the SSH wire encoding that
+`known_hosts` holds in base64). An environment plugin uses it to check a workspace's first use of a
+host from its own network: it scans the host and compares the result with the key the workspace's
+`ssh` was offered. `key_type` is what OpenSSH's `KnownHostsCommand` passes as `%t`: `ssh-ed25519`,
+`ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`, or `ssh-rsa`. Certificates,
+`sk-` keys, DSA, and every other name are refused before anything is sent.
+
+The scan is a minimal SSH client over tokio TCP. It exchanges identification strings (RFC 4253
+section 4.2, skipping lines before the server's, with a cap on their length and number), sends a
+`KEXINIT` offering only `curve25519-sha256` and its `@libssh.org` alias and only the host key
+algorithms for `key_type`, and answers with `KEX_ECDH_INIT` carrying an X25519 key from `aws-lc-rs`.
+For `ssh-rsa` it offers `rsa-sha2-512` and `rsa-sha2-256`, never SHA-1. The packets are the
+unencrypted binary packets of RFC 4253 section 6, and a packet longer than 35000 bytes is refused.
+`IGNORE` and `DEBUG` messages are skipped, and `DISCONNECT` ends the scan with the server's reason.
+
+The scan then computes the exchange hash over both identification strings, both `KEXINIT` payloads,
+the host key, both ephemeral keys, and the shared secret (RFC 8731 section 3.1), and verifies the
+server's signature over it with the host key, using `ssh-key`. That proves the server holds the
+key's private half, so a server can't present a key it saw elsewhere. The key's type must also be
+the one asked for. The scan sends `DISCONNECT` as soon as the signature checks out, without
+`NEWKEYS`, and authenticates nothing.
+
+- The whole call, connecting included, is bounded by `timeout`.
+- Each error names its step: `connect`, `banner`, `key exchange`, `no common algorithm`,
+  `disconnected by the server`, `host key`, `bad signature`, or a timeout. Text the server sent
+  appears only as an excerpt of at most 64 bytes with everything but printable ASCII escaped.
+- A scan only reports which key the server holds. The caller decides whether to trust it.
+- **RSA host key sizes.** The scan reads and verifies keys with `ssh-key`, which refuses an RSA host
+  key under 2048 bits and builds the verifying key with `rsa`'s default limit of 4096 bits. A server
+  whose RSA host key is outside 2048 to 4096 bits, or that only offers `ssh-rsa` with SHA-1, fails
+  the scan, though OpenSSH's client accepts such a key. The check fails closed: the plugin can't
+  confirm the key, so the workspace's `ssh` refuses the host. Other key types have no such limit.
+- The tests run the scan against a fake server over an in-memory stream, against the exchange hash
+  of a vector computed with an independent implementation, and against a throwaway OpenSSH `sshd` on
+  loopback with a host key of every type (skipped, with a printed reason, when `sshd` or
+  `ssh-keygen` is missing; `DOOZERS_REQUIRE_SSHD=1` makes that a failure).
+
 ## The echo plugin
 
 `plugins/doozers-channel-echo` (`publish = false`) is a channel plugin for tests of the plugin host,

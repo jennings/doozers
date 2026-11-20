@@ -18,6 +18,8 @@ tls = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-root-certs"]
 
 [dependencies]
 async-trait.workspace = true
+# X25519 for the host key scan (`ssh`).
+aws-lc-rs.workspace = true
 futures.workspace = true
 doozers-proto.workspace = true
 doozers-types.workspace = true
@@ -31,6 +33,10 @@ serde.workspace = true
 serde_json.workspace = true
 serde_path_to_error = "0.1.20"
 sha2.workspace = true
+# `Verifier`, for checking a host key's signature (`ssh`).
+signature = { version = "2.2", default-features = false }
+# Parsing host keys and verifying their signatures (`ssh`).
+ssh-key.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "net", "rt", "signal", "sync", "time"] }

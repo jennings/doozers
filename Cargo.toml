@@ -25,6 +25,8 @@ doozers-types = { path = "crates/doozers-types", version = "0.1.0" }
 # add the features they need.
 anyhow = "1.0.104"
 async-trait = "0.1.92"
+# AES-256-GCM for the core's secret store and X25519 for the SDK's host key scan.
+aws-lc-rs = { version = "1.18.2", default-features = false, features = ["aws-lc-sys"] }
 base64 = "0.22.1"
 bytes = "1.12.1"
 futures = "0.3.34"
@@ -41,6 +43,9 @@ rusqlite = "0.40.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
+# SSH keys: the core generates, stores, and signs with them; the SDK parses host keys and verifies
+# their signatures. No DSA, no `sk-` keys. Members add `encryption` and `getrandom` as needed.
+ssh-key = { version = "0.6.7", default-features = false, features = ["ecdsa", "ed25519", "p256", "p384", "p521", "rsa", "std"] }
 thiserror = "2.0.21"
 tokio = "1.54.1"
 tokio-util = "0.7.20"

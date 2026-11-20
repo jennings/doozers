@@ -31,6 +31,9 @@
 //! `config` module parses durations and sizes in a plugin's `config` table the way `doozers.toml`
 //! writes them.
 //!
+//! An environment plugin that checks a workspace's first use of an SSH host from its own network
+//! can fetch the host's key with [`ssh::scan_host_key`].
+//!
 //! See [`ChannelPlugin`] and [`EnvironmentPlugin`] for complete examples. The user guide's
 //! "Writing a plugin" page and `Docs/technical/plugin-sdk.md` in the repository describe the
 //! behavior in detail.
@@ -52,6 +55,7 @@ pub mod render;
 mod run;
 mod server;
 mod spool;
+pub mod ssh;
 mod startup;
 #[cfg(test)]
 mod test_support;
