@@ -14,6 +14,14 @@ use crate::error::{Error, ErrorExt as _, Result};
 /// Where the helper lives inside a container.
 pub const HELPER_PATH: &str = "/.doozers/bin/doozers-workspace-helper";
 
+/// The ssh-agent socket the helper's `ssh-agent` subcommand serves inside a container.
+pub const SSH_AGENT_SOCKET: &str = "/.doozers/run/ssh-agent.sock";
+
+/// `SSH_AUTH_SOCK` as a container or exec environment entry.
+pub(crate) fn ssh_auth_sock_env() -> String {
+    format!("SSH_AUTH_SOCK={SSH_AGENT_SOCKET}")
+}
+
 /// A CPU architecture the helper is built for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Arch {
@@ -101,6 +109,28 @@ pub fn archive(helper: &[u8]) -> Result<Bytes> {
     header.set_mtime(0);
     builder
         .append_data(&mut header, ".doozers/bin/doozers-workspace-helper", helper)
+        .map_err(|e| Error::other(format!("building the helper archive: {e}")))?;
+    builder
+        .into_inner()
+        .map(Bytes::from)
+        .map_err(|e| Error::other(format!("building the helper archive: {e}")))
+}
+
+/// A tar archive, to extract at `/`, holding only the helper, as `/.doozers/bin/<name>`. A
+/// workspace created before the `ssh-agent` subcommand existed gets its helper from this, under a
+/// temporary `name`, and the plugin renames it over [`HELPER_PATH`]: renaming doesn't need to open
+/// the old file, which the container's `idle` process is still executing.
+pub fn replacement_archive(helper: &[u8], name: &str) -> Result<Bytes> {
+    let mut builder = tar::Builder::new(Vec::with_capacity(helper.len() + 1024));
+    let mut header = tar::Header::new_gnu();
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_size(helper.len() as u64);
+    header.set_mode(0o755);
+    header.set_uid(0);
+    header.set_gid(0);
+    header.set_mtime(0);
+    builder
+        .append_data(&mut header, format!(".doozers/bin/{name}"), helper)
         .map_err(|e| Error::other(format!("building the helper archive: {e}")))?;
     builder
         .into_inner()

@@ -1,10 +1,11 @@
 //! Runs the built helper binary the way the Docker environment plugin does.
 
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -476,4 +477,279 @@ fn df_reports_free_bytes() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(66));
+}
+
+/// The plugin's end of `ssh-agent`: the helper's stdio, speaking frames.
+struct Relay {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: ChildStdout,
+    socket: PathBuf,
+    // Keeps the socket's directory (a short path: socket paths are limited to about 100 bytes).
+    _dir: TempDir,
+}
+
+const REQUEST: u8 = 1;
+const CLOSED: u8 = 2;
+const REPLY: u8 = 3;
+
+impl Relay {
+    fn start() -> Self {
+        Self::start_in(TempDir::new().unwrap(), |_| {})
+    }
+
+    fn start_in(dir: TempDir, prepare: impl FnOnce(&Path)) -> Self {
+        let socket = dir.path().join("a.sock");
+        prepare(&socket);
+        let run_dir = TempDir::new().unwrap();
+        let mut child = helper(run_dir.path())
+            .arg("ssh-agent")
+            .arg("--socket")
+            .arg(&socket)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().unwrap();
+        // The socket path exists before `listen` replaces a stale file, so wait for a connection.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while UnixStream::connect(&socket).is_err() {
+            assert!(Instant::now() < deadline, "the helper never listened");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let mut relay = Self {
+            child,
+            stdin,
+            stdout,
+            socket,
+            _dir: dir,
+        };
+        // The probe connection above is connection 1; consume its closed frame.
+        // (Another thread could race it, so the first frame is checked, not assumed.)
+        let (kind, connection, _) = relay.read_frame();
+        assert_eq!((kind, connection), (CLOSED, 1));
+        relay
+    }
+
+    fn connect(&self) -> UnixStream {
+        let stream = UnixStream::connect(&self.socket).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream
+    }
+
+    fn read_frame(&mut self) -> (u8, u64, Vec<u8>) {
+        let mut length = [0u8; 4];
+        self.stdout.read_exact(&mut length).unwrap();
+        let mut rest = vec![0u8; u32::from_be_bytes(length) as usize];
+        self.stdout.read_exact(&mut rest).unwrap();
+        let connection = u64::from_be_bytes(rest[1..9].try_into().unwrap());
+        (rest[0], connection, rest[9..].to_vec())
+    }
+
+    fn send_frame(&mut self, kind: u8, connection: u64, payload: &[u8]) {
+        let mut frame = ((9 + payload.len()) as u32).to_be_bytes().to_vec();
+        frame.push(kind);
+        frame.extend(connection.to_be_bytes());
+        frame.extend(payload);
+        let stdin = self.stdin.as_mut().unwrap();
+        stdin.write_all(&frame).unwrap();
+        stdin.flush().unwrap();
+    }
+
+    fn close_stdin(&mut self) {
+        self.stdin = None;
+    }
+
+    fn wait_for_exit(&mut self) -> std::process::ExitStatus {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                return status;
+            }
+            assert!(Instant::now() < deadline, "the helper never exited");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+impl Drop for Relay {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn send_message(stream: &mut UnixStream, message: &[u8]) {
+    stream
+        .write_all(&(message.len() as u32).to_be_bytes())
+        .unwrap();
+    stream.write_all(message).unwrap();
+}
+
+fn read_message(stream: &mut UnixStream) -> Vec<u8> {
+    let mut length = [0u8; 4];
+    stream.read_exact(&mut length).unwrap();
+    let mut message = vec![0u8; u32::from_be_bytes(length) as usize];
+    stream.read_exact(&mut message).unwrap();
+    message
+}
+
+#[test]
+fn ssh_agent_listens_on_a_socket_anyone_may_use() {
+    let relay = Relay::start();
+    let mode = fs::metadata(&relay.socket).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o666);
+}
+
+#[test]
+fn ssh_agent_replaces_a_stale_socket_file() {
+    let relay = Relay::start_in(TempDir::new().unwrap(), |socket| {
+        fs::write(socket, "left over").unwrap();
+    });
+    drop(relay.connect());
+}
+
+#[test]
+fn ssh_agent_multiplexes_clients_and_routes_replies_by_connection() {
+    let mut relay = Relay::start();
+    let (mut first, mut second) = (relay.connect(), relay.connect());
+    send_message(&mut first, b"\x0bfirst");
+    let (kind, first_id, payload) = relay.read_frame();
+    assert_eq!((kind, payload.as_slice()), (REQUEST, &b"\x0bfirst"[..]));
+    send_message(&mut second, b"\x0dsecond");
+    let (kind, second_id, payload) = relay.read_frame();
+    assert_eq!((kind, payload.as_slice()), (REQUEST, &b"\x0dsecond"[..]));
+    assert_ne!(first_id, second_id);
+
+    // Answer out of order: each reply reaches only its own client.
+    relay.send_frame(REPLY, second_id, b"\x0eto-second");
+    relay.send_frame(REPLY, first_id, b"\x0cto-first");
+    assert_eq!(read_message(&mut second), b"\x0eto-second");
+    assert_eq!(read_message(&mut first), b"\x0cto-first");
+
+    // A client may send several requests on one connection.
+    send_message(&mut first, b"\x0bagain");
+    let (kind, id, payload) = relay.read_frame();
+    assert_eq!(
+        (kind, id, payload.as_slice()),
+        (REQUEST, first_id, &b"\x0bagain"[..])
+    );
+}
+
+#[test]
+fn ssh_agent_reports_closed_connections_and_drops_late_replies() {
+    let mut relay = Relay::start();
+    let mut gone = relay.connect();
+    let mut stays = relay.connect();
+    send_message(&mut gone, b"\x0bhello");
+    let (_, gone_id, _) = relay.read_frame();
+    drop(gone);
+    let (kind, id, payload) = relay.read_frame();
+    assert_eq!((kind, id), (CLOSED, gone_id));
+    assert!(payload.is_empty());
+
+    // A reply for the closed connection, an unknown kind, and an unknown connection are all
+    // ignored, and the relay still works.
+    relay.send_frame(REPLY, gone_id, b"late");
+    relay.send_frame(9, 1, b"future");
+    relay.send_frame(REPLY, 9999, b"nobody");
+    send_message(&mut stays, b"\x0bping");
+    let (kind, stays_id, _) = relay.read_frame();
+    assert_eq!(kind, REQUEST);
+    relay.send_frame(REPLY, stays_id, b"\x0cpong");
+    assert_eq!(read_message(&mut stays), b"\x0cpong");
+}
+
+#[test]
+fn ssh_agent_disconnects_a_client_whose_message_is_too_long() {
+    let mut relay = Relay::start();
+    let mut client = relay.connect();
+    let mut other = relay.connect();
+    // 256 KiB is allowed; one byte more closes the client.
+    send_message(&mut client, &vec![11u8; 256 * 1024]);
+    let (kind, id, payload) = relay.read_frame();
+    assert_eq!((kind, payload.len()), (REQUEST, 256 * 1024));
+    client
+        .write_all(&(256u32 * 1024 + 1).to_be_bytes())
+        .unwrap();
+    let (kind, closed_id, _) = relay.read_frame();
+    assert_eq!((kind, closed_id), (CLOSED, id));
+    let mut byte = [0u8; 1];
+    assert_eq!(client.read(&mut byte).unwrap(), 0);
+
+    // Other clients are unaffected.
+    send_message(&mut other, b"\x0bok");
+    let (kind, _, payload) = relay.read_frame();
+    assert_eq!((kind, payload.as_slice()), (REQUEST, &b"\x0bok"[..]));
+}
+
+#[test]
+fn ssh_agent_closes_a_client_that_never_reads_without_stalling_the_others() {
+    let mut relay = Relay::start();
+    let mut deaf = relay.connect();
+    let mut other = relay.connect();
+    send_message(&mut deaf, b"\x0bdeaf");
+    let (kind, deaf_id, _) = relay.read_frame();
+    assert_eq!(kind, REQUEST);
+    send_message(&mut other, b"\x0bother");
+    let (kind, other_id, _) = relay.read_frame();
+    assert_eq!(kind, REQUEST);
+
+    // The plugin answers the client that doesn't read with more than its socket and the helper's
+    // queue hold, then answers the other one. The frames go out from another thread: if the helper
+    // stalled behind the first client, a write here would block and hang the test.
+    let mut stdin = relay.stdin.take().unwrap();
+    let sender = std::thread::spawn(move || {
+        let mut write = |kind: u8, connection: u64, payload: &[u8]| {
+            let mut frame = ((9 + payload.len()) as u32).to_be_bytes().to_vec();
+            frame.push(kind);
+            frame.extend(connection.to_be_bytes());
+            frame.extend(payload);
+            stdin.write_all(&frame).is_ok() && stdin.flush().is_ok()
+        };
+        let big = vec![12u8; 200 * 1024];
+        for _ in 0..64 {
+            if !write(REPLY, deaf_id, &big) {
+                return stdin;
+            }
+        }
+        write(REPLY, other_id, b"\x0cfor-other");
+        stdin
+    });
+
+    // The other client's reply arrives promptly (its read times out after 10 seconds, well under
+    // the 30 seconds a stalled write to the first client would take to give up).
+    assert_eq!(read_message(&mut other), b"\x0cfor-other");
+    // And the client that never read is closed.
+    let (kind, id, _) = relay.read_frame();
+    assert_eq!((kind, id), (CLOSED, deaf_id));
+    relay.stdin = Some(sender.join().unwrap());
+
+    // The relay still works for the client that read.
+    send_message(&mut other, b"\x0bagain");
+    let (kind, id, _) = relay.read_frame();
+    assert_eq!((kind, id), (REQUEST, other_id));
+}
+
+#[test]
+fn ssh_agent_exits_and_removes_its_socket_when_stdin_ends() {
+    let mut relay = Relay::start();
+    let _client = relay.connect();
+    relay.close_stdin();
+    assert_eq!(relay.wait_for_exit().code(), Some(0));
+    assert!(!relay.socket.exists());
+}
+
+#[test]
+fn ssh_agent_refuses_a_stray_argument() {
+    let run_dir = TempDir::new().unwrap();
+    let out = helper(run_dir.path())
+        .args(["ssh-agent", "--bogus"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(64));
 }

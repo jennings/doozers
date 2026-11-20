@@ -470,15 +470,24 @@ the kind.
 
 `EnvironmentAttach` wraps the plugin in a `RemoteEnvironment`, which implements
 `doozers_types::Environment` with the SDK's conversions. It calls `Info` (10 s) after each
-successful `Configure` and then `Registry::register_environment(instance, client, info)`. A failed
-`Info` fails the launch, retried if the error is `Unavailable`. When a plugin ends (shutdown,
-restart, crash, or a failed check), supervision calls `Launch::ended`, which calls
+successful `Configure` and then
+`Registry::register_environment(instance, client, info, capabilities)`, where `capabilities` are
+what the plugin's `Describe` reported (`EnvironmentCapabilities`, with `ssh_relay`). A failed `Info`
+fails the launch, retried if the error is `Unavailable`. When a plugin ends (shutdown, restart,
+crash, or a failed check), supervision calls `Launch::ended`, which calls
 `Registry::unregister_environment`, so an environment is reachable only while its plugin is.
-Dropping the stream `exec` returns drops the gRPC call, which cancels it.
+Dropping the stream `exec` returns drops the gRPC call, which cancels it. `relay` sends `open` first
+and then the replies, scrubs failures of the instance's secrets like the other calls, and ends its
+stream when the plugin ends the call. Dropping that stream also ends the messages it sends, because
+the call's request half would otherwise keep the call alive.
+
+The capabilities are kept with the schema: they stay while the plugin is down and a new connection
+replaces them.
 
 The registry exposes `environment(name)` and `environments()` as `EnvironmentEntry` (name,
-description, `stop_after`, `delete_after`, `options_schema`, `connections`, `client`,
-`reachable()`), and `environment_changes()`, a `watch` that counts registrations and withdrawals.
+description, `stop_after`, `delete_after`, `options_schema`, `capabilities`, `connections`,
+`client`, `reachable()`), and `environment_changes()`, a `watch` that counts registrations and
+withdrawals.
 
 ## Tests
 

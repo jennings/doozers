@@ -187,6 +187,11 @@ impl Settings {
                     "env: HOME is set to /workspace/.home and can't be changed",
                 ));
             }
+            if name == "SSH_AUTH_SOCK" {
+                return Err(Error::invalid(
+                    "env: SSH_AUTH_SOCK is set to the workspace's agent socket and can't be changed",
+                ));
+            }
             env.push(format!("{name}={value}"));
         }
 
@@ -412,6 +417,7 @@ mod tests {
             ("network = \"\"", "network"),
             ("[env]\n\"A=B\" = \"x\"", "env"),
             ("[env]\nHOME = \"/root\"", "env"),
+            ("[env]\nSSH_AUTH_SOCK = \"/tmp/agent\"", "env"),
             (
                 "[registries.\"bad host!\"]\nusername = \"a\"\npassword = \"b\"",
                 "registries",

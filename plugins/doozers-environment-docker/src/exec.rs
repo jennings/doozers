@@ -18,7 +18,7 @@ use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::error::{Error, ErrorExt as _, Result};
-use crate::helper::HELPER_PATH;
+use crate::helper::{HELPER_PATH, ssh_auth_sock_env};
 use crate::{DockerEnvironment, WORKSPACE_DIR};
 use doozers_types::{ExecEvent, ExecExit, ExecRequest};
 
@@ -28,7 +28,7 @@ const KILL_GRACE: Duration = Duration::from_secs(10);
 /// How long to wait for the engine to record an exec's exit status after its output ends.
 const EXIT_STATUS_WAIT: Duration = Duration::from_secs(5);
 
-type Output =
+pub(crate) type Output =
     Pin<Box<dyn Stream<Item = std::result::Result<LogOutput, bollard::errors::Error>> + Send>>;
 
 /// What a command that ran to completion wrote and returned.
@@ -47,10 +47,10 @@ pub(crate) struct Collected {
     pub dropped: u64,
 }
 
-struct Attached {
-    exec_id: String,
-    output: Output,
-    input: Pin<Box<dyn AsyncWrite + Send>>,
+pub(crate) struct Attached {
+    pub exec_id: String,
+    pub output: Output,
+    pub input: Pin<Box<dyn AsyncWrite + Send>>,
 }
 
 /// Kills a wrapped command when dropped, unless the command already ended.
@@ -252,7 +252,7 @@ impl DockerEnvironment {
         Ok(plain)
     }
 
-    async fn start_exec(
+    pub(crate) async fn start_exec(
         &self,
         container: &str,
         command: Vec<String>,
@@ -268,6 +268,8 @@ impl DockerEnvironment {
                     attach_stderr: Some(true),
                     tty: Some(false),
                     working_dir: Some(WORKSPACE_DIR.to_owned()),
+                    // Set here too, so workspaces created before the agent socket existed get it.
+                    env: Some(vec![ssh_auth_sock_env()]),
                     cmd: Some(command),
                     ..Default::default()
                 },

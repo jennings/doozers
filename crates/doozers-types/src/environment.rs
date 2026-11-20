@@ -77,6 +77,25 @@ pub trait Environment: Send + Sync {
 
     /// Searches file contents with a regular expression.
     async fn grep(&self, id: &WorkspaceId, request: GrepRequest) -> Result<GrepResult>;
+
+    /// Relays the ssh-agent requests of a running workspace's clients to the core, and the core's
+    /// `replies` back to them. The returned stream yields what the workspace's clients send; the
+    /// relay ends when it ends, or when the `replies` stream ends.
+    ///
+    /// Dropping the returned stream ends the relay. The default implementation refuses: only an
+    /// environment that declares the capability implements it. A workspace that isn't running is
+    /// [`Error::InvalidRequest`](crate::Error::InvalidRequest), and one that doesn't exist is
+    /// [`Error::NotFound`](crate::Error::NotFound).
+    async fn relay(
+        &self,
+        id: &WorkspaceId,
+        replies: BoxStream<'static, RelayReply>,
+    ) -> Result<BoxStream<'static, Result<RelayRequest>>> {
+        let _ = (id, replies);
+        Err(crate::Error::InvalidRequest(
+            "this environment doesn't relay ssh-agent requests".to_owned(),
+        ))
+    }
 }
 
 /// What an environment instance is, declared once.
@@ -267,4 +286,51 @@ pub struct GrepResult {
     pub matches: Vec<GrepMatch>,
     /// More lines matched than [`GrepRequest::limit`].
     pub truncated: bool,
+}
+
+/// What the core sends on an [`Environment::relay`], to a workspace's clients.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RelayReply {
+    /// The answer to an [`AgentRequest`].
+    Agent(AgentReply),
+}
+
+/// What an environment sends on an [`Environment::relay`], from a workspace's clients.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RelayRequest {
+    /// A client made a request.
+    Agent(AgentRequest),
+    /// A client disconnected.
+    AgentClosed(AgentClosed),
+}
+
+/// The longest ssh-agent message a relay carries, in bytes (OpenSSH's limit).
+pub const MAX_AGENT_MESSAGE: usize = 256 * 1024;
+
+/// One ssh-agent protocol message, without its 4-byte length, from a client connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentRequest {
+    /// Names the client connection within one relay. The environment never reuses it.
+    pub connection: u64,
+    /// The message, at most [`MAX_AGENT_MESSAGE`] bytes.
+    pub message: Vec<u8>,
+}
+
+/// One ssh-agent protocol message, without its 4-byte length, for a client connection. A reply for
+/// a connection that has closed is dropped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentReply {
+    /// The connection of the [`AgentRequest`] this answers.
+    pub connection: u64,
+    /// The message.
+    pub message: Vec<u8>,
+}
+
+/// A client connection has ended: whatever the core kept for it can go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AgentClosed {
+    /// The connection that ended.
+    pub connection: u64,
 }

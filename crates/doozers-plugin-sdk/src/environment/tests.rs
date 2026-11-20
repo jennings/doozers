@@ -10,8 +10,9 @@ use doozers_proto::plugin::v1::plugin_service_client::PluginServiceClient;
 use doozers_proto::plugin::v1::plugin_service_server::PluginServiceServer;
 use doozers_proto::plugin::v1::{ConfigureRequest, DescribeRequest};
 use doozers_types::{
-    EnvironmentInfo, Error, ExecExit, ExecRequest, FindRequest, FindResult, GrepMatch, GrepRequest,
-    GrepResult, ReadFile, StartOutcome, Timestamp, Workspace, WorkspaceDetail, WorkspaceList,
+    AgentClosed, AgentReply, AgentRequest, EnvironmentInfo, Error, ExecExit, ExecRequest,
+    FindRequest, FindResult, GrepMatch, GrepRequest, GrepResult, ReadFile, RelayReply,
+    RelayRequest, StartOutcome, Timestamp, Workspace, WorkspaceDetail, WorkspaceList,
     WorkspaceState,
 };
 use futures::stream;
@@ -25,7 +26,9 @@ use tonic_health::pb::health_client::HealthClient;
 
 use super::*;
 use crate::base::{Base, OnShutdown};
-use crate::convert::environment::{exec_event_from_proto, workspace_from_proto};
+use crate::convert::environment::{
+    exec_event_from_proto, relay_request_from_proto, workspace_from_proto,
+};
 use crate::dirs::SdkDirs;
 use crate::test_support::serve;
 
@@ -40,6 +43,8 @@ struct Seen {
     files: BTreeMap<String, Vec<u8>>,
     /// Closes when the stream of the `hang` command is dropped.
     hung_exec: Option<oneshot::Receiver<()>>,
+    /// The workspaces `relay` was called for.
+    relayed: Vec<String>,
 }
 
 struct Fake {
@@ -209,6 +214,40 @@ impl Environment for Fake {
             truncated: false,
         })
     }
+
+    /// Asks `REQUEST_IDENTITIES` (11) for connection 1, then answers every reply with the reply's
+    /// message reversed, and ends when the core ends its replies.
+    async fn relay(
+        &self,
+        id: &WorkspaceId,
+        replies: BoxStream<'static, RelayReply>,
+    ) -> Result<BoxStream<'static, Result<RelayRequest>>> {
+        fail_by_name(id)?;
+        self.seen.lock().unwrap().relayed.push(id.to_string());
+        let first = RelayRequest::Agent(AgentRequest {
+            connection: 1,
+            message: vec![11],
+        });
+        Ok(stream::once(async { Ok(first) })
+            .chain(replies.flat_map(|reply| match reply {
+                RelayReply::Agent(AgentReply {
+                    connection,
+                    mut message,
+                }) => {
+                    message.reverse();
+                    stream::iter([
+                        Ok(RelayRequest::Agent(AgentRequest {
+                            connection,
+                            message,
+                        })),
+                        Ok(RelayRequest::AgentClosed(AgentClosed { connection })),
+                    ])
+                    .boxed()
+                }
+                _ => stream::empty().boxed(),
+            }))
+            .boxed())
+    }
 }
 
 struct Fixture {
@@ -250,6 +289,7 @@ async fn fixture_with(own_config: Option<serde_json::Value>) -> Fixture {
         })
     };
     let (kind, routes) = EnvironmentPlugin::new("fake", "0.0.1")
+        .ssh_relay()
         .requested_grants(Grants {
             unix: vec!["/var/run/fake.sock".into()],
             ..Grants::default()
@@ -357,7 +397,7 @@ async fn describe_reports_the_environment_capabilities() {
     assert_eq!(
         described.capabilities,
         Some(describe_response::Capabilities::Environment(
-            EnvironmentCapabilities {}
+            EnvironmentCapabilities { ssh_relay: true }
         ))
     );
 }
@@ -819,4 +859,120 @@ async fn cancelling_exec_drops_the_plugins_stream() {
         .await
         .expect("the plugin's stream was dropped when the call was cancelled");
     assert!(closed.is_err());
+}
+
+/// Opens `Relay` for `id`: the client's request stream (what the core sends) and the call's result.
+async fn open_relay(
+    f: &mut Fixture,
+    first: pb::RelayReply,
+) -> (
+    futures::channel::mpsc::UnboundedSender<pb::RelayReply>,
+    Result<tonic::Streaming<pb::RelayRequest>, Status>,
+) {
+    let (core, requests) = futures::channel::mpsc::unbounded();
+    core.unbounded_send(first).unwrap();
+    let response = f.env.relay(requests).await.map(|r| r.into_inner());
+    (core, response)
+}
+
+fn open(id: &str) -> pb::RelayReply {
+    pb::RelayReply {
+        message: Some(pb::relay_reply::Message::Open(pb::RelayOpen {
+            workspace_id: id.into(),
+        })),
+    }
+}
+
+fn agent_reply(connection: u64, message: &[u8]) -> pb::RelayReply {
+    pb::RelayReply {
+        message: Some(pb::relay_reply::Message::Agent(pb::AgentReply {
+            connection,
+            message: message.to_vec(),
+        })),
+    }
+}
+
+#[tokio::test]
+async fn relay_carries_requests_and_replies_through_the_environment() {
+    let mut f = Fixture::configured().await;
+    let (core, response) = open_relay(&mut f, open("ws-1")).await;
+    let mut requests = response.unwrap();
+    assert_eq!(f.seen.lock().unwrap().relayed, ["ws-1"]);
+
+    async fn next(requests: &mut tonic::Streaming<pb::RelayRequest>) -> RelayRequest {
+        let message = tokio::time::timeout(WAIT, requests.message())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        relay_request_from_proto(message).unwrap()
+    }
+    // The environment asks first.
+    assert_eq!(
+        next(&mut requests).await,
+        RelayRequest::Agent(AgentRequest {
+            connection: 1,
+            message: vec![11]
+        })
+    );
+    // The core's reply reaches the environment, and what it sends back reaches the core.
+    core.unbounded_send(agent_reply(1, &[12, 0, 0, 0, 0]))
+        .unwrap();
+    assert_eq!(
+        next(&mut requests).await,
+        RelayRequest::Agent(AgentRequest {
+            connection: 1,
+            message: vec![0, 0, 0, 0, 12]
+        })
+    );
+    assert_eq!(
+        next(&mut requests).await,
+        RelayRequest::AgentClosed(AgentClosed { connection: 1 })
+    );
+
+    // The core ending its side ends the relay.
+    drop(core);
+    let end = tokio::time::timeout(WAIT, requests.message())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(end.is_none());
+}
+
+#[tokio::test]
+async fn relay_refuses_a_call_that_does_not_start_with_open() {
+    let mut f = Fixture::configured().await;
+    let (_core, response) = open_relay(&mut f, agent_reply(1, &[12])).await;
+    let status = response.unwrap_err();
+    assert_eq!(status.code(), Code::InvalidArgument);
+    assert!(status.message().contains("open"), "{}", status.message());
+
+    // A call with no message at all.
+    let empty = f
+        .env
+        .relay(stream::empty::<pb::RelayReply>())
+        .await
+        .unwrap_err();
+    assert_eq!(empty.code(), Code::InvalidArgument);
+    assert!(f.seen.lock().unwrap().relayed.is_empty());
+
+    // An open for an invalid workspace id.
+    let (_core, response) = open_relay(&mut f, open("Not Valid")).await;
+    assert_eq!(response.unwrap_err().code(), Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn relay_reports_the_environments_errors() {
+    let mut f = Fixture::configured().await;
+    let (_core, response) = open_relay(&mut f, open("gone")).await;
+    assert_eq!(response.unwrap_err().code(), Code::NotFound);
+    let (_core, response) = open_relay(&mut f, open("refuse")).await;
+    assert_eq!(response.unwrap_err().code(), Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn relay_needs_a_configured_plugin() {
+    let mut f = fixture().await;
+    let (_core, response) = open_relay(&mut f, open("ws-1")).await;
+    assert_eq!(response.unwrap_err().code(), Code::FailedPrecondition);
 }

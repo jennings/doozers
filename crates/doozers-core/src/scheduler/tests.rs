@@ -272,6 +272,7 @@ impl Harness {
                 doozers_types::EnvironmentInfo {
                     options_schema: json!({}),
                 },
+                crate::registry::EnvironmentCapabilities::default(),
             )
             .unwrap();
         let (ran_tx, ran) = mpsc::unbounded_channel();

@@ -47,6 +47,7 @@ impl Chats {
                 EnvironmentInfo {
                     options_schema: json!({"type": "object"}),
                 },
+                crate::registry::EnvironmentCapabilities::default(),
             )
             .unwrap();
         let workspaces = Workspaces::new(env.store.clone(), env.registry.clone(), clock);

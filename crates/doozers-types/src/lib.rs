@@ -27,9 +27,10 @@ pub use channel::{
     OutputMode, SendTarget, ToolCallWriter,
 };
 pub use environment::{
-    Environment, EnvironmentInfo, ExecEvent, ExecExit, ExecRequest, FindRequest, FindResult,
-    GrepMatch, GrepRequest, GrepResult, ReadFile, StartOutcome, Workspace, WorkspaceDetail,
-    WorkspaceList, WorkspaceState,
+    AgentClosed, AgentReply, AgentRequest, Environment, EnvironmentInfo, ExecEvent, ExecExit,
+    ExecRequest, FindRequest, FindResult, GrepMatch, GrepRequest, GrepResult, MAX_AGENT_MESSAGE,
+    ReadFile, RelayReply, RelayRequest, StartOutcome, Workspace, WorkspaceDetail, WorkspaceList,
+    WorkspaceState,
 };
 pub use error::{Error, Result};
 pub use id::{

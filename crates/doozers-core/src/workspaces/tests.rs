@@ -83,6 +83,7 @@ impl Harness {
                 EnvironmentInfo {
                     options_schema: json!({"type": "object"}),
                 },
+                crate::registry::EnvironmentCapabilities::default(),
             )
             .unwrap();
     }
@@ -1342,4 +1343,35 @@ async fn a_workspace_still_being_created_is_not_stopped_or_deleted_by_an_operato
         Err(ManageError::StillCreating)
     ));
     assert_eq!(h.record(&id).await.state, WorkspaceState::Creating);
+}
+
+#[tokio::test]
+async fn the_registry_keeps_the_capabilities_an_environment_plugin_reported() {
+    let h = Harness::new().await;
+    let ssh_relay = |h: &Harness| {
+        h.registry
+            .environment("box")
+            .unwrap()
+            .capabilities
+            .ssh_relay
+    };
+    assert!(!ssh_relay(&h));
+
+    h.disconnect();
+    h.registry
+        .register_environment(
+            &name("box"),
+            h.fake.clone(),
+            EnvironmentInfo {
+                options_schema: json!({"type": "object"}),
+            },
+            crate::registry::EnvironmentCapabilities::new(true),
+        )
+        .unwrap();
+    assert!(ssh_relay(&h));
+    // Kept while the plugin is away, replaced by the next connection's.
+    h.disconnect();
+    assert!(ssh_relay(&h));
+    h.connect();
+    assert!(!ssh_relay(&h));
 }

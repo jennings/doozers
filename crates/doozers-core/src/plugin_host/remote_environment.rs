@@ -13,12 +13,14 @@ use async_trait::async_trait;
 use doozers_plugin_sdk::convert::environment::{
     exec_event_from_proto, exec_request_to_proto, find_request_to_proto, find_result_from_proto,
     grep_request_to_proto, grep_result_from_proto, info_from_proto, read_file_from_proto,
-    start_outcome_from_proto, workspace_from_proto, workspace_list_from_proto,
+    relay_open_to_proto, relay_reply_to_proto, relay_request_from_proto, start_outcome_from_proto,
+    workspace_from_proto, workspace_list_from_proto,
 };
 use doozers_proto::environment::v1 as pb;
 use doozers_types::{
     Environment, EnvironmentInfo, Error, ExecEvent, ExecRequest, FindRequest, FindResult,
-    GrepRequest, GrepResult, ReadFile, Result, StartOutcome, Workspace, WorkspaceId, WorkspaceList,
+    GrepRequest, GrepResult, ReadFile, RelayReply, RelayRequest, Result, StartOutcome, Workspace,
+    WorkspaceId, WorkspaceList,
 };
 use futures::stream::{self, BoxStream, StreamExt as _};
 use tonic::{Code, Status, Streaming};
@@ -43,19 +45,32 @@ impl fmt::Debug for RemoteEnvironment {
 impl RemoteEnvironment {
     /// The environment of `plugin`.
     pub fn new(plugin: &LaunchedPlugin) -> Self {
-        Self {
-            connection: plugin.connection.clone(),
-            secrets: Secrets::new(plugin.secrets.clone()),
-            span: plugin.span.clone(),
-        }
+        Self::from_parts(
+            plugin.connection.clone(),
+            Secrets::new(plugin.secrets.clone()),
+            plugin.span.clone(),
+        )
     }
 
     /// [`RemoteEnvironment::new`] for a remote plugin.
     pub fn from_remote(plugin: &RemotePlugin) -> Self {
+        Self::from_parts(
+            plugin.connection.clone(),
+            plugin.secrets.clone(),
+            plugin.span.clone(),
+        )
+    }
+
+    /// The environment behind `connection`, scrubbing plugin-provided text of `secrets`.
+    pub(super) fn from_parts(
+        connection: PluginConnection,
+        secrets: Secrets,
+        span: tracing::Span,
+    ) -> Self {
         Self {
-            connection: plugin.connection.clone(),
-            secrets: plugin.secrets.clone(),
-            span: plugin.span.clone(),
+            connection,
+            secrets,
+            span,
         }
     }
 
@@ -244,6 +259,63 @@ impl Environment for RemoteEnvironment {
             .map_err(|status| self.error("Grep", &status))?;
         Ok(grep_result_from_proto(response.into_inner()))
     }
+
+    async fn relay(
+        &self,
+        id: &WorkspaceId,
+        replies: BoxStream<'static, RelayReply>,
+    ) -> Result<BoxStream<'static, Result<RelayRequest>>> {
+        // The call's request half keeps it alive after its response half is dropped, so dropping
+        // the stream this returns must also end the messages.
+        let (cancel, cancelled) = futures::channel::oneshot::channel::<()>();
+        let messages = relay_messages(id, replies).take_until(cancelled);
+        let response = self
+            .connection
+            .environment()
+            .relay(messages)
+            .instrument(self.span.clone())
+            .await
+            .map_err(|status| self.error("Relay", &status))?;
+        Ok(relay_requests(
+            response.into_inner(),
+            cancel,
+            self.secrets.clone(),
+        ))
+    }
+}
+
+/// What the core sends on a relay: `open` first, then its replies. A reply with no wire form is
+/// dropped.
+fn relay_messages(
+    id: &WorkspaceId,
+    replies: BoxStream<'static, RelayReply>,
+) -> impl futures::Stream<Item = pb::RelayReply> + Send + 'static {
+    stream::once(std::future::ready(relay_open_to_proto(id)))
+        .chain(replies.filter_map(|reply| std::future::ready(relay_reply_to_proto(reply).ok())))
+}
+
+/// What the plugin sent on a relay, ending when it ends the call (or the call fails: the failure
+/// is the last item). Dropping the stream drops the response and, through `cancel`, ends the
+/// messages sent: that cancels the call.
+fn relay_requests(
+    inner: Streaming<pb::RelayRequest>,
+    cancel: futures::channel::oneshot::Sender<()>,
+    secrets: Secrets,
+) -> BoxStream<'static, Result<RelayRequest>> {
+    stream::unfold(Some((inner, cancel)), move |state| {
+        let secrets = secrets.clone();
+        async move {
+            let (mut inner, cancel) = state?;
+            match inner.message().await {
+                Ok(Some(message)) => {
+                    Some((relay_request_from_proto(message), Some((inner, cancel))))
+                }
+                Ok(None) => None,
+                Err(status) => Some((Err(rpc_error(&secrets, "Relay", &status)), None)),
+            }
+        }
+    })
+    .boxed()
 }
 
 /// The events of one `Exec` call. Dropping it drops the response stream, which cancels the call.
@@ -271,3 +343,6 @@ impl ExecEvents {
         Some(event)
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -14,9 +14,10 @@ use std::time::Duration;
 
 use doozers_proto::environment::v1 as pb;
 use doozers_types::{
-    EnvironmentInfo, ExecEvent, ExecExit, ExecRequest, FindRequest, FindResult, GrepMatch,
-    GrepRequest, GrepResult, ReadFile, Result, StartOutcome, Workspace, WorkspaceDetail,
-    WorkspaceId, WorkspaceList, WorkspaceState,
+    AgentClosed, AgentReply, AgentRequest, EnvironmentInfo, ExecEvent, ExecExit, ExecRequest,
+    FindRequest, FindResult, GrepMatch, GrepRequest, GrepResult, MAX_AGENT_MESSAGE, ReadFile,
+    RelayReply, RelayRequest, Result, StartOutcome, Workspace, WorkspaceDetail, WorkspaceId,
+    WorkspaceList, WorkspaceState,
 };
 
 use super::{invalid, timestamp_from_proto, timestamp_to_proto};
@@ -346,6 +347,110 @@ pub fn read_file_from_proto(response: pb::ReadFileResponse) -> ReadFile {
     }
 }
 
+/// The `RelayOpen` message that starts a relay of workspace `id`.
+pub fn relay_open_to_proto(id: &WorkspaceId) -> pb::RelayReply {
+    pb::RelayReply {
+        message: Some(pb::relay_reply::Message::Open(pb::RelayOpen {
+            workspace_id: id.to_string(),
+        })),
+    }
+}
+
+/// The workspace a relay's first message opens. Anything but `open` is invalid.
+pub fn relay_open_from_proto(first: pb::RelayReply) -> Result<WorkspaceId> {
+    match first.message {
+        Some(pb::relay_reply::Message::Open(open)) => {
+            WorkspaceId::new(open.workspace_id).map_err(Into::into)
+        }
+        _ => Err(invalid("the first Relay message must be open")),
+    }
+}
+
+/// A `RelayReply` to its wire message.
+pub fn relay_reply_to_proto(reply: RelayReply) -> Result<pb::RelayReply> {
+    let message = match reply {
+        RelayReply::Agent(AgentReply {
+            connection,
+            message,
+        }) => pb::relay_reply::Message::Agent(pb::AgentReply {
+            connection,
+            message,
+        }),
+        other => return Err(invalid(format!("relay reply {other:?} has no wire form"))),
+    };
+    Ok(pb::RelayReply {
+        message: Some(message),
+    })
+}
+
+/// A wire `RelayReply` after the opening one to `RelayReply`. A second `open`, an unset or unknown
+/// message, and a message longer than [`MAX_AGENT_MESSAGE`] are invalid.
+pub fn relay_reply_from_proto(reply: pb::RelayReply) -> Result<RelayReply> {
+    match reply.message {
+        Some(pb::relay_reply::Message::Agent(reply)) => {
+            check_agent_message(&reply.message)?;
+            Ok(RelayReply::Agent(AgentReply {
+                connection: reply.connection,
+                message: reply.message,
+            }))
+        }
+        Some(pb::relay_reply::Message::Open(_)) => {
+            Err(invalid("Relay: open is only the first message"))
+        }
+        None => Err(invalid("relay reply: missing or unknown")),
+    }
+}
+
+/// A `RelayRequest` to its wire message.
+pub fn relay_request_to_proto(request: RelayRequest) -> Result<pb::RelayRequest> {
+    let message = match request {
+        RelayRequest::Agent(AgentRequest {
+            connection,
+            message,
+        }) => pb::relay_request::Message::Agent(pb::AgentRequest {
+            connection,
+            message,
+        }),
+        RelayRequest::AgentClosed(AgentClosed { connection }) => {
+            pb::relay_request::Message::AgentClosed(pb::AgentClosed { connection })
+        }
+        other => return Err(invalid(format!("relay request {other:?} has no wire form"))),
+    };
+    Ok(pb::RelayRequest {
+        message: Some(message),
+    })
+}
+
+/// A wire `RelayRequest` to `RelayRequest`. An unset or unknown message, and an agent message
+/// longer than [`MAX_AGENT_MESSAGE`], are invalid.
+pub fn relay_request_from_proto(request: pb::RelayRequest) -> Result<RelayRequest> {
+    match request.message {
+        Some(pb::relay_request::Message::Agent(request)) => {
+            check_agent_message(&request.message)?;
+            Ok(RelayRequest::Agent(AgentRequest {
+                connection: request.connection,
+                message: request.message,
+            }))
+        }
+        Some(pb::relay_request::Message::AgentClosed(closed)) => {
+            Ok(RelayRequest::AgentClosed(AgentClosed {
+                connection: closed.connection,
+            }))
+        }
+        None => Err(invalid("relay request: missing or unknown")),
+    }
+}
+
+fn check_agent_message(message: &[u8]) -> Result<()> {
+    if message.len() > MAX_AGENT_MESSAGE {
+        return Err(invalid(format!(
+            "an ssh-agent message of {} bytes is over the {MAX_AGENT_MESSAGE}-byte limit",
+            message.len()
+        )));
+    }
+    Ok(())
+}
+
 /// The wire's empty string is a path that was left out.
 fn non_empty(path: String) -> Option<String> {
     (!path.is_empty()).then_some(path)
@@ -375,6 +480,72 @@ mod tests {
                 WorkspaceDetail::new("Container", "doozers-main.ws-1"),
             ],
         }
+    }
+
+    #[test]
+    fn relay_messages_round_trip() {
+        let open = relay_open_to_proto(&id("ws-1"));
+        assert_eq!(relay_open_from_proto(open.clone()).unwrap(), id("ws-1"));
+        // `open` is only the first message.
+        assert!(matches!(
+            relay_reply_from_proto(open),
+            Err(Error::InvalidRequest(_))
+        ));
+
+        let reply = RelayReply::Agent(AgentReply {
+            connection: 7,
+            message: vec![12, 0, 0, 0, 0],
+        });
+        let wire = relay_reply_to_proto(reply.clone()).unwrap();
+        assert_eq!(relay_reply_from_proto(wire).unwrap(), reply);
+
+        for request in [
+            RelayRequest::Agent(AgentRequest {
+                connection: 7,
+                message: vec![11],
+            }),
+            RelayRequest::AgentClosed(AgentClosed { connection: 7 }),
+        ] {
+            let wire = relay_request_to_proto(request.clone()).unwrap();
+            assert_eq!(relay_request_from_proto(wire).unwrap(), request);
+        }
+    }
+
+    #[test]
+    fn invalid_relay_messages_are_refused() {
+        // The first message must be `open`, with a valid workspace id.
+        for first in [
+            pb::RelayReply { message: None },
+            pb::RelayReply {
+                message: Some(pb::relay_reply::Message::Agent(pb::AgentReply::default())),
+            },
+            pb::RelayReply {
+                message: Some(pb::relay_reply::Message::Open(pb::RelayOpen {
+                    workspace_id: "Not Valid".into(),
+                })),
+            },
+        ] {
+            assert!(relay_open_from_proto(first).is_err());
+        }
+        assert!(relay_reply_from_proto(pb::RelayReply { message: None }).is_err());
+        assert!(relay_request_from_proto(pb::RelayRequest { message: None }).is_err());
+
+        // An agent message may be 256 KiB, not more.
+        let message = |len| pb::RelayRequest {
+            message: Some(pb::relay_request::Message::Agent(pb::AgentRequest {
+                connection: 1,
+                message: vec![0; len],
+            })),
+        };
+        assert!(relay_request_from_proto(message(MAX_AGENT_MESSAGE)).is_ok());
+        assert!(relay_request_from_proto(message(MAX_AGENT_MESSAGE + 1)).is_err());
+        let reply = pb::RelayReply {
+            message: Some(pb::relay_reply::Message::Agent(pb::AgentReply {
+                connection: 1,
+                message: vec![0; MAX_AGENT_MESSAGE + 1],
+            })),
+        };
+        assert!(relay_reply_from_proto(reply).is_err());
     }
 
     #[test]
