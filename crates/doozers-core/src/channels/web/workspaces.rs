@@ -141,6 +141,8 @@ struct WorkspaceRow {
     state: &'static str,
     state_class: &'static str,
     disk: String,
+    /// The user whose SSH keys the workspace gets, if any.
+    key_user: Option<String>,
     /// What the plugin reported now, or failing that, when the workspace was created.
     description: String,
     working_directory: String,
@@ -196,6 +198,7 @@ fn workspace_row(view: WorkspaceView, config: &Config, web_instance: &str) -> Wo
         state,
         state_class,
         disk,
+        key_user: record.key_user.as_ref().map(ToString::to_string),
         description,
         working_directory,
         details,

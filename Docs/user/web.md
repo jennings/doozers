@@ -484,6 +484,8 @@ Each workspace shows:
   is one, or the job run.
 - **Created** and **Last used**.
 - **In use**: whether a running turn is using it now.
+- **SSH keys**: the user whose [SSH keys](ssh.md#use-ssh-in-a-workspace) the workspace gets, or
+  `none`.
 - The state (running or stopped), **Disk used**, and the environment's **Description**,
   **Working directory**, and **Details**. For the [Docker environment](docker-environment.md) the
   details are the image, its digest, the container, the volume, and the limits.

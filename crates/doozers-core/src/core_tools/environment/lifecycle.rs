@@ -103,6 +103,13 @@ impl CoreTool for EnvironmentPluginsTool {
                 "Reachable: {}",
                 if entry.reachable() { "yes" } else { "no" }
             );
+            if entry.capabilities.ssh_relay {
+                let _ = writeln!(
+                    text,
+                    "{}",
+                    self.0.ssh_keys_line(&scope, scope.key_user.as_ref()).await
+                );
+            }
             match &entry.options_schema {
                 Some(schema) => {
                     let pretty = serde_json::to_string_pretty(schema).unwrap_or_default();
@@ -156,17 +163,22 @@ impl CoreTool for EnvironmentCreateTool {
             Ok(scope) => scope,
             Err(output) => return output,
         };
-        if let Err(output) = scope.check(&input.plugin) {
-            return output;
-        }
+        let entry = match scope.check(&input.plugin) {
+            Ok(entry) => entry,
+            Err(output) => return output,
+        };
         let options = input.options.unwrap_or_else(|| json!({}));
         match self
             .0
             .workspaces
-            .create(&scope.owner, &input.plugin, options)
+            .create(&scope.owner, &input.plugin, options, scope.key_user.clone())
             .await
         {
-            Ok(record) => ok(format!("Created the workspace.\n{}", describe(&record))),
+            Ok(record) => ok(format!(
+                "Created the workspace.\n{}{}",
+                describe(&record),
+                self.0.ssh_keys_section(&scope, entry, &record).await
+            )),
             Err(WorkspaceError::AlreadyHasWorkspace { current }) => {
                 ToolOutput::error(already_has(&current))
             }
@@ -354,12 +366,13 @@ impl CoreTool for EnvironmentResetTool {
         match self
             .0
             .workspaces
-            .create(&scope.owner, &plugin, options)
+            .create(&scope.owner, &plugin, options, scope.key_user.clone())
             .await
         {
             Ok(record) => ok(format!(
-                "{gone}\n\nCreated a new workspace.\n{}",
-                describe(&record)
+                "{gone}\n\nCreated a new workspace.\n{}{}",
+                describe(&record),
+                self.0.ssh_keys_section(&scope, entry, &record).await
             )),
             Err(error) => ToolOutput::error(format!(
                 "{gone}\n\nCreating the new workspace failed: {error}\nYou have no workspace now; \

@@ -33,13 +33,15 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
-use doozers_store::{NewWorkspace, Store};
-use doozers_types::{Environment, StartOutcome, Timestamp, WorkspaceId};
+use doozers_store::{NewWorkspace, Session, SessionKind, Store};
+use doozers_types::{Environment, StartOutcome, Timestamp, UserId, WorkspaceId};
 use serde_json::Value;
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 use crate::registry::{EnvironmentEntry, Registry};
 use crate::sessions::Clock;
+use crate::ssh::SshKeys;
+use crate::ssh::relay::Relays;
 
 pub use doozers_store::{DeleteReason, WorkspaceOwner, WorkspaceRecord, WorkspaceState};
 pub use manage::{EnvironmentView, Live, ManageError, Overview, WorkspaceView};
@@ -193,6 +195,10 @@ struct Inner {
     /// reference would keep the registry, and everything it owns, alive for ever.
     registry: Weak<Registry>,
     clock: Arc<dyn Clock>,
+    /// The users' SSH keys: the workspace tools tell the model which ones a workspace gets.
+    ssh_keys: SshKeys,
+    /// The ssh-agent relay of each workspace on an environment that can relay.
+    relays: Relays,
     /// One lock per workspace that has been leased: leases take the shared side, the sweep the
     /// exclusive side. Entries nobody holds are dropped by the sweep.
     locks: Mutex<HashMap<WorkspaceId, Arc<RwLock<()>>>>,
@@ -208,12 +214,20 @@ impl fmt::Debug for Workspaces {
 
 impl Workspaces {
     /// A service over `store`, reaching environment plugins through `registry`, reading the time
-    /// from `clock`.
-    pub fn new(store: Store, registry: Arc<Registry>, clock: Arc<dyn Clock>) -> Self {
+    /// from `clock`. Workspaces on an environment that can relay get an ssh-agent that offers the
+    /// keys of their [key user](key_user) from `ssh_keys`.
+    pub fn new(
+        store: Store,
+        registry: Arc<Registry>,
+        clock: Arc<dyn Clock>,
+        ssh_keys: SshKeys,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 store,
                 registry: Arc::downgrade(&registry),
+                relays: Relays::new(ssh_keys.clone(), clock.clone()),
+                ssh_keys,
                 clock,
                 locks: Mutex::default(),
                 maintenance: tokio::sync::Mutex::new(()),
@@ -234,6 +248,11 @@ impl Workspaces {
         let now = self.inner.clock.now();
         Ok(store.workspaces_fail_creating(now, now).await?
             + store.workspaces_end_job_runs(now).await?)
+    }
+
+    /// The users' SSH keys, which a workspace's agent offers.
+    pub fn ssh_keys(&self) -> &SshKeys {
+        &self.inner.ssh_keys
     }
 
     /// The owner's workspace, if it has one (`creating` or `active`).
@@ -265,7 +284,8 @@ impl Workspaces {
 
     /// Creates a workspace for `owner` in the environment instance `environment`, with
     /// `options` (a JSON object matching the environment's schema; the plugin validates them),
-    /// and returns it, `active`.
+    /// and returns it, `active`. The workspace gets the SSH keys of `key_user`, or none
+    /// ([`key_user`] says whose, from the creating turn).
     ///
     /// The owner's slot is taken before the plugin is called and given back if creating fails.
     /// The plugin call runs to its end even if this future is dropped (the turn was cancelled),
@@ -284,6 +304,7 @@ impl Workspaces {
         owner: &WorkspaceOwner,
         environment: &str,
         options: Value,
+        key_user: Option<UserId>,
     ) -> Result<WorkspaceRecord, WorkspaceError> {
         let (_, client) = self.reachable(environment)?;
         if !options.is_object() {
@@ -300,6 +321,7 @@ impl Workspaces {
                 environment: environment.to_owned(),
                 owner: owner.clone(),
                 options: options.clone(),
+                key_user,
                 now: inner.clock.now(),
             })
             .await;
@@ -394,7 +416,7 @@ impl Workspaces {
     }
 
     /// Deletes the owner's workspace and creates another in the same environment with the same
-    /// options (`/env reset`). Returns `None` if the owner has no workspace. The environment
+    /// options and the same key user (`/env reset`). Returns `None` if the owner has no workspace. The environment
     /// must be configured and connected, which is checked before anything is deleted, so a reset
     /// that can't succeed doesn't cost the files. Leases don't matter: a turn that is using the
     /// workspace finds the new one on its next call.
@@ -422,7 +444,12 @@ impl Workspaces {
             return Ok(None);
         };
         let created = self
-            .create(owner, &current.environment, current.options)
+            .create(
+                owner,
+                &current.environment,
+                current.options,
+                current.key_user,
+            )
             .await;
         Ok(Some(Recreation { discarded, created }))
     }
@@ -452,7 +479,7 @@ impl Workspaces {
         if record.state != WorkspaceState::Active {
             return Err(WorkspaceError::NotReady);
         }
-        let (_, client) = self.reachable(&record.environment)?;
+        let (entry, client) = self.reachable(&record.environment)?;
 
         // Lease before starting, so a sweep that checked the workspace a moment ago can't stop
         // it under this call. The turn's earlier lease on this workspace is kept (taking the
@@ -492,6 +519,18 @@ impl Workspaces {
         };
         let now = inner.clock.now();
         inner.store.workspace_touch(&record.id, now).await?;
+        if entry.capabilities.ssh_relay {
+            // A workspace that was started or recreated has a new socket, and what the old relay
+            // held (its connections) is stale.
+            let restarted = matches!(
+                outcome,
+                StartOutcome::Started { .. } | StartOutcome::Recreated { .. }
+            );
+            inner
+                .relays
+                .ensure(&client, &record.id, record.key_user.as_ref(), restarted)
+                .await;
+        }
         let mut record = record;
         record.last_used_at = record.last_used_at.max(now);
         Ok(Opened {
@@ -529,6 +568,7 @@ impl Workspaces {
     /// A plugin that is unreachable or fails leaves the row `deleting` for the sweep. Returns
     /// whether the row is `deleted` now.
     async fn delete_in_plugin(&self, record: &WorkspaceRecord) -> bool {
+        self.inner.relays.end(&record.id).await;
         let Some(client) = self
             .registry()
             .and_then(|registry| registry.environment(&record.environment))
@@ -582,6 +622,23 @@ impl Workspaces {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|_, lock| Arc::strong_count(lock) > 1);
+    }
+}
+
+/// The user whose SSH keys a workspace created by a turn gets, or `None` for no keys. `session` is
+/// the turn's session and `requester` the user whose message or runtime job started the turn.
+///
+/// - A direct conversation's workspace gets its user's keys.
+/// - An isolated job run's workspace gets the keys of the job's creator. A config job has no
+///   requester, so its workspace gets none.
+/// - A group conversation's workspace gets none: its commands can't be told apart by user, and a
+///   connection opened in one user's turn stays usable in another's.
+pub fn key_user(session: &Session, requester: Option<&UserId>) -> Option<UserId> {
+    match session.kind {
+        SessionKind::Direct => session.user.clone(),
+        SessionKind::Job => requester.cloned(),
+        // A group's, and any kind added later: no keys unless somebody decides otherwise.
+        _ => None,
     }
 }
 

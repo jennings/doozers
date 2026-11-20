@@ -20,7 +20,7 @@
 - [Discord](user/discord.md)
 - [Environments](user/environments.md)
 - [Docker environment](user/docker-environment.md)
-- [SSH keys](user/ssh.md)
+- [SSH keys and SSH in workspaces](user/ssh.md)
 - [Skills and memory](user/skills-and-memory.md)
 - [Writing a plugin](user/writing-a-plugin.md)
 
@@ -55,7 +55,7 @@
 - [Discord channel](technical/discord.md)
 - [Docker environment](technical/environment-docker.md)
 - [Environment workspaces](technical/environments.md)
-- [SSH keys](technical/ssh.md)
+- [SSH keys and the agent relay](technical/ssh.md)
 - [gRPC Protocols](technical/protocols.md)
 - [Admin service](technical/admin.md)
 - [Configuration](technical/config.md)

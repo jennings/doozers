@@ -1,14 +1,16 @@
-# SSH keys
+# SSH keys and the agent relay
 
 Code: `crates/doozers-core/src/ssh/` (`doozers_core::ssh`), the rows in `doozers-store`
 ([Storage](storage.md#ssh-keys)), and the pages in `channels/web/ssh_keys.rs`
 ([Web channel](web-channel.md#ssh-keys-pages)). Design: the decisions on
-[#135 SSH agent relay for environment workspaces](https://github.com/jennings/doozers/issues/135)
-and [#136 Per-user SSH keys](https://github.com/jennings/doozers/issues/136).
+[#135 SSH agent relay for environment workspaces](https://github.com/jennings/doozers/issues/135),
+[#136 Per-user SSH keys](https://github.com/jennings/doozers/issues/136), and
+[#137 ssh-agent relay](https://github.com/jennings/doozers/issues/137).
 
 Each user keeps SSH keys in Doozers. The private keys never leave the core: no page, command, or RPC
-returns one. This page covers how the keys are stored, generated, read from uploads, and protected.
-The [user page](../user/ssh.md) is the guide.
+returns one. This page covers how the keys are stored, generated, read from uploads, and protected,
+and how a workspace's `ssh` and `git` use them through a relay without ever holding one. The
+[user page](../user/ssh.md) is the guide.
 
 ## Storage
 
@@ -118,6 +120,113 @@ No call returns a private key. The signing path, which is inside the core, is th
 `ssh::keys::rsa_private_key` rebuilds the key with `p` and `q`, and `sign` uses it with
 `rsa::pkcs1v15::SigningKey`.
 
+## How a workspace gets its keys
+
+A workspace gets the keys of exactly one user, its **key user**, or none. The core decides when it
+creates the workspace and stores the answer in `workspaces.key_user`
+([Storage](storage.md#workspaces)). `workspaces::key_user(session, requester)` is the one place that
+decides, from the creating turn's `Session` and the call's requester:
+
+| Session | Key user |
+| ------- | -------- |
+| Direct conversation (a DM, or a user's web chat) | The session's user |
+| Isolated job run | The requester: the creator of a runtime job. A config job has none, so no key user |
+| Group conversation | None |
+
+Several users' keys can't be kept apart in one workspace. Every command can connect to the agent
+socket, and an SSH connection opened in one user's turn, such as a `ControlMaster`, stays usable in
+another's. A group workspace therefore gets no keys, which matches per-user MCP toolsets.
+
+A workspace keeps its key user for its life. `recreate` and `/env reset` pass the record's on to the
+new workspace, while the model's own `environment_reset` creates the new workspace from the current
+turn like `environment_create` does. Migration `0013` filled `key_user` for existing conversation
+rows from the newest `direct` session of their key and left job rows without one.
+
+## The agent relay
+
+An environment plugin that reports the `ssh_relay` capability puts an ssh-agent socket in each
+workspace. The socket is `SSH_AUTH_SOCK`, and nothing it carries includes a private key: requests go
+to the core, which signs. [Environment workspaces](environments.md#the-ssh-agent-relay) says when
+the core opens and ends a relay.
+
+**The stream.** `EnvironmentService.Relay` is a bidirectional stream in `doozers.environment.v1`.
+The core's first message is `RelayOpen` with the workspace id. After that the plugin sends
+`RelayRequest`s, each an `AgentRequest` (connection number and one agent message without its length
+prefix) or an `AgentClosed`, and the core answers each request with an `AgentReply` for the same
+connection. Ending either side ends the relay, and the core opens another on the workspace's next
+use. [Protocols](protocols.md) lists the messages, and the same stream carries known-hosts lookups
+later.
+
+**In the workspace.** The `ssh-agent` subcommand of the workspace helper listens on
+`/.doozers/run/ssh-agent.sock` and multiplexes every client connection over its standard input and
+output as frames of `u32 length | u8 kind | u64 connection | payload`.
+[The Docker plugin's page](environment-docker.md#the-ssh-agent-relay) has the format, and the plugin
+runs the helper as a long exec.
+
+**In the core.** `ssh::relay::Relays` keeps one task per workspace. Each task holds an `ssh::Agent`
+for the workspace: its key user and the state of its clients' connections. The agent answers one
+message at a time, so one workspace's requests are handled in order, and a client waiting on the
+core's answer is how the agent protocol works anyway.
+
+### Agent requests
+
+`Agent::handle(connection, message)` always answers with a message. The supported requests are:
+
+| Request | Answer |
+| ------- | ------ |
+| `REQUEST_IDENTITIES` (11) | `IDENTITIES_ANSWER` (12) with the key user's keys, in the order below. The comment of each is its label |
+| `SIGN_REQUEST` (13) | `SIGN_RESPONSE` (14) with the signature, or `FAILURE` |
+| `EXTENSION` (27) `session-bind@openssh.com` | `SUCCESS` once the signature verifies, else `FAILURE` (a forwarding bind still restricts the connection) |
+
+Everything else, including adding, removing, and locking keys and every other extension, gets
+`SSH_AGENT_FAILURE` (5). So does a message that doesn't parse: a truncated string, a length that
+overflows, trailing bytes, or no bytes at all. A failure never ends the relay.
+
+- **Keys are read on every request.** `SshKeys::agent_keys` reads the rows each time, so a key
+  deleted on the SSH keys page stops working at the next request, and a new key is offered at once.
+  A key that is deleted while its signature is being made fails the request, because `touch_used`
+  finds no row.
+- **Order.** The most recently used key first (`last_used_at` descending, never-used keys last),
+  then the newest (`created_at` descending). OpenSSH servers allow six authentication attempts by
+  default (`MaxAuthTries`), so a user with many keys would see "Too many authentication failures"
+  without this.
+- **Whose keys.** Only the key user's. Another user's key is never listed, and a sign request that
+  names one fails whether the blob is right or not. A workspace without a key user answers
+  `REQUEST_IDENTITIES` with no keys and fails every signature.
+- **Signing.** `ssh::keys::sign` makes the signature on a blocking thread. An RSA key needs flag 2
+  (`rsa-sha2-256`) or 4 (`rsa-sha2-512`), and 2 wins if both are set. Flag 0, which asks for SHA-1,
+  fails. Other flags are ignored for other key types.
+- **`session-bind@openssh.com`.** OpenSSH 8.9 and later tell the agent which host a connection is
+  for. The agent verifies the destination's signature over the session id with the host key it
+  names. If it verifies, it records the host key's `SHA256:` fingerprint and answers `SUCCESS`.
+  Whether the bind says the agent is forwarded doesn't depend on that: a bind with `is_forwarding`
+  set is recorded even when the host key doesn't parse or the signature doesn't verify, and the
+  answer is then `FAILURE`. OpenSSH goes on using the connection after a failed bind, and `ssh-key`
+  can't verify every host key OpenSSH accepts: RSA keys under 2048 bits or over 4096, and `ssh-rsa`
+  (SHA-1) signatures. A bind without `is_forwarding` that doesn't verify changes nothing.
+- **Forwarded connections.** Any bind with `is_forwarding` set marks the connection for good. Such a
+  connection is offered no keys and every sign request on it fails. Clients older than 8.9 never
+  send a bind, so for them the check can't apply.
+- **Logging.** Each signature updates the key's `last_used_at` and logs at `info` the workspace, the
+  user, the key's label, and the bound host key's fingerprint, or `unknown` for a connection that
+  never bound. Refusals log at `warn` or `debug`. No log line or error contains a key.
+- **State.** The agent keeps a connection's state until the plugin sends `AgentClosed` for it or the
+  relay ends. The plugin never reuses a connection number within a relay.
+- **Untrusted input.** Every frame comes from a process in the container, and root in the workspace
+  can write frames of its own to the helper exec's output, so the relay treats connection numbers,
+  `AgentClosed`, and every message as untrusted workspace input. The agent keeps state for at most
+  256 connections (`ssh::agent::MAX_CONNECTIONS`). When the table is full, a new `session-bind`
+  drops the least recently used connection that isn't forwarded. If every connection is forwarded
+  the bind is refused, and a connection whose state the agent couldn't record must not become an
+  ordinary connection when a slot frees up later. So the agent remembers the highest connection
+  number it has heard from when it refuses a bind. Every connection up to that number that has no
+  state is treated as forwarded for good (no keys, no signatures), which costs two integers and no
+  per-connection memory. Connections after it are ordinary once there is room. The helper never
+  reuses a number, which makes this sound. A connection without state also gets no keys while the
+  table is full of forwarded ones, since it could be a forwarded one that has no room yet. A
+  workspace that can write frames can ask for its key user's keys anyway, since every command in it
+  can connect to the socket.
+
 ## Labels
 
 A label is 1 to 100 characters after trimming, with no control characters. Labels needn't be unique.
@@ -127,8 +236,13 @@ that is a valid label, else `<user>@doozers`.
 ## Tests
 
 `crates/doozers-core/src/ssh/tests.rs` covers the service and every format, and
-`channels/web/tests/ssh_keys.rs` the pages. The upload fixtures are in
-`crates/doozers-core/src/ssh/testdata/`, checked in so the tests are deterministic.
+`channels/web/tests/ssh_keys.rs` the pages. `ssh/agent_tests.rs` covers the agent: key order and
+use, other users' keys, every key type's signature verified with the public key, the RSA flags,
+deleted and renamed keys between requests, binds (including an RSA host key, and forwarding binds
+with bad signatures or host keys), forwarded connections, a flooded connection table, requests it
+doesn't serve, and malformed messages. The relay's lifecycle is tested in `workspaces/tests.rs` with
+the in-process environment, and the model's text in `core_tools/environment/tests.rs`. The upload
+fixtures are in `crates/doozers-core/src/ssh/testdata/`, checked in so the tests are deterministic.
 `testdata/generate.sh` says how they were made with `ssh-keygen` and `openssl`.
 
 The tests that compare against OpenSSH run `ssh-keygen -l` for each generated type's fingerprint and

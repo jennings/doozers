@@ -302,6 +302,14 @@ with `serve --config` and drives it over gRPC. `relay.rs` opens the relay on `Do
 with the test standing in for the core, installs `openssh-client` in an Alpine workspace (it skips,
 saying why, if that can't reach the network), and runs `ssh-add -L` against an answer the test
 builds. It also swaps the container's helper for a stand-in without `ssh-agent`, to show that the
-relay replaces it first. They skip, printing why, when no socket answers (`DOOZERS_REQUIRE_DOCKER=1`
-makes that a failure, as in [CI](ci.md)). The helper comes from `DOOZERS_HELPER_DIR` or is
-cross-built for the engine's architecture.
+relay replaces it first. `ssh.rs` answers the relay with the core's own agent
+(`doozers_core::ssh::Agent`, so the plugin has `doozers-core` as a dev-dependency) over keys in a
+real secret store. It runs `ssh-keygen -Y sign` and `-Y verify` through the socket for Ed25519,
+ECDSA, and RSA keys, checks that no private key text is in the container's files or configuration,
+and logs in with `ssh -o StrictHostKeyChecking=accept-new` to an `sshd` in a second container on the
+engine's default network, which also shows a forwarded agent getting no keys. A step that needs the
+network (the image, installing `openssh-client` or `sshd`) skips, printing why, when it fails,
+unless `DOOZERS_REQUIRE_DOCKER=1` is set: the harness has pulled its image by then, so a failure is
+real. They skip, printing why, when no socket answers (`DOOZERS_REQUIRE_DOCKER=1` makes that a
+failure, as in [CI](ci.md)). The helper comes from `DOOZERS_HELPER_DIR` or is cross-built for the
+engine's architecture.

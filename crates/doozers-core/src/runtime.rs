@@ -162,11 +162,17 @@ impl Runtime {
         let media = Arc::new(BlobMedia::new(blobs.clone()));
         let registry = Arc::new(Registry::from_config(root.clone(), config.clone(), media)?);
         let routes = Arc::new(Routes::open(store.clone(), registry.live_config().clone()).await?);
-        let workspaces = Workspaces::new(store.clone(), registry.clone(), clock.clone());
-        workspaces.recover().await.map_err(StartError::Workspaces)?;
         let secrets: Arc<dyn SecretProvider> = Arc::new(secrets);
+        let ssh_keys = SshKeys::new(store.clone(), secrets.clone(), clock.clone());
+        let workspaces = Workspaces::new(
+            store.clone(),
+            registry.clone(),
+            clock.clone(),
+            ssh_keys.clone(),
+        );
+        workspaces.recover().await.map_err(StartError::Workspaces)?;
         let runtime = Self {
-            ssh_keys: SshKeys::new(store.clone(), secrets.clone(), clock.clone()),
+            ssh_keys,
             memory_dbs: MemoryDbs::new(root.clone(), mode),
             root,
             outbox: Outbox::new(store.clone(), registry.clone(), clock),

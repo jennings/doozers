@@ -28,7 +28,9 @@ impl Wk {
         let env = env_with_toml(WebConfig::default(), &["web:owner"], ENVIRONMENTS).await;
         let clock = TestClock::new();
         let fake = Fake::new(clock.clone());
-        let workspaces = Workspaces::new(env.store.clone(), env.registry.clone(), clock);
+        let ssh_keys =
+            crate::ssh::SshKeys::for_tests(env.store.clone(), env._dir.path(), clock.clone()).await;
+        let workspaces = Workspaces::new(env.store.clone(), env.registry.clone(), clock, ssh_keys);
         let wk = Self {
             env,
             workspaces,
@@ -109,7 +111,7 @@ impl Wk {
             conversation: chat(),
         };
         self.workspaces
-            .create(&owner, "box", json!({"image": "alpine"}))
+            .create(&owner, "box", json!({"image": "alpine"}), None)
             .await
             .unwrap()
             .id
@@ -264,11 +266,40 @@ async fn a_job_runs_workspace_is_shown_as_one() {
             },
             "box",
             json!({}),
+            None,
         )
         .await
         .unwrap();
     let page = wk.page().await;
     assert!(page.contains("job run (session 41)"), "{page}");
+}
+
+#[tokio::test]
+async fn the_page_says_whose_ssh_keys_a_workspace_gets_or_none() {
+    let wk = Wk::new().await;
+    let owner = doozers_types::UserId::new("owner").unwrap();
+    wk.workspaces
+        .create(&Wk::owner_of_chat(), "box", json!({}), Some(owner))
+        .await
+        .unwrap();
+    let page = wk.page().await;
+    assert!(page.contains("<dt>SSH keys</dt>\n<dd>owner</dd>"), "{page}");
+    assert!(!page.contains("<dt>SSH keys</dt>\n<dd>none</dd>"), "{page}");
+
+    wk.workspaces
+        .create(
+            &WorkspaceOwner::Job {
+                session: doozers_store::SessionId::new(41),
+            },
+            "box",
+            json!({}),
+            None,
+        )
+        .await
+        .unwrap();
+    let page = wk.page().await;
+    assert!(page.contains("<dt>SSH keys</dt>\n<dd>owner</dd>"), "{page}");
+    assert!(page.contains("<dt>SSH keys</dt>\n<dd>none</dd>"), "{page}");
 }
 
 #[tokio::test]
@@ -283,6 +314,7 @@ async fn conversations_of_other_channels_are_not_linked_to_a_chat() {
             },
             "box",
             json!({}),
+            None,
         )
         .await
         .unwrap();
@@ -550,6 +582,7 @@ async fn acting_on_a_workspace_that_is_gone_or_not_ready_says_so() {
             environment: "box".into(),
             owner: Wk::owner_of_chat(),
             options: json!({}),
+            key_user: None,
             now: "2026-11-10T12:00:00Z".parse().unwrap(),
         })
         .await

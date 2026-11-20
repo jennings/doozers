@@ -137,13 +137,14 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 12)
+## Schema (version 13)
 
 The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
 table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`,
 `archived_conversations`, and `ssh_keys`, which `0002_blobs.sql`, `0003_routes.sql`,
 `0004_toolsets.sql`, `0005_workspaces.sql`, `0007_secrets.sql`, `0009_archived_conversations.sql`,
-and `0012_ssh_keys.sql` add. This is their outline.
+and `0012_ssh_keys.sql` add (`0013_workspace_key_user.sql` adds `workspaces.key_user`). This is
+their outline.
 
 | Table          | Columns and rules                                                                    |
 | -------------- | ------------------------------------------------------------------------------------ |
@@ -161,7 +162,7 @@ and `0012_ssh_keys.sql` add. This is their outline.
 | `routes`       | The ordered routing rules: `position` (dense, 0 first), `channel`, `kind` (`direct`, `group`), `conversation` (each null for any), `agent`. Ids are `AUTOINCREMENT`, never reused. |
 | `routes_imported` | One row, once the `[[routes]]` of `doozers.toml` were imported: `at`.                |
 | `toolsets`     | The MCP toolsets the web UI manages: `name` (primary key, `NOCASE`), `spec` (JSON text), `created_at`, `updated_at`. |
-| `workspaces`   | The environment workspaces: `id` (core-assigned, primary key), `environment`, the owner (`agent`, `channel`, `conversation`, or `job_session`; exactly one form), `options` (JSON), the plugin's `description`, `working_directory`, `persistence`, `state` (`creating`, `active`, `deleting`, `deleted`), `created_at`, `last_used_at`, `deleted_at`, `delete_reason`. Partial unique indexes allow one `creating` or `active` row per owner. See [Workspaces](#workspaces). |
+| `workspaces`   | The environment workspaces: `id` (core-assigned, primary key), `environment`, the owner (`agent`, `channel`, `conversation`, or `job_session`; exactly one form), `options` (JSON), the plugin's `description`, `working_directory`, `persistence`, `state` (`creating`, `active`, `deleting`, `deleted`), `created_at`, `last_used_at`, `deleted_at`, `delete_reason`, `key_user` (the user whose SSH keys it gets, or null). Partial unique indexes allow one `creating` or `active` row per owner. See [Workspaces](#workspaces). |
 | `secrets`      | The local secret store: `path` (primary key), `description`, `algorithm`, `nonce`, `ciphertext` (the sealed value), `created_at`, `created_by`, `updated_at`, `updated_by` (user ids, null when no user did it). See [Secrets](#secrets). |
 | `secret_key`   | One row, once the secret store has a data key: `source` (the key source that wrapped it), `algorithm`, `nonce`, `wrapped`, `created_at`. |
 | `archived_conversations` | The conversations their user archived: (`channel`, `conversation`) as the primary key, `archived_at`. No foreign key, since a conversation is a set of sessions. See [Conversations](#conversations). |
@@ -603,6 +604,11 @@ is `deleting` or `deleted`, and `description`, `working_directory` and `persiste
 plugin reported) are set once it is `active`. Two partial unique indexes, over the conversation key
 and over `job_session`, allow one `creating` or `active` row per owner. Deleted rows stay so the
 model can be told when and why, and are pruned after the instance's `delete_after`.
+
+`key_user` is the user whose [SSH keys](ssh.md#how-a-workspace-gets-its-keys) the workspace gets, or
+null for none. The core sets it when it creates the workspace and never changes it. Migration `0013`
+filled it for existing conversation rows from the user of the newest `direct` session of their key,
+and left job rows null.
 
 | Method                                       | Contract                                                              |
 | -------------------------------------------- | --------------------------------------------------------------------- |

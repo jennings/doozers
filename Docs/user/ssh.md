@@ -1,6 +1,7 @@
-# SSH keys
+# SSH keys and SSH in workspaces
 
-This page shows how to give Doozers an SSH key and add its public key to GitHub.
+This page shows how to give Doozers an SSH key, add its public key to GitHub, and use the key for
+`ssh` and `git` in your agent's workspace.
 
 Each user keeps their own SSH keys in Doozers, on the **SSH keys** page in the
 [web interface](web.md#ssh-keys). Doozers keeps every private key encrypted and never shows it
@@ -79,3 +80,49 @@ public key from GitHub and your servers too.
 The owner sees every user's keys under **Admin**, then **SSH keys**: the owner of each key, its
 label, type, fingerprint, and when it was created and last used. The owner can delete a key there,
 such as one that belonged to a user who left.
+
+## Use SSH in a workspace
+
+A workspace can use your keys for `ssh` and for git remotes such as `git@github.com:you/repo.git`.
+The private key never enters the workspace. Programs there ask Doozers to sign, and Doozers signs
+with one of your keys. A key you add or delete works or stops working at once, without restarting
+anything.
+
+**While your agent works in your workspace, it can use all of your keys. It can sign in to every
+server and service that accepts them. Use a key that has only the access your agent needs, such as a
+key that you registered on one GitHub repository as a deploy key.**
+
+Which keys a workspace gets depends on the conversation that created it:
+
+- A conversation with you, such as a direct message or your web chat, gets your keys.
+- An isolated job run gets the keys of the user who created the job. A job from `doozers.toml` has
+  no creator, so its workspace gets none.
+- A group conversation gets none, because the commands of several users can't be kept apart.
+
+The workspace's image needs an OpenSSH client, which provides `ssh` and `ssh-add`. Debian, Ubuntu,
+and Alpine images have it in the `openssh-client` package. Your agent can install it in the
+workspace, or you can use an image that has it.
+
+To check that SSH works, run these in the workspace:
+
+```sh
+ssh-add -L
+ssh -T git@github.com
+```
+
+`ssh-add -L` lists the public keys the workspace gets, with the labels you gave them. `ssh -T`
+greets you by your GitHub user name if one of those keys is registered at GitHub. If the first
+command prints `The agent has no identities`, the workspace gets no keys. Your agent's
+`environment_plugins` and `environment_create` results say which keys it gets and why it has none.
+
+Doozers doesn't check the host keys of servers for you yet. On the first connection to a server,
+pass `-o StrictHostKeyChecking=accept-new`, which trusts the server's key the first time and refuses
+a changed key later:
+
+```sh
+ssh -o StrictHostKeyChecking=accept-new git@github.com
+GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git clone git@github.com:you/repo.git
+```
+
+Doozers refuses to sign for a forwarded agent, so `ssh -A` gives the server you connect to no keys.
+The **Workspaces** page shows whose keys each workspace gets under **SSH keys**.

@@ -202,6 +202,7 @@ impl Workspaces {
     pub async fn stop_by_id(&self, id: &WorkspaceId) -> Result<WorkspaceRecord, ManageError> {
         let record = self.managed_workspace(id).await?;
         let client = self.client_of(&record)?;
+        self.inner.relays.end(id).await;
         client
             .stop_workspace(id)
             .await

@@ -2,15 +2,16 @@
 //! the code that calls it.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use doozers_types::{
     Environment, EnvironmentInfo, Error, ExecEvent, ExecRequest, FindRequest, FindResult,
-    GrepMatch, GrepRequest, GrepResult, ReadFile, Result, StartOutcome, Timestamp, Workspace,
-    WorkspaceDetail, WorkspaceId, WorkspaceList, WorkspaceState as PluginState,
+    GrepMatch, GrepRequest, GrepResult, ReadFile, RelayReply, RelayRequest, Result, StartOutcome,
+    Timestamp, Workspace, WorkspaceDetail, WorkspaceId, WorkspaceList,
+    WorkspaceState as PluginState,
 };
 use futures::StreamExt as _;
 use futures::stream::{self, BoxStream};
@@ -75,6 +76,21 @@ struct State {
     files: BTreeMap<(WorkspaceId, String), Vec<u8>>,
     /// The `max_bytes` of every `read_file`.
     reads: Vec<u64>,
+    /// How many times `relay` was called, and the latest relay of each workspace.
+    relay_calls: usize,
+    relays: BTreeMap<WorkspaceId, FakeRelay>,
+    /// `relay` fails while set.
+    relay_fails: bool,
+}
+
+/// The fake's end of a relay the core opened.
+struct FakeRelay {
+    /// Requests for the core. Dropping this ends the relay as a plugin would.
+    requests: futures::channel::mpsc::UnboundedSender<Result<RelayRequest>>,
+    /// What the core replied.
+    replies: Arc<tokio::sync::Mutex<futures::channel::mpsc::UnboundedReceiver<RelayReply>>>,
+    /// Set when the core drops the request stream: it ended the relay.
+    closed: Arc<AtomicBool>,
 }
 
 /// What a fake `exec` does.
@@ -94,6 +110,8 @@ pub(crate) enum Exec {
 pub(crate) struct Fake {
     state: Mutex<State>,
     clock: Arc<TestClock>,
+    /// How many relay request streams the core has dropped.
+    relays_dropped: Arc<AtomicUsize>,
 }
 
 impl Fake {
@@ -101,6 +119,7 @@ impl Fake {
         Arc::new(Self {
             state: Mutex::default(),
             clock,
+            relays_dropped: Arc::default(),
         })
     }
 
@@ -208,6 +227,71 @@ impl Fake {
     /// The `max_bytes` of every `read_file` so far.
     pub(crate) fn reads(&self) -> Vec<u64> {
         self.state().reads.clone()
+    }
+
+    /// How many times the core opened a relay.
+    pub(crate) fn relay_calls(&self) -> usize {
+        self.state().relay_calls
+    }
+
+    /// How many relay request streams the core has dropped, ending those relays.
+    pub(crate) fn relays_dropped(&self) -> usize {
+        self.relays_dropped.load(Ordering::SeqCst)
+    }
+
+    /// Makes `relay` fail (as an environment that can't start its helper) while `fails` is set.
+    pub(crate) fn fail_relays(&self, fails: bool) {
+        self.state().relay_fails = fails;
+    }
+
+    /// Whether the latest relay of `id` is open: opened, not ended by either side.
+    pub(crate) fn relay_is_open(&self, id: &WorkspaceId) -> bool {
+        self.state().relays.get(id).is_some_and(|relay| {
+            !relay.closed.load(Ordering::SeqCst) && !relay.requests.is_closed()
+        })
+    }
+
+    /// Sends the core a request on the latest relay of `id`.
+    pub(crate) fn relay_send(&self, id: &WorkspaceId, request: RelayRequest) {
+        let state = self.state();
+        let relay = state.relays.get(id).expect("no relay was opened");
+        relay.requests.unbounded_send(Ok(request)).unwrap();
+    }
+
+    /// The next reply the core sent on the latest relay of `id`; `None` if the relay ended first.
+    pub(crate) async fn relay_reply(&self, id: &WorkspaceId) -> Option<RelayReply> {
+        let replies = self
+            .state()
+            .relays
+            .get(id)
+            .expect("no relay was opened")
+            .replies
+            .clone();
+        let mut replies = replies.lock().await;
+        tokio::time::timeout(Duration::from_secs(10), replies.next())
+            .await
+            .expect("the core never replied")
+    }
+
+    /// Ends the latest relay of `id` from the plugin's side.
+    pub(crate) fn relay_end(&self, id: &WorkspaceId) {
+        if let Some(relay) = self.state().relays.get(id) {
+            relay.requests.close_channel();
+        }
+    }
+
+    /// Waits until the latest relay of `id` is `open`.
+    pub(crate) async fn relay_settled(&self, id: &WorkspaceId, open: bool) {
+        for _ in 0..500 {
+            if self.state().relays.contains_key(id) && self.relay_is_open(id) == open {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!(
+            "the relay of {id} never became {}",
+            if open { "open" } else { "closed" }
+        );
     }
 
     fn workspace(id: &WorkspaceId, held: &Held) -> Workspace {
@@ -346,6 +430,51 @@ impl Environment for Fake {
         }
     }
 
+    async fn relay(
+        &self,
+        id: &WorkspaceId,
+        replies: BoxStream<'static, RelayReply>,
+    ) -> Result<BoxStream<'static, Result<RelayRequest>>> {
+        let mut state = self.state();
+        state.relay_calls += 1;
+        if state.relay_fails {
+            return Err(Error::unavailable("the helper can't start"));
+        }
+        match state.workspaces.get(id) {
+            None => return Err(Error::NotFound(format!("workspace {id}"))),
+            Some(held) if !held.running => {
+                return Err(Error::InvalidRequest(format!("workspace {id} is stopped")));
+            }
+            Some(_) => {}
+        }
+        let (requests, incoming) = futures::channel::mpsc::unbounded();
+        let (reply_tx, reply_rx) = futures::channel::mpsc::unbounded();
+        let closed = Arc::new(AtomicBool::new(false));
+        state.relays.insert(
+            id.clone(),
+            FakeRelay {
+                requests,
+                replies: Arc::new(tokio::sync::Mutex::new(reply_rx)),
+                closed: closed.clone(),
+            },
+        );
+        tokio::spawn(async move {
+            let mut replies = replies;
+            while let Some(reply) = replies.next().await {
+                if reply_tx.unbounded_send(reply).is_err() {
+                    break;
+                }
+            }
+        });
+        let guard = DropFlag(closed);
+        let dropped = DropCount(self.relays_dropped.clone());
+        Ok(incoming
+            .inspect(move |_| {
+                let _ = (&guard, &dropped);
+            })
+            .boxed())
+    }
+
     async fn read_file(&self, id: &WorkspaceId, path: &str, max_bytes: u64) -> Result<ReadFile> {
         let mut state = self.state();
         state.reads.push(max_bytes);
@@ -405,6 +534,15 @@ impl Environment for Fake {
         let truncated = matches.len() > limit;
         matches.truncate(limit);
         Ok(GrepResult { matches, truncated })
+    }
+}
+
+/// Counts itself when dropped.
+struct DropCount(Arc<AtomicUsize>);
+
+impl Drop for DropCount {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
     }
 }
 

@@ -9,10 +9,18 @@
 //! as not found. The owner may also list every user's key metadata and delete any key
 //! ([`SshKeys::all_keys`], [`SshKeys::delete_any`]). Nothing returns a private key: only the
 //! signing path inside the core reads one ([`SshKeys::private_key`]), and only the acting user's.
+//!
+//! The signing path is the SSH agent relay (issue #137). [`relay`] keeps one task per workspace on
+//! an environment that can relay, which answers the agent requests of clients in the workspace
+//! with an [`Agent`], and [`agent`] is the ssh-agent protocol.
 
+mod agent;
 mod formats;
 mod keys;
+pub(crate) mod relay;
 
+#[cfg(test)]
+pub(crate) mod agent_tests;
 #[cfg(test)]
 mod tests;
 
@@ -31,8 +39,30 @@ use crate::identity;
 use crate::secrets::{SecretError, SecretPath, SecretProvider};
 use crate::sessions::Clock;
 
+pub use agent::Agent;
 pub use formats::{KeyFileError, MAX_UPLOAD_BYTES};
 pub use keys::KeyType;
+
+#[cfg(test)]
+impl SshKeys {
+    /// The service over `store` with a secret store of its own in `dir`, for tests of the code
+    /// that holds one.
+    pub(crate) async fn for_tests(
+        store: Store,
+        dir: &std::path::Path,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        let root = crate::paths::DataRoot::new(dir, std::path::Path::new("/tmp")).unwrap();
+        let secrets = crate::secrets::LocalSecrets::open(
+            store.clone(),
+            &crate::secrets::KeyFile::new(&root, &root.secret_key_file()),
+            clock.clone(),
+        )
+        .await
+        .unwrap();
+        Self::new(store, Arc::new(secrets), clock)
+    }
+}
 
 /// The longest label, in characters.
 pub const MAX_LABEL_CHARS: usize = 100;
@@ -425,10 +455,6 @@ impl SshKeys {
 
     /// `user`'s keys in the order an ssh-agent offers them: most recently used first, keys never
     /// used last and the newest of those first. For the signing path.
-    #[allow(
-        dead_code,
-        reason = "only the SSH agent relay calls this, and it isn't built yet"
-    )]
     pub(crate) async fn agent_keys(&self, user: &UserId) -> Result<Vec<SshKey>, SshKeysError> {
         Ok(self
             .store
@@ -448,10 +474,6 @@ impl SshKeys {
     /// [`SshKeysError::NotFound`] if there is no key `id` or it belongs to someone else, or the
     /// secret is missing; [`SshKeysError::Secrets`] if the secret store fails or the stored value
     /// isn't a private key.
-    #[allow(
-        dead_code,
-        reason = "only the SSH agent relay calls this, and it isn't built yet"
-    )]
     pub(crate) async fn private_key(
         &self,
         user: &UserId,
@@ -484,10 +506,6 @@ impl SshKeys {
     /// # Errors
     ///
     /// [`SshKeysError::NotFound`] if the key is gone, or a store failure.
-    #[allow(
-        dead_code,
-        reason = "only the SSH agent relay calls this, and it isn't built yet"
-    )]
     pub(crate) async fn touch_used(
         &self,
         id: SshKeyId,

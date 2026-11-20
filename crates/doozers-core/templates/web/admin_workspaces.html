@@ -51,6 +51,8 @@ job run (session {{ job }})
 <dd>{% if workspace.in_use %}yes, a running turn is using it{% else %}no{% endif %}</dd>
 <dt>Disk used</dt>
 <dd>{{ workspace.disk }}</dd>
+<dt>SSH keys</dt>
+<dd>{% if let Some(user) = workspace.key_user %}{{ user }}{% else %}none{% endif %}</dd>
 {%- if !workspace.description.is_empty() %}
 <dt>Description</dt>
 <dd>{{ workspace.description }}</dd>

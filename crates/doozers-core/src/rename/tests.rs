@@ -585,6 +585,7 @@ async fn seed_workspace(home: &Home, environment: &str, channel: &str) {
                 conversation: ConversationId::new("#giles").unwrap(),
             },
             options: json!({"image": "alpine"}),
+            key_user: None,
             now: jiff::Timestamp::from_second(1_800_000_000).unwrap(),
         })
         .await
