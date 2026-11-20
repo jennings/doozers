@@ -35,10 +35,24 @@ service EnvironmentService {
   rpc Find(FindRequest) returns (FindResponse);
   // Searches file contents with a regular expression.
   rpc Grep(GrepRequest) returns (GrepResponse);
+  // Relays a running workspace's ssh-agent requests to the core. The core's first message is
+  // RelayOpen; the plugin sends the requests its workspace's clients make, and the core answers
+  // each with a reply for the same connection. Ending either side ends the relay; the core opens
+  // it again on the workspace's next use. Only for plugins whose capabilities set ssh_relay.
+  //
+  // The message names follow the direction of the traffic, not the call: the core is the client
+  // and sends RelayReply messages, and the plugin sends RelayRequest messages.
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc Relay(stream RelayReply) returns (stream RelayRequest);
 }
 
-// What an environment plugin can do, reported in Describe. Empty in v1.
-message EnvironmentCapabilities {}
+// What an environment plugin can do, reported in Describe.
+message EnvironmentCapabilities {
+  // The plugin serves Relay: an ssh-agent socket (SSH_AUTH_SOCK) in each workspace, whose requests
+  // it relays to the core.
+  bool ssh_relay = 1;
+}
 
 message InfoRequest {}
 
@@ -238,4 +252,50 @@ message GrepMatch {
   uint64 line = 2;
   // The line, without its line ending.
   string text = 3;
+}
+
+// What the core sends on Relay (core to plugin).
+message RelayReply {
+  oneof message {
+    // Always the first message, and only the first.
+    RelayOpen open = 1;
+    // The answer to an AgentRequest.
+    AgentReply agent = 2;
+  }
+}
+
+message RelayOpen {
+  // The workspace whose requests to relay: a running workspace the plugin holds.
+  string workspace_id = 1;
+}
+
+// What the plugin sends on Relay (plugin to core).
+message RelayRequest {
+  oneof message {
+    // A client of the workspace's agent socket made a request.
+    AgentRequest agent = 1;
+    // A client of the workspace's agent socket disconnected.
+    AgentClosed agent_closed = 2;
+  }
+}
+
+// One ssh-agent protocol message, without its 4-byte length, from a client connection.
+message AgentRequest {
+  // Names the client connection within this relay. The plugin chooses it, never reuses it, and
+  // the core answers with the same value.
+  uint64 connection = 1;
+  // At most 256 KiB, OpenSSH's limit.
+  bytes message = 2;
+}
+
+// One ssh-agent protocol message, without its 4-byte length, for a client connection. A reply for
+// a connection that has closed is dropped.
+message AgentReply {
+  uint64 connection = 1;
+  bytes message = 2;
+}
+
+// The client connection has ended; the core drops what it kept for it.
+message AgentClosed {
+  uint64 connection = 1;
 }

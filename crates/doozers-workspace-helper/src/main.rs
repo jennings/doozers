@@ -14,11 +14,15 @@
 //! read [--max N] PATH                        a `{"size":N}` line, then up to N bytes of the file
 //! write PATH                                 write stdin to the file, creating parent directories
 //! df PATH                                    a `{"free_bytes":N}` line: space free where PATH is
+//! ssh-agent [--socket PATH]                  relay an ssh-agent socket to the plugin over stdio
 //! ```
+//!
+//! `ssh-agent` is the one long-running subcommand besides `idle`: see `agent.rs` for its frames.
 //!
 //! Failures print a message to standard error and exit 1 (66 when a path doesn't exist), except
 //! `run`, which exits with its command's status.
 
+mod agent;
 mod files;
 mod find;
 mod grep;
@@ -155,6 +159,7 @@ fn dispatch(subcommand: &str, rest: Vec<OsString>) -> Outcome<ExitCode> {
             }
         }
         "run" => run::run(args),
+        "ssh-agent" => agent::run(args),
         "kill" => {
             let id = args.required("--id")?;
             args.finish()?;
@@ -221,7 +226,7 @@ fn main() -> ExitCode {
     let mut argv = std::env::args_os().skip(1);
     let Some(subcommand) = argv.next() else {
         eprintln!(
-            "doozers-workspace-helper: expected a subcommand (idle, run, kill, find, grep, read, write, df)"
+            "doozers-workspace-helper: expected a subcommand (idle, run, kill, find, grep, read, write, df, ssh-agent)"
         );
         return ExitCode::from(EXIT_USAGE);
     };

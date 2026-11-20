@@ -16,7 +16,9 @@
 //!
 //! Commands run through `doozers-workspace-helper` (see the `doozers-workspace-helper` crate),
 //! which the plugin copies into each container: it is the process-group wrapper that lets a second
-//! exec kill a cancelled command, and it runs `find`, `grep`, and the file calls.
+//! exec kill a cancelled command, and it runs `find`, `grep`, and the file calls. Its `ssh-agent`
+//! subcommand serves the workspace's `SSH_AUTH_SOCK`; the plugin relays what it receives to the
+//! core.
 
 mod config;
 mod disk_usage;
@@ -26,6 +28,7 @@ mod files;
 mod helper;
 mod image;
 mod lifecycle;
+mod relay;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -34,7 +37,8 @@ use async_trait::async_trait;
 use bollard::Docker;
 use doozers_types::{
     Environment, EnvironmentInfo, ExecEvent, ExecRequest, FindRequest, FindResult, GrepRequest,
-    GrepResult, ReadFile, StartOutcome, Workspace, WorkspaceId, WorkspaceList,
+    GrepResult, ReadFile, RelayReply, RelayRequest, StartOutcome, Workspace, WorkspaceId,
+    WorkspaceList,
 };
 use futures::stream::BoxStream;
 use serde_json::{Value, json};
@@ -42,7 +46,7 @@ use serde_json::{Value, json};
 pub use config::{Config, DEFAULT_NETWORK, DEFAULT_SOCKET, Registry, Settings, parse_memory};
 use error::ErrorExt as _;
 pub use error::{Error, Result};
-pub use helper::{Arch, HELPER_PATH, default_dir as default_helper_dir};
+pub use helper::{Arch, HELPER_PATH, SSH_AGENT_SOCKET, default_dir as default_helper_dir};
 pub use image::{Allowlist, DEFAULT_PATTERNS, ParseError, Reference};
 
 /// The directory commands start in, where the workspace volume is mounted.
@@ -74,6 +78,9 @@ struct Inner {
     /// One lock per workspace id, so two lifecycle calls on one workspace don't race (two
     /// `start_workspace` calls must not both recreate the container).
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// One cell per container id, set once this plugin process has replaced the container's helper
+    /// with its own (see `relay_agent`). Container ids are unique, so entries never go stale.
+    refreshed: Mutex<HashMap<String, Arc<tokio::sync::OnceCell<()>>>>,
 }
 
 impl std::fmt::Debug for DockerEnvironment {
@@ -138,6 +145,7 @@ impl DockerEnvironment {
                 arch,
                 helper,
                 locks: Mutex::new(HashMap::new()),
+                refreshed: Mutex::new(HashMap::new()),
             }),
         })
     }
@@ -170,6 +178,17 @@ impl DockerEnvironment {
             Arc::clone(locks.entry(id.to_owned()).or_default())
         };
         lock.lock_owned().await
+    }
+
+    /// The cell that is set once this plugin process has replaced `container`'s helper with its
+    /// own.
+    pub(crate) fn helper_refreshed(&self, container: &str) -> Arc<tokio::sync::OnceCell<()>> {
+        let mut refreshed = self
+            .inner
+            .refreshed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        Arc::clone(refreshed.entry(container.to_owned()).or_default())
     }
 
     /// Forgets a workspace's lock once the workspace is gone.
@@ -234,6 +253,14 @@ impl Environment for DockerEnvironment {
 
     async fn grep(&self, id: &WorkspaceId, request: GrepRequest) -> Result<GrepResult> {
         self.grep_files(id.as_str(), request).await
+    }
+
+    async fn relay(
+        &self,
+        id: &WorkspaceId,
+        replies: BoxStream<'static, RelayReply>,
+    ) -> Result<BoxStream<'static, Result<RelayRequest>>> {
+        self.relay_agent(id.as_str(), replies).await
     }
 }
 

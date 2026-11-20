@@ -95,6 +95,7 @@ impl Setup {
                 EnvironmentInfo {
                     options_schema: json!({"type": "object", "properties": {"image": {"type": "string"}}}),
                 },
+                crate::registry::EnvironmentCapabilities::default(),
             )
             .unwrap();
         let env = Env::new(workspaces.clone(), &registry);

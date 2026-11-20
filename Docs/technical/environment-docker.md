@@ -162,6 +162,7 @@ It has no async runtime. It exists because the container can't be assumed to hav
 | `find`, `grep` | Search with `globset`, `ignore`, and `regex`; JSON lines out, ending in `{"truncated":bool}` |
 | `read`, `write` | Whole-file access; `read` prints `{"size":N}` and then up to `--max` bytes |
 | `df` | Free bytes where a path lives |
+| `ssh-agent [--socket PATH]` | Serve `SSH_AUTH_SOCK` and carry its messages over standard input and output as [frames](#the-ssh-agent-relay) |
 
 `find` and `grep` walk with `ignore` configured to skip `.git` and honor `.gitignore` files whether
 or not a `.git` exists, include dotfiles, and sort the paths as strings so the order doesn't depend
@@ -241,12 +242,66 @@ and missing parent directories the same way for every image and the archive API 
 starts with `-` gets a `./` prefix so the helper never reads it as a flag. Relative paths need no
 handling, because every exec starts in `/workspace`.
 
+## The ssh-agent relay
+
+The plugin declares the `ssh_relay` capability, and each workspace has an ssh-agent socket. The
+container environment sets `SSH_AUTH_SOCK=/.doozers/run/ssh-agent.sock` at creation, and every exec
+gets it too, so workspaces created before the relay existed have it as well. The plugin doesn't let
+`[env]` set it.
+
+`relay(id, replies)` needs a running container (`NotFound` if the workspace doesn't exist,
+`InvalidRequest` if it is stopped). A workspace created before the relay existed has a helper
+without the `ssh-agent` subcommand, and starting a container doesn't copy the helper again. So
+before the first relay of a container in a plugin process, the plugin uploads its own helper under a
+temporary name in `/.doozers/bin` and renames it over `/.doozers/bin/doozers-workspace-helper`. A
+rename doesn't hit "text file busy" the way overwriting would, because the container's `idle`
+process is running the old file, and commands that are running keep the old file open. The plugin
+remembers the container id in memory, so each relay after that skips the upload, and a plugin
+restart does it once more.
+
+The plugin then starts one exec of `/.doozers/bin/doozers-workspace-helper ssh-agent`, without the
+`run` wrapper, with standard input, output, and error attached. The helper listens on the socket
+with mode 0666, because everything in the container may use the agent anyway and a command can run
+as another user. It removes a stale socket file first. One thread reads each client connection's
+requests and another writes its replies from a queue of 8, one thread accepts connections, and the
+main thread reads replies from standard input and queues them. A client that doesn't read its
+replies fills its queue and is closed, so it can't hold up the replies of other clients. When
+standard input ends the helper removes its socket and exits.
+
+The plugin sends the helper's frames on as `RelayRequest`s and writes the core's replies to the
+helper as frames. Dropping the stream the plugin returns, or the core ending its replies, closes the
+helper's standard input, which ends the exec. The stream ends when the exec does, for example when
+the workspace stops. Lines the helper writes to standard error are logged at `debug`.
+
+Both directions use one frame format:
+
+```text
+u32 BE length of the rest | u8 kind | u64 BE connection | payload
+```
+
+| Kind | Direction | Meaning |
+| --- | --- | --- |
+| 1 | helper to plugin | A request: the payload is one agent message without its own length prefix |
+| 2 | helper to plugin | The connection ended; no payload |
+| 3 | plugin to helper | A reply: the payload is one agent message for the connection |
+| 4, 5 | | Reserved for known-hosts lookups |
+
+The length counts the kind, the connection id, and the payload. An agent message is at most 256 KiB
+(OpenSSH's limit), and a client that sends a longer one is disconnected. A frame of an unknown kind
+is skipped by both sides. The helper numbers connections from 1 and never reuses a number. The
+helper and the plugin each have their own encoder and decoder, because the helper is a static binary
+with no dependencies, and each has tests for the format.
+
 ## Tests
 
 The unit tests cover the reference parser, the allowlist, the configuration, the helper archive, and
 the helper's output parsing. `crates/doozers-workspace-helper/tests/cli.rs` runs the helper binary
 on the host. The integration tests in `plugins/doozers-environment-docker/tests/` run against a real
 Docker API socket: `docker.rs` calls `DockerEnvironment` directly, and `serve.rs` runs the binary
-with `serve --config` and drives it over gRPC. They skip, printing why, when no socket answers
-(`DOOZERS_REQUIRE_DOCKER=1` makes that a failure, as in [CI](ci.md)). The helper comes from
-`DOOZERS_HELPER_DIR` or is cross-built for the engine's architecture.
+with `serve --config` and drives it over gRPC. `relay.rs` opens the relay on `DockerEnvironment`
+with the test standing in for the core, installs `openssh-client` in an Alpine workspace (it skips,
+saying why, if that can't reach the network), and runs `ssh-add -L` against an answer the test
+builds. It also swaps the container's helper for a stand-in without `ssh-agent`, to show that the
+relay replaces it first. They skip, printing why, when no socket answers (`DOOZERS_REQUIRE_DOCKER=1`
+makes that a failure, as in [CI](ci.md)). The helper comes from `DOOZERS_HELPER_DIR` or is
+cross-built for the engine's architecture.

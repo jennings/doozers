@@ -49,6 +49,7 @@ use doozers_proto::handshake::{
 };
 use doozers_proto::plugin::v1::{
     ConfigureRequest, DescribeRequest, DescribeResponse, SandboxGrants, ShutdownRequest,
+    describe_response,
 };
 use doozers_store::BlobStore;
 use doozers_types::{Channel, Environment as _};
@@ -75,7 +76,7 @@ use crate::config::{
 };
 use crate::identity::{NamespaceError, validate_namespace};
 use crate::paths::{DataRoot, PathsError};
-use crate::registry::Registry;
+use crate::registry::{EnvironmentCapabilities, Registry};
 use crate::sandbox::{self, SpecError, TMP_DIR_NAME};
 use crate::sessions::Sessions;
 
@@ -1115,6 +1116,16 @@ impl Attach for ChannelAttach {
     }
 }
 
+/// What the core acts on in an environment plugin's `Describe` capabilities.
+fn environment_capabilities(describe: &DescribeResponse) -> EnvironmentCapabilities {
+    match &describe.capabilities {
+        Some(describe_response::Capabilities::Environment(capabilities)) => {
+            EnvironmentCapabilities::new(capabilities.ssh_relay)
+        }
+        _ => EnvironmentCapabilities::default(),
+    }
+}
+
 /// Registers the plugin as the environment of one configured instance, after `Info`.
 struct EnvironmentAttach {
     registry: Arc<Registry>,
@@ -1122,7 +1133,12 @@ struct EnvironmentAttach {
 }
 
 impl EnvironmentAttach {
-    async fn register(&self, environment: RemoteEnvironment) -> Result<(), AttachError> {
+    async fn register(
+        &self,
+        environment: RemoteEnvironment,
+        describe: &DescribeResponse,
+    ) -> Result<(), AttachError> {
+        let capabilities = environment_capabilities(describe);
         let environment = Arc::new(environment);
         let info = match tokio::time::timeout(INFO_TIMEOUT, environment.info()).await {
             Err(_) => {
@@ -1140,7 +1156,7 @@ impl EnvironmentAttach {
             Ok(Ok(info)) => info,
         };
         self.registry
-            .register_environment(&self.instance, environment, info)
+            .register_environment(&self.instance, environment, info, capabilities)
             .map(drop)
             .map_err(|error| error.to_string().into())
     }
@@ -1149,11 +1165,13 @@ impl EnvironmentAttach {
 #[async_trait]
 impl Attach for EnvironmentAttach {
     async fn attach(&self, plugin: &LaunchedPlugin) -> Result<(), AttachError> {
-        self.register(RemoteEnvironment::new(plugin)).await
+        self.register(RemoteEnvironment::new(plugin), &plugin.describe)
+            .await
     }
 
     async fn attach_remote(&self, plugin: &RemotePlugin) -> Result<(), AttachError> {
-        self.register(RemoteEnvironment::from_remote(plugin)).await
+        self.register(RemoteEnvironment::from_remote(plugin), &plugin.describe)
+            .await
     }
 
     fn detach(&self) {
@@ -1409,6 +1427,27 @@ mod tests {
             classify_exit(ExitStatus::from_raw(9), true),
             EarlyExit::Other
         );
+    }
+
+    #[test]
+    fn an_environments_describe_gives_its_capabilities() {
+        use doozers_proto::environment::v1::EnvironmentCapabilities as Reported;
+        use doozers_proto::plugin::v1::PluginKind;
+        let describe = |capabilities| DescribeResponse {
+            kind: PluginKind::Environment.into(),
+            name: "docker".into(),
+            version: "1.0".into(),
+            requested_grants: None,
+            capabilities,
+        };
+        let environment = |ssh_relay| {
+            Some(describe_response::Capabilities::Environment(Reported {
+                ssh_relay,
+            }))
+        };
+        assert!(environment_capabilities(&describe(environment(true))).ssh_relay);
+        assert!(!environment_capabilities(&describe(environment(false))).ssh_relay);
+        assert!(!environment_capabilities(&describe(None)).ssh_relay);
     }
 
     #[test]

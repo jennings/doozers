@@ -321,8 +321,9 @@ converting it, so it accepts any handle, and it never trusts one: it fetches the
 `EnvironmentPlugin` has the same entry points as `ChannelPlugin` (`new`, `requested_grants`,
 `serve`, `serve_remote`, `run`) and serves `doozers.environment.v1.EnvironmentService` by adapting
 the `doozers_types::Environment` its `configure` closure returns. The closure gets the same
-`Configure` as a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and empty
-`EnvironmentCapabilities`.
+`Configure` as a channel's. `Describe` reports `PLUGIN_KIND_ENVIRONMENT` and the plugin's
+`EnvironmentCapabilities`: the builder method `EnvironmentPlugin::ssh_relay()` sets `ssh_relay`, and
+nothing else is set.
 
 - `Configure` calls the closure under a lock, as for channels, answers with an empty identity
   namespace, and marks `EnvironmentService` serving. A repeated identical `Configure` (same instance
@@ -337,6 +338,13 @@ the `doozers_types::Environment` its `configure` closure returns. The closure ge
   cue to kill the command and everything it started. The SDK also drops it right after the exit
   event, which is always the last message, and after an error. A stream that ends without an exit
   event is reported as `INTERNAL`, naming a plugin bug.
+- `Relay` reads the core's first message, which must be `open` (anything else is
+  `INVALID_ARGUMENT`), and calls `Environment::relay` with the workspace id and the rest of the
+  core's messages as a stream of `RelayReply`s. That stream ends when the core ends its side, and a
+  message the SDK can't convert ends it too. What the plugin's stream yields is sent to the core,
+  and dropping it, which tonic does when the core cancels the call, is the plugin's cue to stop. The
+  default `Environment::relay` refuses with `InvalidRequest`, so a plugin without the capability
+  needs nothing.
 - Errors map as in [Conversions and errors](#conversions-and-errors). `convert::environment` has the
   field conversions in both directions (see
   [gRPC Protocols](protocols.md#mapping-to-doozers-types)).

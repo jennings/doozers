@@ -16,15 +16,16 @@ use doozers_proto::environment::v1::{
     DeleteWorkspaceResponse, EnvironmentCapabilities, ExecRequest as PbExecRequest, ExecResponse,
     FindRequest as PbFindRequest, FindResponse, GrepRequest as PbGrepRequest, GrepResponse,
     InfoRequest, InfoResponse, ListWorkspacesRequest, ListWorkspacesResponse, ReadFileRequest,
-    ReadFileResponse, StartWorkspaceRequest, StartWorkspaceResponse, StopWorkspaceRequest,
-    StopWorkspaceResponse, WriteFileRequest, WriteFileResponse,
+    ReadFileResponse, RelayReply as PbRelayReply, RelayRequest as PbRelayRequest,
+    StartWorkspaceRequest, StartWorkspaceResponse, StopWorkspaceRequest, StopWorkspaceResponse,
+    WriteFileRequest, WriteFileResponse,
 };
 use doozers_proto::plugin::v1::{DescribeResponse, PluginKind, describe_response};
 use doozers_types::{Environment, ExecEvent, Result, WorkspaceId};
 use futures::future::BoxFuture;
 use futures::stream::{self, BoxStream, StreamExt as _};
 use tonic::service::Routes;
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response, Status, Streaming};
 use tonic_health::ServingStatus;
 use tonic_health::server::HealthReporter;
 
@@ -34,7 +35,8 @@ use crate::configure::Configure;
 use crate::convert::environment::{
     exec_event_to_proto, exec_request_from_proto, find_request_from_proto, find_result_to_proto,
     grep_request_from_proto, grep_result_to_proto, info_to_proto, options_from_proto,
-    read_file_to_proto, start_outcome_to_proto, workspace_list_to_proto, workspace_to_proto,
+    read_file_to_proto, relay_open_from_proto, relay_reply_from_proto, relay_request_to_proto,
+    start_outcome_to_proto, workspace_list_to_proto, workspace_to_proto,
 };
 use crate::convert::status_from_error;
 use crate::remote::RemoteServer;
@@ -136,6 +138,7 @@ pub struct EnvironmentPlugin {
     name: String,
     version: String,
     requested_grants: Grants,
+    ssh_relay: bool,
 }
 
 impl EnvironmentPlugin {
@@ -147,6 +150,7 @@ impl EnvironmentPlugin {
             name: name.into(),
             version: version.into(),
             requested_grants: Grants::default(),
+            ssh_relay: false,
         }
     }
 
@@ -154,6 +158,15 @@ impl EnvironmentPlugin {
     /// [`Grants::unix`]. Advisory only.
     pub fn requested_grants(mut self, grants: Grants) -> Self {
         self.requested_grants = grants;
+        self
+    }
+
+    /// Declares that the plugin implements [`Environment::relay`]: each workspace has an ssh-agent
+    /// socket (`SSH_AUTH_SOCK`) whose requests the plugin relays to the core, which signs them
+    /// with the workspace user's SSH keys. `Describe` reports it, and the core opens a relay for
+    /// each workspace it starts. Without it the core never calls `relay`.
+    pub fn ssh_relay(mut self) -> Self {
+        self.ssh_relay = true;
         self
     }
 
@@ -381,7 +394,9 @@ impl Kind for EnvironmentKind {
             version: meta.version.clone(),
             requested_grants: Some(meta.requested_grants.clone().into()),
             capabilities: Some(describe_response::Capabilities::Environment(
-                EnvironmentCapabilities {},
+                EnvironmentCapabilities {
+                    ssh_relay: meta.ssh_relay,
+                },
             )),
         }
     }
@@ -621,6 +636,41 @@ impl EnvironmentService for EnvironmentServer {
             .await
             .map_err(status_from_error)?;
         Ok(Response::new(grep_result_to_proto(result)))
+    }
+
+    type RelayStream = BoxStream<'static, Result<PbRelayRequest, Status>>;
+
+    async fn relay(
+        &self,
+        request: Request<Streaming<PbRelayReply>>,
+    ) -> Result<Response<Self::RelayStream>, Status> {
+        let environment = self.0.environment()?;
+        let mut incoming = request.into_inner();
+        let first = incoming.message().await?.ok_or_else(|| {
+            Status::invalid_argument("the first Relay message must be open, but the call is empty")
+        })?;
+        let id = relay_open_from_proto(first).map_err(status_from_error)?;
+        // The core's later messages are the environment's replies. A message that can't be
+        // understood or a broken call ends them, which ends the relay.
+        let replies = stream::unfold(incoming, |mut incoming| async move {
+            let message = incoming.message().await.ok()??;
+            let reply = relay_reply_from_proto(message).ok()?;
+            Some((reply, incoming))
+        })
+        .boxed();
+        let requests = environment
+            .relay(&id, replies)
+            .await
+            .map_err(status_from_error)?;
+        Ok(Response::new(
+            requests
+                .map(|request| {
+                    request
+                        .and_then(relay_request_to_proto)
+                        .map_err(status_from_error)
+                })
+                .boxed(),
+        ))
     }
 }
 

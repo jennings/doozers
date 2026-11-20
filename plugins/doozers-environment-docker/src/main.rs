@@ -19,6 +19,7 @@ async fn main() -> ExitCode {
         )
         .init();
     EnvironmentPlugin::new("docker", env!("CARGO_PKG_VERSION"))
+        .ssh_relay()
         .requested_grants(Grants {
             unix: default_socket().into_iter().collect(),
             // The helper files next to the plugin.

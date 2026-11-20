@@ -468,7 +468,10 @@ impl DockerEnvironment {
         image_id: &str,
     ) -> Result<()> {
         let settings = self.settings();
-        let mut env = vec![format!("HOME={WORKSPACE_DIR}/.home")];
+        let mut env = vec![
+            format!("HOME={WORKSPACE_DIR}/.home"),
+            helper::ssh_auth_sock_env(),
+        ];
         env.extend(settings.env.iter().cloned());
         let body = ContainerCreateBody {
             image: Some(image_id.to_owned()),

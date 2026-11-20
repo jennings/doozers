@@ -207,7 +207,7 @@ mod tests {
             version: "1.0".to_owned(),
             requested_grants: None,
             capabilities: Some(describe_response::Capabilities::Environment(
-                EnvironmentCapabilities {},
+                EnvironmentCapabilities::default(),
             )),
         };
         let check = |describe: &DescribeResponse| check_describe(describe, &ENVIRONMENT, "docker");

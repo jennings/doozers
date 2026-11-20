@@ -47,6 +47,7 @@ impl Wk {
                 EnvironmentInfo {
                     options_schema: json!({"type": "object"}),
                 },
+                crate::registry::EnvironmentCapabilities::default(),
             )
             .unwrap();
     }

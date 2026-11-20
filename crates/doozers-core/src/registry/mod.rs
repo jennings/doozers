@@ -126,12 +126,31 @@ pub struct EnvironmentEntry {
     /// as the plugin reported it after its last successful `Configure`. Kept while the plugin is
     /// down; `None` until the first connection.
     pub options_schema: Option<serde_json::Value>,
+    /// What the plugin's `Describe` reported it can do, as of its last registration. Kept while
+    /// the plugin is down, like the schema; [`Default`] (nothing) until the first connection.
+    pub capabilities: EnvironmentCapabilities,
     /// How many times the plugin has connected since the core started: 0 before the first, and
     /// one more after each reconnection. A change means the plugin may have forgotten what
     /// happened while it was away, so whatever was learned from it earlier is worth checking.
     pub connections: u64,
     /// The plugin's client while it is connected; `None` while it is down, starting, or failed.
     pub client: Option<Arc<dyn Environment>>,
+}
+
+/// What an environment plugin reported in `Describe` that the core acts on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EnvironmentCapabilities {
+    /// The plugin serves [`Environment::relay`]: the core opens a relay for each workspace it
+    /// starts, and the workspace has an ssh-agent socket.
+    pub ssh_relay: bool,
+}
+
+impl EnvironmentCapabilities {
+    /// No capabilities beyond the basics, with the SSH relay if `ssh_relay`.
+    pub fn new(ssh_relay: bool) -> Self {
+        Self { ssh_relay }
+    }
 }
 
 impl EnvironmentEntry {
@@ -148,6 +167,7 @@ impl fmt::Debug for EnvironmentEntry {
             .field("description", &self.description)
             .field("stop_after", &self.stop_after)
             .field("delete_after", &self.delete_after)
+            .field("capabilities", &self.capabilities)
             .field("reachable", &self.reachable())
             .field("connections", &self.connections)
             .finish_non_exhaustive()
@@ -159,6 +179,7 @@ impl fmt::Debug for EnvironmentEntry {
 struct EnvironmentState {
     client: Option<Arc<dyn Environment>>,
     options_schema: Option<serde_json::Value>,
+    capabilities: EnvironmentCapabilities,
     connections: u64,
 }
 
@@ -503,7 +524,8 @@ impl Registry {
     }
 
     /// Registers `client` as the connected plugin of the configured environment instance `name`,
-    /// with the `info` it reported after `Configure`, replacing any earlier client and schema. The
+    /// with the `info` it reported after `Configure` and the `capabilities` its `Describe`
+    /// reported, replacing any earlier client, schema, and capabilities. The
     /// instance's [`connections`](EnvironmentEntry::connections) count goes up and
     /// [`environment_changes`](Self::environment_changes) notifies. Returns the earlier client.
     ///
@@ -515,6 +537,7 @@ impl Registry {
         name: &InstanceName,
         client: Arc<dyn Environment>,
         info: EnvironmentInfo,
+        capabilities: EnvironmentCapabilities,
     ) -> Result<Option<Arc<dyn Environment>>, RegistryError> {
         self.check_configured(Kind::Environment, name)?;
         let old = {
@@ -524,6 +547,7 @@ impl Registry {
                 .unwrap_or_else(PoisonError::into_inner);
             let state = states.entry(name.clone()).or_default();
             state.options_schema = Some(info.options_schema);
+            state.capabilities = capabilities;
             state.connections += 1;
             state.client.replace(client)
         };
@@ -534,7 +558,7 @@ impl Registry {
 
     /// Withdraws the client of environment instance `name`, which has disconnected: the instance
     /// is no longer [reachable](EnvironmentEntry::reachable), and calls through a client taken
-    /// earlier fail as the plugin's connection is gone. Its schema stays. Returns the client, or
+    /// earlier fail as the plugin's connection is gone. Its schema and capabilities stay. Returns the client, or
     /// `None` if none was registered. The instance's configuration is untouched.
     pub fn unregister_environment(&self, name: &InstanceName) -> Option<Arc<dyn Environment>> {
         let old = self
@@ -765,6 +789,7 @@ fn environment_entry(
         stop_after: instance.stop_after,
         delete_after: instance.delete_after,
         options_schema: state.and_then(|state| state.options_schema.clone()),
+        capabilities: state.map_or_else(Default::default, |state| state.capabilities),
         connections: state.map_or(0, |state| state.connections),
         client: state.and_then(|state| state.client.clone()),
     }
