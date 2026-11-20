@@ -376,6 +376,10 @@ view, except the chat page's approvals. Inside a table, every action is a `butto
 - Controls are 40 px tall with 12 px side padding, radius 8 px, the control border, the inset
   surface, and the text color. Textareas resize vertically. A disabled control uses the disabled
   surface and faint text.
+- Every one-line control has the same fixed `height: 40px`, `<select>` included, so a select next to
+  a text field lines up with it. Selects use `appearance: none`, because some browsers ignore
+  `height` on a native select, and draw their chevron with background gradients in `--text-muted`.
+  Don't give one kind of control its own height or padding.
 - `.input-group` attaches an icon button to a field's right edge (`.input-group-button`, 44 px wide,
   the inset surface), such as the copy button of a public key. The field loses its right corners
   only while the button is shown.
