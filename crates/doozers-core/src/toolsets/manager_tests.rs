@@ -163,6 +163,23 @@ impl Fixture {
         }
     }
 
+    /// Waits up to five seconds for `name` to have connected `count` times. A stored toolset is
+    /// started in the background by `ToolsetManager::start`, which `ToolsetHost::started` doesn't
+    /// cover, and the connection can take longer than a few yields on a loaded machine.
+    async fn connected(&self, name: &str, count: usize) {
+        for _ in 0..500 {
+            if self.connector.connects(name) >= count {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            self.connector.connects(name),
+            count,
+            "connections of {name}"
+        );
+    }
+
     /// The tools new sessions get, once background updates have settled.
     async fn offered(&self) -> Vec<String> {
         settle().await;
@@ -1394,7 +1411,7 @@ async fn a_failed_step_is_undone_and_the_toolset_runs_again_under_its_old_name()
     .await;
     let before = f.store.toolsets().await.unwrap();
     std::fs::create_dir(f.root.agents_dir().join("jeeves/.agent.toml.edit.tmp")).unwrap();
-    assert_eq!(f.connector.connects("files"), 1);
+    f.connected("files", 1).await;
 
     let err = f.manager.rename("files", "notes").await.unwrap_err();
     assert!(!err.is_invalid_input());
