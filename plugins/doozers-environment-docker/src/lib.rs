@@ -17,8 +17,9 @@
 //! Commands run through `doozers-workspace-helper` (see the `doozers-workspace-helper` crate),
 //! which the plugin copies into each container: it is the process-group wrapper that lets a second
 //! exec kill a cancelled command, and it runs `find`, `grep`, and the file calls. Its `ssh-agent`
-//! subcommand serves the workspace's `SSH_AUTH_SOCK`; the plugin relays what it receives to the
-//! core.
+//! subcommand serves the workspace's `SSH_AUTH_SOCK` and the known-hosts lookups of `ssh` there
+//! (see [`SSH_CONFIG`]); the plugin relays what it receives to the core, and scans the host keys the
+//! core asks about.
 
 mod config;
 mod disk_usage;
@@ -29,6 +30,7 @@ mod helper;
 mod image;
 mod lifecycle;
 mod relay;
+mod ssh;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -46,8 +48,11 @@ use serde_json::{Value, json};
 pub use config::{Config, DEFAULT_NETWORK, DEFAULT_SOCKET, Registry, Settings, parse_memory};
 use error::ErrorExt as _;
 pub use error::{Error, Result};
-pub use helper::{Arch, HELPER_PATH, SSH_AGENT_SOCKET, default_dir as default_helper_dir};
+pub use helper::{
+    Arch, HELPER_PATH, KNOWN_HOSTS_SOCKET, SSH_AGENT_SOCKET, default_dir as default_helper_dir,
+};
 pub use image::{Allowlist, DEFAULT_PATTERNS, ParseError, Reference};
+pub use ssh::{SSH_CONFIG, SSH_CONFIG_FILE};
 
 /// The directory commands start in, where the workspace volume is mounted.
 pub const WORKSPACE_DIR: &str = "/workspace";
@@ -261,6 +266,17 @@ impl Environment for DockerEnvironment {
         replies: BoxStream<'static, RelayReply>,
     ) -> Result<BoxStream<'static, Result<RelayRequest>>> {
         self.relay_agent(id.as_str(), replies).await
+    }
+
+    async fn scan_host_key(
+        &self,
+        id: &WorkspaceId,
+        host: &str,
+        port: u16,
+        key_type: &str,
+    ) -> Result<Vec<u8>> {
+        self.scan_for_workspace(id.as_str(), host, port, key_type)
+            .await
     }
 }
 

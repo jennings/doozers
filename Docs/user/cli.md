@@ -319,8 +319,8 @@ fails, the error lists what to fix by hand.
 Renames an environment, such as `docker` in `[environment.docker]`, with Doozers stopped. It moves
 the environment's directories and renames its table in `doozers.toml`, keeping its comments and
 formatting, and changes the name in each agent's `environments` list. The workspaces the environment
-holds stay attached to it, so agents keep their files. If the table has no `component` key, the
-command adds `component = "<old>"`. It works as
+holds stay attached to it, so agents keep their files, and so do the SSH host keys it trusts. If the
+table has no `component` key, the command adds `component = "<old>"`. It works as
 [`doozers channel rename`](#doozers-channel-rename-old-new) does:
 
 - Stop Doozers first.
@@ -330,7 +330,7 @@ command adds `component = "<old>"`. It works as
 ```console
 $ doozers environment rename docker sandbox
 Renamed environment instance "docker" to "sandbox".
-  database: 4 workspaces
+  database: 4 workspaces, 2 known SSH hosts
   doozers.toml: [environment.docker] -> [environment.sandbox]
   agents/jeeves/agent.toml: 1 reference(s) updated
   moved data/environment/docker -> data/environment/sandbox

@@ -17,6 +17,10 @@ pub const HELPER_PATH: &str = "/.doozers/bin/doozers-workspace-helper";
 /// The ssh-agent socket the helper's `ssh-agent` subcommand serves inside a container.
 pub const SSH_AGENT_SOCKET: &str = "/.doozers/run/ssh-agent.sock";
 
+/// The socket the helper's `known-hosts` subcommand asks, which the `ssh-agent` subcommand serves.
+/// Only the helper uses it: `ssh` reaches it through the configuration the plugin writes.
+pub const KNOWN_HOSTS_SOCKET: &str = "/.doozers/run/known-hosts.sock";
+
 /// `SSH_AUTH_SOCK` as a container or exec environment entry.
 pub(crate) fn ssh_auth_sock_env() -> String {
     format!("SSH_AUTH_SOCK={SSH_AGENT_SOCKET}")

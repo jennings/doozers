@@ -1605,6 +1605,7 @@ name = "doozers-environment-docker"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "bollard",
  "bytes",
  "doozers-core",
@@ -1727,6 +1728,7 @@ dependencies = [
 name = "doozers-workspace-helper"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "globset",
  "ignore",
  "regex",

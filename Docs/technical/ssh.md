@@ -4,13 +4,14 @@ Code: `crates/doozers-core/src/ssh/` (`doozers_core::ssh`), the rows in `doozers
 ([Storage](storage.md#ssh-keys)), and the pages in `channels/web/ssh_keys.rs`
 ([Web channel](web-channel.md#ssh-keys-pages)). Design: the decisions on
 [#135 SSH agent relay for environment workspaces](https://github.com/jennings/doozers/issues/135),
-[#136 Per-user SSH keys](https://github.com/jennings/doozers/issues/136), and
-[#137 ssh-agent relay](https://github.com/jennings/doozers/issues/137).
+[#136 Per-user SSH keys](https://github.com/jennings/doozers/issues/136),
+[#137 ssh-agent relay](https://github.com/jennings/doozers/issues/137), and
+[#138 Known SSH hosts](https://github.com/jennings/doozers/issues/138).
 
 Each user keeps SSH keys in Doozers. The private keys never leave the core: no page, command, or RPC
 returns one. This page covers how the keys are stored, generated, read from uploads, and protected,
-and how a workspace's `ssh` and `git` use them through a relay without ever holding one. The
-[user page](../user/ssh.md) is the guide.
+how a workspace's `ssh` and `git` use them through a relay without ever holding one, and how `ssh`
+there decides which server host keys to trust. The [user page](../user/ssh.md) is the guide.
 
 ## Storage
 
@@ -154,8 +155,8 @@ The core's first message is `RelayOpen` with the workspace id. After that the pl
 `RelayRequest`s, each an `AgentRequest` (connection number and one agent message without its length
 prefix) or an `AgentClosed`, and the core answers each request with an `AgentReply` for the same
 connection. Ending either side ends the relay, and the core opens another on the workspace's next
-use. [Protocols](protocols.md) lists the messages, and the same stream carries known-hosts lookups
-later.
+use. [Protocols](protocols.md) lists the messages. The same stream carries the
+[known-hosts lookups](#known-hosts).
 
 **In the workspace.** The `ssh-agent` subcommand of the workspace helper listens on
 `/.doozers/run/ssh-agent.sock` and multiplexes every client connection over its standard input and
@@ -227,6 +228,201 @@ overflows, trailing bytes, or no bytes at all. A failure never ends the relay.
   workspace that can write frames can ask for its key user's keys anyway, since every command in it
   can connect to the socket.
 
+## Known hosts
+
+`ssh` in a workspace doesn't read `known_hosts` files. It asks the core which host keys to trust,
+through the same relay as the agent, and the core answers from the `ssh_known_hosts` table. The code
+is `ssh::known_hosts` (`KnownHosts`, which `Workspaces::known_hosts()` returns) and the helper's
+`known_hosts.rs`. The decisions are on
+[#138 Known SSH hosts](https://github.com/jennings/doozers/issues/138).
+
+### The lookup
+
+`KnownHosts::lookup` takes the environment's client, a `Caller` (the environment instance, the
+workspace, the agent of its conversation, and its key user), and a `KnownHostsRequest`: `id`,
+`host`, `port`, and the key type and key the server offered. It never fails. Anything that stops the
+core from vouching for a key gives the empty answer, which makes `ssh` refuse the connection.
+
+The host is normalized first (`canonical_host`): `ssh` gives `%H` as `[host]:port` for a port other
+than 22 and as the plain host for 22, and the table stores the lowercased host without brackets and
+the port separately. A host that isn't a name or an address (only letters, digits, and `.-_:%`, at
+most 253 bytes) gets no key.
+
+| The host has | The offered key | The core |
+| ------------ | --------------- | -------- |
+| Keys | Is one of them | Returns the stored keys and stamps that key's `last_used_at` |
+| Keys | Isn't one of them | Returns the stored keys, so `ssh` fails with `REMOTE HOST IDENTIFICATION HAS CHANGED`, and logs a warning |
+| No key | Any key of a type the core records | [Verifies it](#verified-first-use), records it, and returns it, or returns nothing |
+| Any | None (the `NONE` call) | Returns the stored keys and records and stamps nothing |
+
+**The `NONE` call.** `ssh` runs `KnownHostsCommand` twice for each connection. The first call only
+asks for the keys that are stored, so that `ssh` offers the host key algorithms it has a key for
+first. `%t` and `%K` are the literal `NONE` in it, and the helper sends an empty key type and key.
+For a host with no key the answer is empty. The second call has the key the server offered, and only
+that call records anything. A key that doesn't parse, doesn't match the type given, or has a type
+other than Ed25519, ECDSA on P-256, P-384, or P-521, or RSA is never recorded. The core returns the
+stored keys for it.
+
+### Verified first use
+
+A host with no key is trusted on first use, but only the key the environment itself sees for the
+host. The core calls `Environment::scan_host_key` for the workspace, host, port, and key type, and
+waits up to 15 seconds, a little over the 10 the plugin gives the scan. It records the offered key
+only if the scanned key is byte for byte equal. A scan that fails, takes too long, or finds another
+key records nothing, logs a warning with both fingerprints, and returns no key, so `ssh` shows
+`Host key verification failed`. The workspace's model sees that, and an admin can
+[pin the key](#admin-page-and-pinning).
+
+Without the scan, a workspace could plant a fake key for `github.com` by sending a lookup of its
+own, since root in a workspace can write any frame to the helper's output. Every workspace of the
+instance would then trust it. Because the scan is the environment's own, no frame can make the core
+record a key.
+
+- **What the scan proves.** The server the environment reaches for the host holds the key. The
+  Docker plugin scans from the machine it runs on, not from inside the workspace, because a
+  workspace's root can rewrite `/etc/hosts` or `/etc/resolv.conf` and a scan through them would
+  confirm a fake key the workspace was offered. A host that only the workspace's container network
+  reaches can't be scanned, so its first connection is refused until an admin
+  [pins its key](#admin-page-and-pinning).
+- **Two first uses at once.** The store records a key only if the host has none
+  (`known_host_record_first_use`). The lookup that loses the race is judged like any lookup of a
+  known host, against the key that won.
+- **Several keys per host.** A host may have one key of each type. Once a host has a key, a
+  connection that is offered another key is never a first use. The `NONE` call returns the stored
+  keys, so `ssh` prefers their types, but a server that offers a type the host has no key for is
+  refused until an admin pins that key or deletes the host.
+
+### The scan
+
+`doozers_plugin_sdk::ssh::scan_host_key(host, port, key_type, timeout)` connects over TCP, from the
+machine the plugin runs on, and returns the key blob only after the server's signature over the
+exchange hash verifies. The Docker plugin's `Environment::scan_host_key` is that call with a 10
+second timeout, after checking that the workspace exists and is running.
+
+- **Key exchange.** `curve25519-sha256` (and its `@libssh.org` alias) only, with an X25519 key from
+  `aws-lc-rs`. A server that offers neither fails the scan with the algorithms it lists.
+- **Host key algorithm.** Only the ones for the requested type, so the server must answer with a key
+  of the type `ssh` was offered. For RSA they are `rsa-sha2-512` and `rsa-sha2-256`, never SHA-1.
+- **Time.** 10 seconds in total, connecting included.
+- **What it never does.** Authenticate, or send a password or a key.
+
+[Plugin SDK](plugin-sdk.md#ssh-host-key-scan) has the protocol steps, and
+[Docker environment](environment-docker.md#host-key-scans) says why the Docker plugin scans from
+outside the workspace.
+
+### In the workspace
+
+The Docker plugin writes `/etc/ssh/ssh_config.d/doozers.conf` and makes sure `ssh_config` includes
+that directory ([Docker environment](environment-docker.md#ssh-configuration)):
+
+```text
+KnownHostsCommand /.doozers/bin/doozers-workspace-helper known-hosts %H %p %t %K
+UserKnownHostsFile /dev/null
+GlobalKnownHostsFile /dev/null
+StrictHostKeyChecking yes
+```
+
+`KnownHostsCommand` needs OpenSSH 8.5 or later. A workspace with an older `ssh` can't connect to any
+host, because `ssh` doesn't know the option.
+
+`known-hosts HOST PORT TYPE KEY` connects to the helper's second socket,
+`/.doozers/run/known-hosts.sock` (mode 0666, like the agent's). It sends one request, prints one
+`known_hosts` line, `<%H as given> <key type> <base64>`, for each key in the answer, and exits 0.
+Each connection to the socket is one lookup.
+
+Lookups use the same frames as the agent, with kinds 4 and 5 and a separate series of ids. The
+layouts are at the top of `crates/doozers-workspace-helper/src/known_hosts.rs` and the frame format
+is in [Docker environment](environment-docker.md#the-ssh-agent-relay):
+
+```text
+request: u32 BE port | string host | string key type | string key
+answer:  u32 BE count | count * string key
+string:  u32 BE length | bytes
+```
+
+The plugin decodes a kind 4 frame into a `KnownHostsRequest` on the relay stream, and writes the
+core's `KnownHostsReply` as a kind 5 frame with the same id.
+
+**Fail closed.** If the helper's socket isn't there or the relay doesn't answer, the command prints
+a message on standard error, exits 1, and prints no line. `ssh` then has no key and, with
+`StrictHostKeyChecking yes`, refuses the connection. The same happens for an answer the core leaves
+empty. With no relay, `ssh` prints the helper's message
+(`the Doozers relay isn't reachable at /.doozers/run/known-hosts.sock`), then
+`KnownHostsCommand ... failed, status 1` and `KnownHostsCommand failed`, and gives up before it
+checks host keys.
+
+### Bounds
+
+Every lookup is workspace input, so each side bounds what it holds:
+
+- The core answers at most 16 lookups of a relay at once (`ssh::relay::MAX_LOOKUPS`). Each runs in
+  its own task, so a slow scan doesn't hold up the agent's requests on the same relay. One past the
+  limit gets the empty answer at once, with a warning. The tasks end with the relay.
+- The helper holds at most 64 lookups waiting for the plugin and gives up on one that gets no answer
+  in 60 seconds, which fails the command. A client of the socket has 10 seconds to send its request,
+  and a request or answer is at most 2 MiB.
+
+### The table
+
+`ssh_known_hosts` has a row for each key of each host ([Storage](storage.md#known-ssh-hosts)):
+
+- `environment` is the environment instance. Instances can sit on different networks, where one name
+  means different servers, so each has its own hosts.
+- `host` is lowercased, without brackets or port, and `port` is the port, so the same name on
+  another port is another host.
+- `key_type`, `public_key` (the base64 of the key blob) and `fingerprint` (`SHA256:...`) describe
+  the key.
+- `first_seen_at` is when the row was added. `first_workspace`, `first_agent`, and `first_user` say
+  which workspace made the connection that recorded it, the agent of its conversation, and the user
+  whose keys it had.
+- A key an admin pinned has null in all three and has `added_by`, the admin. A key recorded on first
+  use has a null `added_by`.
+- `last_used_at` is null until a connection is checked against the key. Each such connection stamps
+  it.
+- `UNIQUE (environment, host, port, public_key)`: a host has several keys, one for each type, and
+  never the same key twice.
+
+The id is `AUTOINCREMENT`, so a page that was open before a delete can't delete the next key that is
+recorded. The rows move with `doozers environment rename` ([Instance rename](instance-rename.md)).
+[Backups](backups.md) include the table, since they take `doozers.db` whole.
+
+### Admin page and pinning
+
+`KnownHosts` has the calls of the **Known SSH hosts** page, `/admin/ssh-hosts`, which only the owner
+opens ([Web channel](web-channel.md)): `all()`, `get(id)`, `delete(id)`, and
+`pin(admin, environment, line)`. Deleting removes one key. When a host has none left, its next
+connection is a first use again.
+
+`pin` takes one `known_hosts` line and stores its key for each host of the line, with `added_by`
+set, whether or not the host has other keys. It returns what it added. It doesn't check the
+environment name, so the page checks that it names a configured instance. It refuses a line, with a
+message the page shows, for:
+
+- no text, more than one line, or a comment
+- a marker (`@cert-authority`, `@revoked`)
+- a hashed host (`|1|...`), because the core needs the host to look the key up
+- a wildcard or negated pattern (`*`, `?`, `!`), or a host or port that doesn't parse
+- a key type other than Ed25519, ECDSA on P-256, P-384, and P-521, and RSA, such as certificates,
+  `sk-` keys, and DSA
+- a key that isn't base64, isn't a valid public key, or isn't of the type the line says
+
+`KnownHostsError::AlreadyKnown` is returned when every key of the line is stored for its host
+already. Comma-separated hosts are accepted, and `[host]:port` gives the port.
+
+### Logging
+
+A new host logs at `info`: `trusting a new SSH host on first use`, with the workspace, environment,
+host, port, and key fingerprint. These log at `warn`:
+
+- a key that differs from the stored ones (`the SSH host key changed`), with the offered and the
+  stored fingerprints
+- a scan that failed, took too long, or found another key than the workspace was offered
+- a host that isn't a name or an address, and a key that can't be read
+- a lookup past the bound
+- a store error, which also gives the empty answer
+
+A log line has fingerprints and never a private key.
+
 ## Labels
 
 A label is 1 to 100 characters after trimming, with no control characters. Labels needn't be unique.
@@ -248,3 +444,15 @@ fixtures are in `crates/doozers-core/src/ssh/testdata/`, checked in so the tests
 The tests that compare against OpenSSH run `ssh-keygen -l` for each generated type's fingerprint and
 `ssh-keygen -Y verify` for a signature made with a key read back from the secret store. They print
 why they stop when `ssh-keygen` isn't installed.
+
+`ssh/known_hosts/tests.rs` covers the lookup: a first use that the environment confirms, a key that
+differs from the scan, a scan that fails or takes too long, a known host with the stored key and
+with another, the `NONE` call, host normalization, each environment's own hosts, a pinned key, a
+deleted host, two first uses at once, and the lines `pin` accepts and refuses. The helper's
+`known-hosts` command and sockets are tested in `crates/doozers-workspace-helper/tests/cli.rs`
+against a stand-in for the plugin, the scan in `crates/doozers-plugin-sdk/src/ssh/tests.rs` against
+a fake server, and the table in `doozers-store`. The Docker plugin's `tests/known_hosts.rs` runs a
+real `ssh` in workspaces against an `sshd` container through the whole path: a first use, a second
+workspace, a changed key and trust again after a delete, pins, a scan that differs, failing closed
+with no relay, and the `ssh_config.d` inclusion on four distributions
+([Docker environment](environment-docker.md#tests)).

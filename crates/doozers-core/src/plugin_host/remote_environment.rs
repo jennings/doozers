@@ -13,8 +13,9 @@ use async_trait::async_trait;
 use doozers_plugin_sdk::convert::environment::{
     exec_event_from_proto, exec_request_to_proto, find_request_to_proto, find_result_from_proto,
     grep_request_to_proto, grep_result_from_proto, info_from_proto, read_file_from_proto,
-    relay_open_to_proto, relay_reply_to_proto, relay_request_from_proto, start_outcome_from_proto,
-    workspace_from_proto, workspace_list_from_proto,
+    relay_open_to_proto, relay_reply_to_proto, relay_request_from_proto, scan_host_key_from_proto,
+    scan_host_key_request_to_proto, start_outcome_from_proto, workspace_from_proto,
+    workspace_list_from_proto,
 };
 use doozers_proto::environment::v1 as pb;
 use doozers_types::{
@@ -281,6 +282,23 @@ impl Environment for RemoteEnvironment {
             cancel,
             self.secrets.clone(),
         ))
+    }
+
+    async fn scan_host_key(
+        &self,
+        id: &WorkspaceId,
+        host: &str,
+        port: u16,
+        key_type: &str,
+    ) -> Result<Vec<u8>> {
+        let response = self
+            .connection
+            .environment()
+            .scan_host_key(scan_host_key_request_to_proto(id, host, port, key_type))
+            .instrument(self.span.clone())
+            .await
+            .map_err(|status| self.error("ScanHostKey", &status))?;
+        scan_host_key_from_proto(response.into_inner())
     }
 }
 

@@ -97,7 +97,11 @@ fn format_report(root: &DataRoot, old: &str, new: &str, report: &RenameReport) -
         // A toolset has no rows of its own.
         Kind::Toolset => {}
         Kind::Environment => {
-            let _ = writeln!(text, "  database: {} workspaces", rows.workspaces);
+            let _ = writeln!(
+                text,
+                "  database: {} workspaces, {} known SSH hosts",
+                rows.workspaces, rows.known_hosts
+            );
         }
         Kind::Channel | Kind::Provider => {
             let _ = writeln!(
@@ -182,6 +186,7 @@ mod tests {
                 outbox: 0,
                 workspaces: 2,
                 usage: 0,
+                known_hosts: 0,
                 messages: 0,
                 jobs: 1,
                 routes: 4,
@@ -223,6 +228,7 @@ mod tests {
             kind: Kind::Environment,
             rows: RenamedRows {
                 workspaces: 3,
+                known_hosts: 2,
                 ..RenamedRows::default()
             },
             config_table: true,
@@ -233,7 +239,10 @@ mod tests {
             memory_dbs: Vec::new(),
         };
         let text = format_report(&root(), "docker", "sandbox", &report);
-        assert!(text.contains("  database: 3 workspaces\n"), "{text}");
+        assert!(
+            text.contains("  database: 3 workspaces, 2 known SSH hosts\n"),
+            "{text}"
+        );
         assert!(!text.contains("sessions"), "{text}");
     }
 

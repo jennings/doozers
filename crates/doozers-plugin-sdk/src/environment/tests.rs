@@ -215,6 +215,18 @@ impl Environment for Fake {
         })
     }
 
+    /// The key is the host, key type, and port, joined; the workspaces named after the errors fail.
+    async fn scan_host_key(
+        &self,
+        id: &WorkspaceId,
+        host: &str,
+        port: u16,
+        key_type: &str,
+    ) -> Result<Vec<u8>> {
+        fail_by_name(id)?;
+        Ok(format!("{host} {key_type} {port}").into_bytes())
+    }
+
     /// Asks `REQUEST_IDENTITIES` (11) for connection 1, then answers every reply with the reply's
     /// message reversed, and ends when the core ends its replies.
     async fn relay(
@@ -975,4 +987,57 @@ async fn relay_needs_a_configured_plugin() {
     let mut f = fixture().await;
     let (_core, response) = open_relay(&mut f, open("ws-1")).await;
     assert_eq!(response.unwrap_err().code(), Code::FailedPrecondition);
+}
+
+#[tokio::test]
+async fn scan_host_key_goes_through_the_environment() {
+    let mut f = Fixture::configured().await;
+    let request = |workspace: &str, port: u32| pb::ScanHostKeyRequest {
+        workspace_id: workspace.into(),
+        host: "git.example".into(),
+        port,
+        key_type: "ssh-ed25519".into(),
+    };
+    let key = f
+        .env
+        .scan_host_key(request("ws-1", 2222))
+        .await
+        .unwrap()
+        .into_inner()
+        .key;
+    assert_eq!(key, b"git.example ssh-ed25519 2222");
+
+    assert_eq!(
+        f.env
+            .scan_host_key(request("gone", 22))
+            .await
+            .unwrap_err()
+            .code(),
+        Code::NotFound
+    );
+    // A port that isn't one never reaches the environment.
+    assert_eq!(
+        f.env
+            .scan_host_key(request("ws-1", 0))
+            .await
+            .unwrap_err()
+            .code(),
+        Code::InvalidArgument
+    );
+}
+
+#[tokio::test]
+async fn scan_host_key_needs_a_configured_plugin() {
+    let mut f = fixture().await;
+    let status = f
+        .env
+        .scan_host_key(pb::ScanHostKeyRequest {
+            workspace_id: "ws-1".into(),
+            host: "git.example".into(),
+            port: 22,
+            key_type: "ssh-ed25519".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(status.code(), Code::FailedPrecondition);
 }

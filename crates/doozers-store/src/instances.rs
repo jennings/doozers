@@ -11,7 +11,8 @@
 //!   scheduled in).
 //! - A provider is named in `usage.provider` and in the `provider` field of each assistant
 //!   message's `meta` JSON.
-//! - An environment is named in `workspaces.environment`.
+//! - An environment is named in `workspaces.environment` and `ssh_known_hosts.environment` (the
+//!   host keys its workspaces trust).
 //! - A toolset is named in none of them. A stored toolset is a row of its own
 //!   ([`Store::toolset_rename`]), and the agents' files that mention it aren't the database's.
 //!
@@ -45,6 +46,8 @@ pub struct InstanceRows {
     pub workspaces: u64,
     /// Provider requests to the provider instance (`usage.provider`).
     pub usage: u64,
+    /// Host keys the environment instance's workspaces trust (`ssh_known_hosts.environment`).
+    pub known_hosts: u64,
 }
 
 /// What [`Store::rename_instance`] moved.
@@ -60,6 +63,8 @@ pub struct RenamedRows {
     pub workspaces: u64,
     /// `usage` rows.
     pub usage: u64,
+    /// `ssh_known_hosts` rows.
+    pub known_hosts: u64,
     /// Assistant messages whose `meta` named the provider instance.
     pub messages: u64,
     /// Runtime jobs whose `spec` named the channel instance of their conversation.
@@ -77,6 +82,7 @@ impl RenamedRows {
             + self.outbox
             + self.workspaces
             + self.usage
+            + self.known_hosts
             + self.messages
             + self.jobs
             + self.routes
@@ -91,6 +97,7 @@ impl From<InstanceRows> for RenamedRows {
             outbox: rows.outbox,
             workspaces: rows.workspaces,
             usage: rows.usage,
+            known_hosts: rows.known_hosts,
             ..Self::default()
         }
     }
@@ -132,11 +139,18 @@ const PROVIDER_COLUMNS: [NameColumn; 1] = [NameColumn {
     field: |rows| &mut rows.usage,
 }];
 
-const ENVIRONMENT_COLUMNS: [NameColumn; 1] = [NameColumn {
-    table: "workspaces",
-    column: "environment",
-    field: |rows| &mut rows.workspaces,
-}];
+const ENVIRONMENT_COLUMNS: [NameColumn; 2] = [
+    NameColumn {
+        table: "workspaces",
+        column: "environment",
+        field: |rows| &mut rows.workspaces,
+    },
+    NameColumn {
+        table: "ssh_known_hosts",
+        column: "environment",
+        field: |rows| &mut rows.known_hosts,
+    },
+];
 
 /// The columns that count as data for `kind`: where a rename of it looks for rows to refuse a
 /// merge, and what [`Store::instance_rows`] lists. Routes, messages, and jobs aren't among them.
@@ -274,13 +288,14 @@ impl Store {
             if existing.total() > 0 {
                 return Err(Error::conflict(format!(
                     "{new:?} already has data in the database ({} sessions, {} inbox rows, {} \
-                     outbox rows, {} workspaces, {} usage rows, {} messages, {} jobs); renaming \
-                     doesn't merge instances",
+                     outbox rows, {} workspaces, {} usage rows, {} known SSH hosts, {} messages, {} jobs); \
+                     renaming doesn't merge instances",
                     existing.sessions,
                     existing.inbox,
                     existing.outbox,
                     existing.workspaces,
                     existing.usage,
+                    existing.known_hosts,
                     existing.messages,
                     existing.jobs,
                 )));

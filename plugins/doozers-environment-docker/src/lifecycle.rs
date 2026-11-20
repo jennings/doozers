@@ -202,6 +202,11 @@ impl DockerEnvironment {
                         .await
                         .map_err(|e| Error::docker("starting the workspace container", &e))?;
                 }
+                if let Err(error) = self.configure_ssh(&container_id).await {
+                    // The files are intact: a start that works without `ssh` set up is better
+                    // than none. The relay writes it again when it opens.
+                    warn!(workspace = id, %error, "cannot write the workspace's ssh configuration");
+                }
                 Ok(StartOutcome::Started {
                     detail: "The workspace was stopped and has started again. Processes that were \
                              running in it have ended; its files and installed packages are intact."
@@ -516,7 +521,10 @@ impl DockerEnvironment {
             .start_container(&created.id, None)
             .await
             .map_err(|e| Error::docker("starting the workspace container", &e))?;
-        self.prepare_home(&created.id, id).await
+        self.prepare_home(&created.id, id).await?;
+        // Without the configuration `ssh` would trust nothing or use files in the workspace, so a
+        // container that can't have it isn't a workspace.
+        self.configure_ssh(&created.id).await
     }
 
     /// Makes `$HOME`. This also finds out early that the image has no `/bin/sh`.

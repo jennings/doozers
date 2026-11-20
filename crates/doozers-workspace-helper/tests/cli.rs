@@ -485,6 +485,7 @@ struct Relay {
     stdin: Option<ChildStdin>,
     stdout: ChildStdout,
     socket: PathBuf,
+    lookup_socket: PathBuf,
     // Keeps the socket's directory (a short path: socket paths are limited to about 100 bytes).
     _dir: TempDir,
 }
@@ -492,6 +493,8 @@ struct Relay {
 const REQUEST: u8 = 1;
 const CLOSED: u8 = 2;
 const REPLY: u8 = 3;
+const LOOKUP: u8 = 4;
+const LOOKUP_REPLY: u8 = 5;
 
 impl Relay {
     fn start() -> Self {
@@ -500,12 +503,15 @@ impl Relay {
 
     fn start_in(dir: TempDir, prepare: impl FnOnce(&Path)) -> Self {
         let socket = dir.path().join("a.sock");
+        let lookup_socket = dir.path().join("k.sock");
         prepare(&socket);
         let run_dir = TempDir::new().unwrap();
         let mut child = helper(run_dir.path())
             .arg("ssh-agent")
             .arg("--socket")
             .arg(&socket)
+            .arg("--known-hosts-socket")
+            .arg(&lookup_socket)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -524,6 +530,7 @@ impl Relay {
             stdin,
             stdout,
             socket,
+            lookup_socket,
             _dir: dir,
         };
         // The probe connection above is connection 1; consume its closed frame.
@@ -533,8 +540,30 @@ impl Relay {
         relay
     }
 
+    /// `known-hosts` as `ssh` runs it, against this relay.
+    fn known_hosts(&self, args: &[&str]) -> Command {
+        let mut command = helper(Path::new("/nonexistent"));
+        command
+            .arg("known-hosts")
+            .arg("--socket")
+            .arg(&self.lookup_socket)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    }
+
     fn connect(&self) -> UnixStream {
         let stream = UnixStream::connect(&self.socket).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream
+    }
+
+    fn connect_lookup(&self) -> UnixStream {
+        let stream = UnixStream::connect(&self.lookup_socket).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
@@ -752,4 +781,267 @@ fn ssh_agent_refuses_a_stray_argument() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(64));
+}
+
+fn put_string(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend((bytes.len() as u32).to_be_bytes());
+    out.extend(bytes);
+}
+
+/// An SSH public key blob of `algorithm` with `data` standing in for the key.
+fn blob(algorithm: &str, data: &[u8]) -> Vec<u8> {
+    let mut blob = Vec::new();
+    put_string(&mut blob, algorithm.as_bytes());
+    put_string(&mut blob, data);
+    blob
+}
+
+/// The answer payload of a lookup frame for `keys`.
+fn lookup_answer(keys: &[Vec<u8>]) -> Vec<u8> {
+    let mut answer = (keys.len() as u32).to_be_bytes().to_vec();
+    for key in keys {
+        put_string(&mut answer, key);
+    }
+    answer
+}
+
+/// The request payload `known-hosts` sends for these values.
+fn lookup_request(port: u32, host: &str, key_type: &str, key: &[u8]) -> Vec<u8> {
+    let mut request = port.to_be_bytes().to_vec();
+    put_string(&mut request, host.as_bytes());
+    put_string(&mut request, key_type.as_bytes());
+    put_string(&mut request, key);
+    request
+}
+
+fn base64(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+#[test]
+fn ssh_agent_listens_on_a_known_hosts_socket_anyone_may_use() {
+    let relay = Relay::start();
+    let mode = fs::metadata(&relay.lookup_socket)
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o666);
+}
+
+#[test]
+fn ssh_agent_replaces_a_stale_known_hosts_socket_file() {
+    let relay = Relay::start_in(TempDir::new().unwrap(), |socket| {
+        fs::write(socket.with_file_name("k.sock"), "left over").unwrap();
+    });
+    drop(UnixStream::connect(&relay.lookup_socket).unwrap());
+}
+
+#[test]
+fn known_hosts_without_a_key_asks_for_the_stored_keys_and_prints_them_under_the_given_host() {
+    let mut relay = Relay::start();
+    let child = relay
+        .known_hosts(&["[127.0.0.1]:2222", "2222", "NONE", "NONE"])
+        .spawn()
+        .unwrap();
+    let (kind, id, payload) = relay.read_frame();
+    assert_eq!(kind, LOOKUP);
+    assert_eq!(payload, lookup_request(2222, "[127.0.0.1]:2222", "", &[]));
+
+    let ed25519 = blob("ssh-ed25519", b"one");
+    let rsa = blob("ssh-rsa", b"two");
+    relay.send_frame(
+        LOOKUP_REPLY,
+        id,
+        &lookup_answer(&[ed25519.clone(), rsa.clone()]),
+    );
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        format!(
+            "[127.0.0.1]:2222 ssh-ed25519 {}\n[127.0.0.1]:2222 ssh-rsa {}\n",
+            base64(&ed25519),
+            base64(&rsa)
+        )
+    );
+}
+
+#[test]
+fn known_hosts_sends_the_offered_key_decoded() {
+    let mut relay = Relay::start();
+    let offered = blob("ssh-ed25519", b"offered");
+    let child = relay
+        .known_hosts(&["github.com", "22", "ssh-ed25519", &base64(&offered)])
+        .spawn()
+        .unwrap();
+    let (kind, id, payload) = relay.read_frame();
+    assert_eq!(kind, LOOKUP);
+    assert_eq!(
+        payload,
+        lookup_request(22, "github.com", "ssh-ed25519", &offered)
+    );
+    // No stored key and none to record: nothing is printed, and ssh refuses the host.
+    relay.send_frame(LOOKUP_REPLY, id, &lookup_answer(&[]));
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn known_hosts_answers_go_to_the_lookup_they_belong_to() {
+    let mut relay = Relay::start();
+    let first = relay
+        .known_hosts(&["a.example", "22", "NONE", "NONE"])
+        .spawn()
+        .unwrap();
+    let (_, first_id, _) = relay.read_frame();
+    let second = relay
+        .known_hosts(&["b.example", "22", "NONE", "NONE"])
+        .spawn()
+        .unwrap();
+    let (_, second_id, _) = relay.read_frame();
+    assert_ne!(first_id, second_id);
+
+    // Answered out of order, with a stray answer for nobody in between.
+    relay.send_frame(LOOKUP_REPLY, 9999, &lookup_answer(&[]));
+    relay.send_frame(
+        LOOKUP_REPLY,
+        second_id,
+        &lookup_answer(&[blob("ssh-rsa", b"b")]),
+    );
+    relay.send_frame(
+        LOOKUP_REPLY,
+        first_id,
+        &lookup_answer(&[blob("ssh-ed25519", b"a")]),
+    );
+    let first = String::from_utf8(first.wait_with_output().unwrap().stdout).unwrap();
+    let second = String::from_utf8(second.wait_with_output().unwrap().stdout).unwrap();
+    assert!(first.starts_with("a.example ssh-ed25519 "), "{first}");
+    assert!(second.starts_with("b.example ssh-rsa "), "{second}");
+}
+
+#[test]
+fn known_hosts_fails_closed_when_the_relay_is_not_there() {
+    let dir = TempDir::new().unwrap();
+    let out = helper(dir.path())
+        .args(["known-hosts", "--socket"])
+        .arg(dir.path().join("missing.sock"))
+        .args(["github.com", "22", "NONE", "NONE"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("refusing the connection"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn known_hosts_fails_closed_when_the_relay_ends_before_answering() {
+    let mut relay = Relay::start();
+    let child = relay
+        .known_hosts(&["github.com", "22", "NONE", "NONE"])
+        .spawn()
+        .unwrap();
+    let _ = relay.read_frame();
+    relay.close_stdin();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn known_hosts_fails_on_an_answer_that_is_not_valid() {
+    let mut relay = Relay::start();
+    let child = relay
+        .known_hosts(&["github.com", "22", "NONE", "NONE"])
+        .spawn()
+        .unwrap();
+    let (_, id, _) = relay.read_frame();
+    relay.send_frame(LOOKUP_REPLY, id, &[0, 0, 0, 1]);
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn known_hosts_rejects_bad_arguments() {
+    let relay = Relay::start();
+    for args in [
+        &["github.com", "22", "NONE"][..],
+        &["github.com", "22", "NONE", "NONE", "extra"],
+        &["github.com", "http", "NONE", "NONE"],
+        &["github.com", "70000", "NONE", "NONE"],
+        &["github.com", "22", "ssh-ed25519", "NONE"],
+        &["github.com", "22", "NONE", "AAAA"],
+        &["github.com", "22", "ssh-ed25519", "not base64!"],
+    ] {
+        let out = relay.known_hosts(args).output().unwrap();
+        assert_eq!(out.status.code(), Some(64), "{args:?}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+    }
+}
+
+#[test]
+fn the_helper_holds_a_bounded_number_of_lookups() {
+    let mut relay = Relay::start();
+    let request = lookup_request(22, "github.com", "", &[]);
+    let send = |stream: &mut UnixStream| {
+        stream
+            .write_all(&(request.len() as u32).to_be_bytes())
+            .unwrap();
+        stream.write_all(&request).unwrap();
+    };
+    let mut waiting = Vec::new();
+    for _ in 0..64 {
+        let mut stream = relay.connect_lookup();
+        send(&mut stream);
+        let (kind, id, _) = relay.read_frame();
+        assert_eq!(kind, LOOKUP);
+        waiting.push((id, stream));
+    }
+    // The 65th is closed without being forwarded.
+    let mut over = relay.connect_lookup();
+    send(&mut over);
+    let mut byte = [0u8; 1];
+    assert_eq!(over.read(&mut byte).unwrap(), 0);
+
+    // Answering one makes room.
+    let (id, mut answered) = waiting.remove(0);
+    relay.send_frame(LOOKUP_REPLY, id, &lookup_answer(&[]));
+    assert_eq!(read_message(&mut answered), 0u32.to_be_bytes());
+    let mut again = relay.connect_lookup();
+    send(&mut again);
+    let (kind, _, _) = relay.read_frame();
+    assert_eq!(kind, LOOKUP);
+}
+
+#[test]
+fn a_known_hosts_client_that_sends_too_much_or_nothing_is_closed() {
+    let relay = Relay::start();
+    let mut oversized = relay.connect_lookup();
+    oversized
+        .write_all(&(2 * 1024u32 * 1024 + 1).to_be_bytes())
+        .unwrap();
+    let mut byte = [0u8; 1];
+    assert_eq!(oversized.read(&mut byte).unwrap(), 0);
+    let mut empty = relay.connect_lookup();
+    empty.write_all(&0u32.to_be_bytes()).unwrap();
+    assert_eq!(empty.read(&mut byte).unwrap(), 0);
+}
+
+#[test]
+fn ssh_agent_removes_both_sockets_when_stdin_ends() {
+    let mut relay = Relay::start();
+    relay.close_stdin();
+    assert_eq!(relay.wait_for_exit().code(), Some(0));
+    assert!(!relay.socket.exists());
+    assert!(!relay.lookup_socket.exists());
 }

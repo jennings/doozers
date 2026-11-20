@@ -45,12 +45,18 @@ service EnvironmentService {
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc Relay(stream RelayReply) returns (stream RelayRequest);
+  // Fetches the host key a server presents on host:port, as ssh-keyscan does, from the plugin's
+  // own network, which a workspace can't influence. The core records a workspace's first use of a
+  // host only if the key it was offered equals this one. Only for plugins whose capabilities set
+  // ssh_relay.
+  rpc ScanHostKey(ScanHostKeyRequest) returns (ScanHostKeyResponse);
 }
 
 // What an environment plugin can do, reported in Describe.
 message EnvironmentCapabilities {
-  // The plugin serves Relay: an ssh-agent socket (SSH_AUTH_SOCK) in each workspace, whose requests
-  // it relays to the core.
+  // The plugin serves Relay: an ssh-agent socket (SSH_AUTH_SOCK) in each workspace, and known-hosts
+  // lookups for ssh there (KnownHostsRequest), whose requests it relays to the core. It also serves
+  // ScanHostKey.
   bool ssh_relay = 1;
 }
 
@@ -261,6 +267,8 @@ message RelayReply {
     RelayOpen open = 1;
     // The answer to an AgentRequest.
     AgentReply agent = 2;
+    // The answer to a KnownHostsRequest.
+    KnownHostsReply known_hosts = 3;
   }
 }
 
@@ -276,6 +284,8 @@ message RelayRequest {
     AgentRequest agent = 1;
     // A client of the workspace's agent socket disconnected.
     AgentClosed agent_closed = 2;
+    // `ssh` in the workspace asks which keys it trusts for a host.
+    KnownHostsRequest known_hosts = 3;
   }
 }
 
@@ -298,4 +308,42 @@ message AgentReply {
 // The client connection has ended; the core drops what it kept for it.
 message AgentClosed {
   uint64 connection = 1;
+}
+
+// `ssh` in a workspace asks which host keys it trusts for a host. The plugin sends one per
+// KnownHostsCommand call and the core answers with a KnownHostsReply of the same id.
+message KnownHostsRequest {
+  // Names the lookup within this relay. The plugin chooses it and the core answers with the same
+  // value. The core may be answering several at once.
+  uint64 id = 1;
+  // The host exactly as ssh gave it: a name or address, or `[host]:port` for a port other than 22.
+  string host = 2;
+  // The port.
+  uint32 port = 3;
+  // The SSH algorithm name of the key the server offered, such as `ssh-ed25519`. Empty when ssh
+  // only asks which keys are stored, to choose the algorithms to offer.
+  string key_type = 4;
+  // The key the server offered, as an SSH wire blob. Empty when key_type is.
+  bytes key = 5;
+}
+
+// The keys the core trusts for the host of a KnownHostsRequest, as SSH wire blobs. None if the core
+// has no key it trusts, which makes ssh refuse the connection.
+message KnownHostsReply {
+  uint64 id = 1;
+  repeated bytes keys = 2;
+}
+
+message ScanHostKeyRequest {
+  // The workspace on whose behalf the key is fetched. It must exist and be running.
+  string workspace_id = 1;
+  string host = 2;
+  uint32 port = 3;
+  // The SSH algorithm name of the key to fetch: the only host key algorithm offered to the server.
+  string key_type = 4;
+}
+
+message ScanHostKeyResponse {
+  // The server's host key as an SSH wire blob.
+  bytes key = 1;
 }

@@ -10,6 +10,8 @@
 //! ([`SshKeys::all_keys`], [`SshKeys::delete_any`]). Nothing returns a private key: only the
 //! signing path inside the core reads one ([`SshKeys::private_key`]), and only the acting user's.
 //!
+//! The host keys workspaces trust are [`KnownHosts`] (issue #138), asked through the same relay.
+//!
 //! The signing path is the SSH agent relay (issue #137). [`relay`] keeps one task per workspace on
 //! an environment that can relay, which answers the agent requests of clients in the workspace
 //! with an [`Agent`], and [`agent`] is the ssh-agent protocol.
@@ -17,6 +19,7 @@
 mod agent;
 mod formats;
 mod keys;
+pub mod known_hosts;
 pub(crate) mod relay;
 
 #[cfg(test)]
@@ -42,6 +45,7 @@ use crate::sessions::Clock;
 pub use agent::Agent;
 pub use formats::{KeyFileError, MAX_UPLOAD_BYTES};
 pub use keys::KeyType;
+pub use known_hosts::{Caller, KnownHost, KnownHosts, KnownHostsError};
 
 #[cfg(test)]
 impl SshKeys {

@@ -10,6 +10,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
+# `known-hosts` decodes the key `ssh` offers and prints the keys it trusts.
+base64.workspace = true
 # Glob matching for `find` and the `grep` file filter.
 globset = "0.4.21"
 # The directory walk with `.gitignore` handling, shared with ripgrep.

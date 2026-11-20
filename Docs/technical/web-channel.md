@@ -68,6 +68,10 @@ the live-output hook.
 | `POST /admin/workspaces/<id>/stop` | Stops the workspace (CSRF-checked), 303 to the list.         |
 | `GET /admin/workspaces/<id>/delete` | What deleting does, with a warning if a turn is using it, and the button. |
 | `POST /admin/workspaces/<id>/delete` | Deletes the workspace (CSRF-checked), 303 to the list.     |
+| `GET /admin/ssh-hosts`         | The known SSH hosts by environment, and the form that adds one ([Known SSH hosts page](#known-ssh-hosts-page)). |
+| `POST /admin/ssh-hosts/add`    | Pins the key of a pasted `known_hosts` line (CSRF-checked), 303 to the list; the page again with the reason (400, 409) if it can't. |
+| `GET /admin/ssh-hosts/<id>/delete` | What deleting the key does, and the button.                  |
+| `POST /admin/ssh-hosts/<id>/delete` | Deletes the key (CSRF-checked), 303 to the list.            |
 | `GET /admin/routes`            | Every route in order ([Route pages](#route-pages)).              |
 | `GET /admin/routes/new`        | The form that adds a route.                                      |
 | `POST /admin/routes`           | Adds the route (CSRF-checked), 303 to the list.                  |
@@ -1059,6 +1063,35 @@ is `check_csrf`-checked, and every form works without JavaScript.
   anything else is a logged 500. The owner's admin routes answer 403 to anyone else and 404 to an
   unknown id.
 
+## Known SSH hosts page
+
+In `ssh_hosts.rs`: `web.install_ssh_hosts(builder, known_hosts)`, which `serve` calls with
+`Workspaces::known_hosts()`. The page is a thin layer over the `KnownHosts` service
+([Known hosts](ssh.md#known-hosts)) and is for the owner only: every route answers 403 to anyone
+else, and the sidebar's **Known SSH hosts** link, under **Admin** after **SSH keys**, is shown to
+the owner only. Every answer is `no-store`, every `POST` is `check_csrf`-checked, and every form
+works without JavaScript.
+
+- **The list.** `KnownHosts::all` is ordered by environment, so the page makes one section for each
+  environment that has a key, each with a table of its hosts. A host is written as `ssh` and
+  `known_hosts` write it: the name alone on port 22, `[name]:port` on any other. **First seen** is
+  the time and then who recorded the key (`by workspace W, agent A, user U`, leaving out what the
+  row doesn't have) or `pinned by <admin>`. **Last used** is `never` until a lookup matches the key.
+- **Delete.** **Delete** is a link to the confirmation, which names the host, its environment, and
+  the key, and says that the next connection from a workspace in that environment trusts whatever
+  key the host then presents once no key is left, and that the host's other keys stay. The `POST`
+  deletes with `KnownHosts::delete` and redirects with `?notice=deleted`. An id that isn't a number
+  or a key is a 404 on both routes.
+- **Add.** The form offers the environment instances of the running configuration and one pasted
+  line. The environment is checked against the configuration first, because `KnownHosts::pin`
+  doesn't know which exist. With no environments configured the page says so and has no form. A line
+  the service refuses (`KnownHostsError::Invalid`, with a reason such as hashed names, markers,
+  wildcards, or a key type that can't be verified) or an unknown environment is a 400, and a key
+  that every host of the line already has is a 409. Both render the page again with the reason, the
+  pasted line, and the chosen environment. Success is a 303 to `?pinned=<ids>`. The page reads those
+  ids from the store to name what was pinned (`Pinned the ssh-ed25519 key for git.example in box.`),
+  so a hand-written URL can't put text on the page.
+
 ## Templates and styles
 
 Templates are in `crates/doozers-core/templates/web/`, and the design they follow is in
@@ -1160,6 +1193,17 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   stored; a duplicate, a shadowed route, and a route that would hide another are 409; edit, remove
   (not by `GET`), and move change which route wins in the router's list; a move that would hide a
   route is refused; ids that aren't numbers or routes are 404.
+- Known SSH hosts page (`tests/ssh_hosts.rs`, over the test configuration and a real store):
+  anonymous requests get 401 and a non-owner 403 on every route including the POSTs, with nothing
+  changed; every POST needs the CSRF token (field or header); the list groups recorded and pinned
+  keys by environment with host (`[host]:port` off port 22), type, fingerprint, who recorded or
+  pinned the key, and last used; the empty page and the page without environments; the confirmation
+  names the host and what deleting does, the `POST` deletes and redirects, and an unknown id is a
+  404; adding pins the key and the list says `pinned by owner`, a line with several hosts pins each,
+  every refusal (hashed name, marker, wildcard, certificate key type, garbage, unknown environment)
+  is a 400 with the reason, the pasted line, and nothing stored, a known key is a 409, and pasted
+  text is escaped; the sidebar entry is under **Admin**, and the shell leaves it out for a
+  non-owner.
 - Workspaces page (`tests/workspaces.rs`, over the test configuration and the in-memory fake
   environment connected as `box`, with `far` never connecting): anonymous requests get 401 and a
   non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF

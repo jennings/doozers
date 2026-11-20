@@ -81,6 +81,19 @@ struct State {
     relays: BTreeMap<WorkspaceId, FakeRelay>,
     /// `relay` fails while set.
     relay_fails: bool,
+    /// What `scan_host_key` returns for a host and port; a host not set here is unreachable.
+    scan_results: BTreeMap<(String, u16), Scan>,
+    /// Every `scan_host_key` call: workspace, host, port, key type.
+    scans: Vec<(WorkspaceId, String, u16, String)>,
+}
+
+/// What a fake `scan_host_key` does for one host and port.
+#[derive(Clone)]
+pub(crate) enum Scan {
+    /// Returns this key.
+    Key(Vec<u8>),
+    /// Waits for the notification, then returns this key.
+    Gated(Arc<tokio::sync::Notify>, Vec<u8>),
 }
 
 /// The fake's end of a relay the core opened.
@@ -249,6 +262,18 @@ impl Fake {
         self.state().relays.get(id).is_some_and(|relay| {
             !relay.closed.load(Ordering::SeqCst) && !relay.requests.is_closed()
         })
+    }
+
+    /// Makes `scan_host_key` of `host` and `port` do `scan`.
+    pub(crate) fn scan_returns(&self, host: &str, port: u16, scan: Scan) {
+        self.state()
+            .scan_results
+            .insert((host.to_owned(), port), scan);
+    }
+
+    /// Every `scan_host_key` call so far: workspace, host, port, key type.
+    pub(crate) fn scans(&self) -> Vec<(WorkspaceId, String, u16, String)> {
+        self.state().scans.clone()
     }
 
     /// Sends the core a request on the latest relay of `id`.
@@ -473,6 +498,30 @@ impl Environment for Fake {
                 let _ = (&guard, &dropped);
             })
             .boxed())
+    }
+
+    async fn scan_host_key(
+        &self,
+        id: &WorkspaceId,
+        host: &str,
+        port: u16,
+        key_type: &str,
+    ) -> Result<Vec<u8>> {
+        let scan = {
+            let mut state = self.state();
+            state
+                .scans
+                .push((id.clone(), host.to_owned(), port, key_type.to_owned()));
+            state.scan_results.get(&(host.to_owned(), port)).cloned()
+        };
+        match scan {
+            Some(Scan::Key(key)) => Ok(key),
+            Some(Scan::Gated(gate, key)) => {
+                gate.notified().await;
+                Ok(key)
+            }
+            None => Err(Error::unavailable(format!("no route to {host}"))),
+        }
     }
 
     async fn read_file(&self, id: &WorkspaceId, path: &str, max_bytes: u64) -> Result<ReadFile> {

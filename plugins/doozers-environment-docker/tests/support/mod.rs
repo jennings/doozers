@@ -3,6 +3,8 @@
 // Each test file uses a different part of this module.
 #![allow(dead_code)]
 
+pub mod ssh;
+
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
@@ -231,8 +233,13 @@ pub struct Ran {
 impl Scope {
     /// Creates a workspace in `IMAGE` and returns its id.
     pub async fn workspace(&self, id: &str) -> String {
+        self.workspace_in(id, IMAGE).await
+    }
+
+    /// Creates a workspace in `image` and returns its id.
+    pub async fn workspace_in(&self, id: &str, image: &str) -> String {
         self.env
-            .create_workspace(&wid(id), serde_json::json!({ "image": IMAGE }))
+            .create_workspace(&wid(id), serde_json::json!({ "image": image }))
             .await
             .unwrap();
         id.to_owned()

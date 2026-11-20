@@ -9,7 +9,7 @@ use doozers_proto::environment::v1 as pb;
 use doozers_proto::environment::v1::environment_service_server::{
     EnvironmentService, EnvironmentServiceServer,
 };
-use doozers_types::{AgentClosed, AgentReply, AgentRequest};
+use doozers_types::{AgentClosed, AgentReply, AgentRequest, KnownHostsReply, KnownHostsRequest};
 use futures::channel::mpsc;
 use tokio::sync::Notify;
 use tonic::{Request, Response};
@@ -81,6 +81,24 @@ impl EnvironmentService for FakeService {
                 let fake = Arc::clone(&self.0);
                 tokio::spawn(async move {
                     while let Ok(Some(message)) = incoming.message().await {
+                        // A known-hosts reply is mirrored as a lookup of the same id whose key is
+                        // the first key reversed.
+                        if let Some(pb::relay_reply::Message::KnownHosts(reply)) = message.message {
+                            let mut key = reply.keys.into_iter().next().unwrap_or_default();
+                            key.reverse();
+                            let _ = out.unbounded_send(Ok(pb::RelayRequest {
+                                message: Some(pb::relay_request::Message::KnownHosts(
+                                    pb::KnownHostsRequest {
+                                        id: reply.id,
+                                        host: "git.example".into(),
+                                        port: 22,
+                                        key_type: "ssh-ed25519".into(),
+                                        key,
+                                    },
+                                )),
+                            }));
+                            continue;
+                        }
                         let Some(pb::relay_reply::Message::Agent(mut reply)) = message.message
                         else {
                             continue;
@@ -169,6 +187,29 @@ impl EnvironmentService for FakeService {
         _: Request<pb::GrepRequest>,
     ) -> std::result::Result<Response<pb::GrepResponse>, Status> {
         Err(Status::unimplemented("not in this test"))
+    }
+
+    /// The key is the host's bytes. `gone` and `refuse` fail like their relays do, and `huge`
+    /// answers with a key over the limit.
+    async fn scan_host_key(
+        &self,
+        request: Request<pb::ScanHostKeyRequest>,
+    ) -> std::result::Result<Response<pb::ScanHostKeyResponse>, Status> {
+        let request = request.into_inner();
+        match request.host.as_str() {
+            "gone" => Err(Status::not_found("there is no workspace gone")),
+            "refuse" => Err(Status::invalid_argument(format!("refused, token {SECRET}"))),
+            "huge" => Ok(Response::new(pb::ScanHostKeyResponse {
+                key: vec![0; doozers_types::MAX_HOST_KEY + 1],
+            })),
+            host => {
+                let mut key = host.as_bytes().to_vec();
+                key.extend_from_slice(request.key_type.as_bytes());
+                key.extend_from_slice(&request.port.to_be_bytes());
+                key.extend_from_slice(request.workspace_id.as_bytes());
+                Ok(Response::new(pb::ScanHostKeyResponse { key }))
+            }
+        }
     }
 }
 
@@ -326,4 +367,66 @@ async fn failures_are_scrubbed_and_end_the_stream() {
     assert!(matches!(error, Error::Unavailable { .. }), "{error:?}");
     assert!(!error.to_string().contains(SECRET), "{error}");
     assert!(next(&mut requests).await.is_none());
+}
+
+#[tokio::test]
+async fn known_hosts_replies_and_requests_cross_the_relay() {
+    let h = harness().await;
+    let (replies, incoming) = mpsc::unbounded();
+    let mut requests = h
+        .environment
+        .relay(&id("ws-1"), incoming.boxed())
+        .await
+        .unwrap();
+    replies
+        .unbounded_send(RelayReply::KnownHosts(KnownHostsReply {
+            id: 9,
+            keys: vec![vec![1, 2, 3]],
+        }))
+        .unwrap();
+    assert_eq!(
+        next(&mut requests).await.unwrap().unwrap(),
+        RelayRequest::KnownHosts(KnownHostsRequest {
+            id: 9,
+            host: "git.example".into(),
+            port: 22,
+            key_type: "ssh-ed25519".into(),
+            key: vec![3, 2, 1],
+        })
+    );
+}
+
+#[tokio::test]
+async fn scan_host_key_asks_the_plugin_and_scrubs_its_failures() {
+    let h = harness().await;
+    let key = h
+        .environment
+        .scan_host_key(&id("ws-1"), "git.example", 2222, "ssh-ed25519")
+        .await
+        .unwrap();
+    let mut expected = b"git.examplessh-ed25519".to_vec();
+    expected.extend_from_slice(&2222u32.to_be_bytes());
+    expected.extend_from_slice(b"ws-1");
+    assert_eq!(key, expected);
+
+    let error = h
+        .environment
+        .scan_host_key(&id("ws-1"), "gone", 22, "ssh-ed25519")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::NotFound(_)), "{error:?}");
+    let error = h
+        .environment
+        .scan_host_key(&id("ws-1"), "refuse", 22, "ssh-ed25519")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::InvalidRequest(_)), "{error:?}");
+    assert!(!error.to_string().contains(SECRET), "{error}");
+    // A key over the limit is refused rather than passed on.
+    let error = h
+        .environment
+        .scan_host_key(&id("ws-1"), "huge", 22, "ssh-ed25519")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::InvalidRequest(_)), "{error:?}");
 }

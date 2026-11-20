@@ -28,7 +28,8 @@ pub use channel::{
 };
 pub use environment::{
     AgentClosed, AgentReply, AgentRequest, Environment, EnvironmentInfo, ExecEvent, ExecExit,
-    ExecRequest, FindRequest, FindResult, GrepMatch, GrepRequest, GrepResult, MAX_AGENT_MESSAGE,
+    ExecRequest, FindRequest, FindResult, GrepMatch, GrepRequest, GrepResult, KnownHostsReply,
+    KnownHostsRequest, MAX_AGENT_MESSAGE, MAX_HOST_KEY, MAX_KNOWN_HOST, MAX_KNOWN_HOST_KEYS,
     ReadFile, RelayReply, RelayRequest, StartOutcome, Workspace, WorkspaceDetail, WorkspaceList,
     WorkspaceState,
 };

@@ -14,10 +14,16 @@
 //! read [--max N] PATH                        a `{"size":N}` line, then up to N bytes of the file
 //! write PATH                                 write stdin to the file, creating parent directories
 //! df PATH                                    a `{"free_bytes":N}` line: space free where PATH is
-//! ssh-agent [--socket PATH]                  relay an ssh-agent socket to the plugin over stdio
+//! ssh-agent [--socket PATH] [--known-hosts-socket PATH]
+//!                                            relay an ssh-agent socket and known-hosts lookups to
+//!                                            the plugin over stdio
+//! known-hosts [--socket PATH] HOST PORT TYPE KEY
+//!                                            `ssh`'s KnownHostsCommand: print the host keys the
+//!                                            core trusts for HOST, as `known_hosts` lines
 //! ```
 //!
 //! `ssh-agent` is the one long-running subcommand besides `idle`: see `agent.rs` for its frames.
+//! `known-hosts` asks it, through a socket, what the Doozers core trusts: see `known_hosts.rs`.
 //!
 //! Failures print a message to standard error and exit 1 (66 when a path doesn't exist), except
 //! `run`, which exits with its command's status.
@@ -26,6 +32,7 @@ mod agent;
 mod files;
 mod find;
 mod grep;
+mod known_hosts;
 mod run;
 mod walk;
 
@@ -160,6 +167,7 @@ fn dispatch(subcommand: &str, rest: Vec<OsString>) -> Outcome<ExitCode> {
         }
         "run" => run::run(args),
         "ssh-agent" => agent::run(args),
+        "known-hosts" => known_hosts::run(args),
         "kill" => {
             let id = args.required("--id")?;
             args.finish()?;
@@ -226,7 +234,7 @@ fn main() -> ExitCode {
     let mut argv = std::env::args_os().skip(1);
     let Some(subcommand) = argv.next() else {
         eprintln!(
-            "doozers-workspace-helper: expected a subcommand (idle, run, kill, find, grep, read, write, df, ssh-agent)"
+            "doozers-workspace-helper: expected a subcommand (idle, run, kill, find, grep, read, write, df, ssh-agent, known-hosts)"
         );
         return ExitCode::from(EXIT_USAGE);
     };

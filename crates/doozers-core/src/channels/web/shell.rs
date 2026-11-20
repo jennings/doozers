@@ -20,6 +20,7 @@ pub(super) enum Nav {
     McpServers,
     Workspaces,
     AdminSshKeys,
+    AdminSshHosts,
 }
 
 /// The links of the "You" group, then of the "Admin" group: (page, label, href).
@@ -29,7 +30,7 @@ const YOU: [(Nav, &str, &str); 4] = [
     (Nav::Connections, "Connections", "/connections"),
     (Nav::SshKeys, "SSH keys", "/ssh-keys"),
 ];
-const ADMIN: [(Nav, &str, &str); 7] = [
+const ADMIN: [(Nav, &str, &str); 8] = [
     (Nav::Status, "Status", "/admin"),
     (Nav::Plugins, "Plugins", "/admin/plugins"),
     (Nav::Agents, "Agents", "/admin/agents"),
@@ -37,6 +38,7 @@ const ADMIN: [(Nav, &str, &str); 7] = [
     (Nav::McpServers, "MCP servers", "/admin/mcp-servers"),
     (Nav::Workspaces, "Workspaces", "/admin/workspaces"),
     (Nav::AdminSshKeys, "SSH keys", "/admin/ssh-keys"),
+    (Nav::AdminSshHosts, "Known SSH hosts", "/admin/ssh-hosts"),
 ];
 
 /// What `app.html` needs: every page that extends it has a `shell` field.
@@ -145,7 +147,8 @@ mod tests {
                         "Routes",
                         "MCP servers",
                         "Workspaces",
-                        "SSH keys"
+                        "SSH keys",
+                        "Known SSH hosts"
                     ]
                 ),
             ]

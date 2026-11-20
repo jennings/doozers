@@ -185,6 +185,12 @@ known-hosts lookups use the same stream.
 - The task keeps one `ssh::Agent` for the workspace, with the per-connection state of its clients.
   It drops a connection's state when the plugin sends `AgentClosed`, and all of it when the relay
   ends.
+- The task also answers the plugin's known-hosts lookups ([SSH](ssh.md#known-hosts)), each in a task
+  of its own and at most 16 at once. A lookup's `Caller` comes from the workspace's record: the
+  environment instance, the workspace id, the agent of its owner (a conversation's agent, or a job
+  run's session's), and the key user. A first use calls the environment's `scan_host_key` for the
+  workspace, which is why the capability that opens the relay also needs `ScanHostKey`. The admin
+  page's calls are `Workspaces::known_hosts()`.
 - Relays are in memory. A restart ends them with the process, and each workspace gets its relay
   again at its next `open`.
 
