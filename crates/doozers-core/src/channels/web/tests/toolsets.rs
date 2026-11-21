@@ -277,7 +277,7 @@ fn remote_form(name: &str) -> Vec<(&str, &str)> {
 }
 
 #[tokio::test]
-async fn only_the_owner_gets_the_toolset_pages() {
+async fn only_an_admin_gets_the_toolset_pages() {
     let env = env().await;
     let t = env.toolsets("").await;
     t.manager.add("box", &spec(BOX)).await.unwrap();

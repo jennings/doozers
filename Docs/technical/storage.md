@@ -301,7 +301,7 @@ and conversation), or nobody (`none`: a config job, which has no requester). It 
 memories too, as their author.
 
 **Visibility.** Every method takes a `MemoryViewer`: the session's owner scope (`MemoryOwner::User`,
-`Group`, or `None`) and `can_write_shared`, true for the agent owner's turns and for config jobs.
+`Group`, or `None`) and `can_write_shared`, true for admins' turns and for config jobs.
 
 - A private memory is visible to viewers whose owner scope equals its owner exactly: one user's
   sessions, or one group conversation. Two users, two groups (same conversation id on another
@@ -343,8 +343,7 @@ memories too, as their author.
   `conversation`, `memories`), ordered by instance and then conversation. Only private memories
   count: a shared memory a group authored is everyone's and doesn't list its group, and user-owned
   or ownerless memories never do. It isn't filtered by viewer; the caller restricts it (the web page
-  shows it to the agent's owner only, who then lists a group's memories with a `MemoryViewer` for
-  that group).
+  shows it to admins only, who then lists a group's memories with a `MemoryViewer` for that group).
 - `recall(viewer, query, limit)`: FTS5 over the visible memories, core ones included. The query is
   turned into FTS5 syntax as for transcript search: each word with a letter or digit becomes a
   quoted string (so `"`, `*`, `-`, `:`, `(`, `AND`, `NEAR` in the query are matched as text) and the

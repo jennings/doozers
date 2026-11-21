@@ -7,9 +7,11 @@
 //!
 //! A runtime job delivers to its creator, so the page lists the runtime jobs the user created,
 //! and only those can be changed: every handler that takes a job id answers 404 for anyone else's
-//! ([`own_job`]). Config jobs deliver to the owner, so only the owner sees them. Like the memory
-//! page, it is open to every signed-in user, not only the owner; a new job may be for any agent
-//! the user may start a chat with ([`agent_choices`]).
+//! ([`own_job`]). Config jobs run as the user `owner` ([`identity::OWNER`]) and deliver to them, so
+//! that user, whatever their role, sees them: whose data they are decides it, not the admin role,
+//! until runtime jobs replace them (#115). Like the memory page, it is open to every signed-in
+//! user, not only admins; a new job may be for any agent the user may start a chat with
+//! ([`agent_choices`]).
 //!
 //! # Changes
 //!
@@ -43,7 +45,6 @@ use doozers_types::{AgentId, Timestamp, UserId};
 use jiff::tz::TimeZone;
 use serde::Deserialize;
 
-use super::admin::may_administer;
 use super::auth::{WebUser, check_csrf};
 use super::pages::{
     AgentChoice, WebApp, agent_choices, agent_label, error_page, internal_error, no_store,
@@ -264,10 +265,10 @@ async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Response {
     };
     let config = app.inner.agents.get();
     let now = app.inner.clock.now();
-    let admin = may_administer(&user);
     let mut defs = Vec::new();
     let mut rows = Vec::new();
-    if admin {
+    // Config jobs are the user `owner`'s: they run as them and deliver to them.
+    if user.user == identity::owner() {
         for (agent, agent_config) in &config.agents {
             defs.extend(
                 agent_config

@@ -50,7 +50,8 @@ several users and group chats are the design for later; v1 builds this subset of
 - Group chats: not supported. Channels report the conversation kind, and the core ignores group
   conversations: no turn, no reply, nothing stored.
 - Web login: only the `doozers admin login-link` one-time URL and the trusted-proxy header.
-- Tool approvals: answered by the owner.
+- Tool approvals: answered by the user whose turn asked (for a job, the delivery user), whatever
+  their role.
 - Models: each agent uses the first model in `models`, with no fallback.
 - Config: read at startup; changes need a restart, except agents created, edited, and removed in the
   web UI, which change the running configuration (section 8.7), remote toolsets, which are stored in
@@ -85,19 +86,29 @@ many tools from one process.
   changed by admins in the web UI (section 11.2).
 - Every person who talks to an agent is a user, with exactly one role. An admin adds users in the
   web UI. A user is a row of the `users` table (section 11.4).
-- Roles are defined in config. Each role lists the agents its users may talk to and tool globs they
-  may trigger. Doozers ships three defaults, which config can change or extend:
+- There are two roles. All admins are equal; a role is changed by an admin, and no role is
+  configured.
 
-  | Role     | Agents             | Tools                     |
-  | -------- | ------------------ | ------------------------- |
-  | `admin`  | all                | all; may approve pairings |
-  | `member` | all                | all the agent allows      |
-  | `guest`  | none until granted | core tools only           |
+  | Role     | Agents | Tools                | Manages Doozers                                      |
+  | -------- | ------ | -------------------- | ---------------------------------------------------- |
+  | `admin`  | all    | all the agent allows | yes: the admin pages, shared memories, SSH key admin |
+  | `member` | all    | all the agent allows | no                                                   |
 
+  "Manages Doozers" means the web admin pages (status, plugins, agents, routes, MCP servers,
+  workspaces, all users' SSH keys, known SSH hosts) and the admin RPCs behind them, writing shared
+  memories (section 6.7), and the group conversations' memories. Per-user allowlists of agents and
+  tools are later work.
+- A user is an admin only while their role is `admin` and their state is `active`. Every check asks
+  the current users, so a demotion or a disabling applies to the next request or turn. Nothing
+  decides privilege by comparing a user id to `owner`; that id only marks the data of the user
+  `[owner]` was imported as (and the first admin of a fresh install), such as the config jobs that
+  run as that user until they become runtime jobs.
+- The last active admin can't be removed, disabled, or demoted. The store refuses it in the
+  transaction of the change, so concurrent changes can't leave none.
 - Agents are global. Per-user data: identity links, profile, per-agent memory, sessions.
 
-A tool call is allowed only if both the agent's allowlist and the role of the turn's requester allow
-it. Every turn has exactly one requester (section 6.3).
+A tool call is allowed only if the agent's allowlist allows it. Every turn has exactly one requester
+(section 6.3).
 
 ### 3.2 Identity links
 
@@ -131,11 +142,11 @@ Messages from identities with no link never reach an agent. What happens instead
 | ------------------- | ------------------------------------------------------------------------- |
 | `pairing` (default) | Reply once with a one-time pairing code, valid for 1 hour                 |
 | `disabled`          | Drop silently (logged)                                                    |
-| `open`              | Create a guest user (role `guest`) and link the identity |
+| `open`              | Create a user (role `member`) and link the identity |
 
 Pairing: an admin approves a code with `doozers pair approve <code> --user <user>` or on the web
 admin pages, linking the identity to an existing user. `--new-user <user> [--role <role>]` instead
-creates the user (default role `guest`) and links to it. `doozers pair deny <code>` rejects it.
+creates the user (default role `member`) and links to it. `doozers pair deny <code>` rejects it.
 Further messages from the same identity while a code is valid don't produce new codes.
 
 Self-linking: a known user sends `/link` on a channel where they're linked and gets a code. Sending
@@ -506,18 +517,14 @@ that breaks this.
 
 ### 6.4 Tool policy and approvals
 
-A tool may run only if both of these allow it:
-
-- The agent's allowlist: globs over prefixed tool names, e.g. `["github__*", "memory*"]`.
-- The requester's role (section 3.1). Runtime jobs run with their creator's role, so `schedule`
-  can't be used to reach tools the creator may not call. Config jobs, set up by an admin with the
-  agent rather than by a requester, use the agent's allowlist alone.
+A tool may run only if the agent's allowlist allows it: globs over prefixed tool names, e.g.
+`["github__*", "memory*"]`. Neither role (section 3.1) narrows the allowlist; per-user allowlists
+are later work, and when they come, runtime jobs run with their creator's, so `schedule` can't be
+used to reach tools the creator may not call. Config jobs, set up by an admin with the agent rather
+than by a requester, use the agent's allowlist alone.
 
 The tools offered to the model are fixed for the session, so the cached prompt prefix stays valid
-(section 6.7): in a DM, the allowlist filtered by that user's role at session start; in a group, the
-agent's allowlist. The requester's role is enforced again when a tool is called, and a forbidden
-call gets the error result "not permitted for <user>". In v1, with no roles, the session's tools are
-the agent's allowlist.
+(section 6.7): the session's tools are the agent's allowlist.
 
 The session keeps its tool list even when a toolset's tools change: a toolset that goes down
 (section 7.6) or drops a tool on `list_changed` (section 7.9) leaves the list as it was. A call to a
@@ -528,9 +535,10 @@ Approval: an agent's `ask` globs list tools that need approval before each call 
 An MCP server may also ask mid-call through elicitation (section 7.10); the core handles it the same
 way.
 
-- Who answers: the user whose message started the turn, or any admin.
+- Who answers: the user whose message started the turn; for a job with `ask_to = "deliver_to"`, the
+  delivery user. A role grants no right to answer someone else's approval.
 - Unattended runs (jobs): a tool matching `ask` returns "denied (unattended)", unless the job sets
-  `ask_to = "deliver_to"`; then the delivery user is asked, if their role allows the tool.
+  `ask_to = "deliver_to"`; then the delivery user is asked.
 - How: the core sends a prompt with a short code, e.g. "Allow `shell__exec` (`rm -rf ./build`)?
   Reply `yes 4821` or `no 4821`." `yes! 4821` also allows that tool for the rest of the session. The
   web channel shows buttons instead. Approval replies are consumed by the core, not queued as
@@ -648,9 +656,9 @@ scope.
   It's scoped to the current context: in a DM, that user's DM sessions with this agent; in a group,
   that group's transcript. Embedding search is not in v1.
 
-Shared memories reach every prompt, including the owner's tool-enabled DMs, so a guest or a group
+Shared memories reach every prompt, including the tool-enabled DMs of admins, so a member or a group
 must not be able to plant instructions in one. Creating a shared memory, marking one shared, and
-editing or forgetting one are therefore accepted only in turns whose requester is the owner, and in
+editing or forgetting one are therefore accepted only in turns whose requester is an admin, and in
 config job turns, since an admin set those jobs up; anyone else gets an error and their private
 memories are unaffected. Un-sharing a memory makes it private to the person who un-shared it. In a
 group, any participant can use the group's private memories. Who speaks varies per turn, so the
@@ -726,7 +734,7 @@ ask_to = "deliver_to"         # optional; without it, `ask` tools are denied (se
 - Config jobs live in `agent.toml`. Runtime jobs come from the core tool `schedule`, which lets the
   agent create, list, and cancel jobs for the requesting user ("remind me at 5"). Runtime jobs live
   in SQLite, record their creator and the conversation they were scheduled in, run with the
-  creator's role (section 6.4), and deliver to that user. `schedule list` also shows config jobs,
+  creator's rights (section 6.4), and deliver to that user. `schedule list` also shows config jobs,
   read-only.
 - A job's DM is the conversation a runtime job was scheduled in. Config jobs, runtime jobs made on
   the web jobs page, and runtime jobs whose channel instance is gone use the user's DM on their
@@ -1260,13 +1268,13 @@ v1 reads config at startup and has no reload RPC; reload is deferred (D28). The 
 RPCs belong to multi-user support (section 1.1) and are added to `doozers.admin.v1` with it.
 
 The web UI's agent pages (list an agent's configuration and files, create, edit, and remove an
-agent) are owner-only admin pages, but have no RPCs yet: they call the core's agent management
-in-process. A created agent is written as `agent.toml` and `SOUL.md`, validated like startup config,
-and added to the running configuration without a reload; nothing else changes until a restart. An
-edit changes only the keys the form manages (`name`, `models`, `tools`, `ask`, `environments`,
-`timezone`, and the limits and policies of its "Advanced" section) and `SOUL.md`, in place:
-everything else in `agent.toml` (comments, jobs, any other key) stays as the owner wrote it. The
-result is validated like startup config before anything is replaced, both files are replaced or
+agent) are admin-only pages (section 3.1), but have no RPCs yet: they call the core's agent
+management in-process. A created agent is written as `agent.toml` and `SOUL.md`, validated like
+startup config, and added to the running configuration without a reload; nothing else changes until
+a restart. An edit changes only the keys the form manages (`name`, `models`, `tools`, `ask`,
+`environments`, `timezone`, and the limits and policies of its "Advanced" section) and `SOUL.md`, in
+place: everything else in `agent.toml` (comments, jobs, any other key) stays as the owner wrote it.
+The result is validated like startup config before anything is replaced, both files are replaced or
 neither, and the edit is refused if the files changed on disk since the form was opened. The edited
 agent replaces the old one in the running configuration: chats started afterwards use it, and a
 session already running keeps the tools and `system` it started with (section 6.3). Removing an
@@ -1278,13 +1286,13 @@ job run in progress); the agent is taken out of the running configuration before
 checked again, and put back if work appears or the move fails. Its sessions, messages, and usage
 stay in the database, inert; creating an agent with the same id again reattaches them. Web chats can
 be started with a chosen agent, which routes them to it ahead of the stored routes. Who sees which
-agent file is one per-viewer check: the owner sees all of them, and `memory.db` is listed by size,
+agent file is one per-viewer check: an admin sees all of them, and `memory.db` is listed by size,
 not contents. Memories have their own page per agent (`/admin/agents/<agent>/memory`), under the
 visibility rules of section 6.7: each signed-in user sees and edits their own private memories and
-the shared ones (writing shared ones only as the owner), and the owner also sees and edits each
-group conversation's memories there.
+the shared ones (writing shared ones only as an admin), and an admin also sees and edits each group
+conversation's memories there.
 
-The route pages (list, add, edit, remove, and reorder the routes of section 6.1) are owner-only
+The route pages (list, add, edit, remove, and reorder the routes of section 6.1) are admin-only
 admin pages too, also without RPCs: they call the core's route management in-process, and a change
 applies to the next inbound message.
 
@@ -1495,10 +1503,6 @@ command = "/opt/homebrew/bin/mcp-server-filesystem"
 args = ["/Users/stephen/Documents"]
 sandbox = { read = ["/Users/stephen/Documents"] }
 idle_stop = "30m"
-
-[roles.member]
-agents = ["*"]
-tools = ["*"]
 ```
 
 Keys at the instance level belong to the core: `component` (providers, channels, and environments),
@@ -1540,9 +1544,9 @@ Reload (reopened: _Deferred, D28_): the core watches these files and `secrets.to
 settle (500 ms), it parses and validates the whole config.
 
 - Invalid: keep running the previous config, log the error, and report it in `doozers status`.
-- Valid: apply the difference. Roles and agents apply to the next turn (routes already change at
-  runtime in the web UI and aren't read from these files). A changed instance is restarted with its
-  new config; a removed one is stopped; a new one is started.
+- Valid: apply the difference. Agents apply to the next turn (routes already change at runtime in
+  the web UI and aren't read from these files). A changed instance is restarted with its new config;
+  a removed one is stopped; a new one is started.
 - `[core]` settings such as `http_listen` need a restart; the core logs that.
 
 Markdown files (`SOUL.md`, `USER.md`, job prompt files, skills) are read when a turn assembles its

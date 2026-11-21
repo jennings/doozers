@@ -190,6 +190,7 @@ async fn env_with_toml(config: WebConfig, identities: &[&str], extra: &str) -> E
 fn owner() -> WebUser {
     WebUser {
         user: identity::owner(),
+        role: doozers_store::Role::Admin,
         sender: NativeId::new("owner").unwrap(),
         csrf: CSRF.into(),
         login: auth::Login::Test,
@@ -1029,7 +1030,7 @@ async fn approval_buttons_answer_with_the_code() {
 }
 
 #[tokio::test]
-async fn blobs_are_served_safely_to_the_owner() {
+async fn blobs_are_served_safely_to_an_admin() {
     let env = env().await;
     let now = Timestamp::now();
     let png = env
@@ -1083,9 +1084,10 @@ async fn blobs_are_served_safely_to_the_owner() {
     let response = env.get(&format!("/blobs/{missing}")).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-    // Only the owner may see blobs (v1 has no other user).
+    // Only an admin may see blobs, until blobs are scoped to their users.
     let stranger = WebUser {
         user: UserId::new("someone").unwrap(),
+        role: doozers_store::Role::Member,
         ..owner()
     };
     let response = env
@@ -2410,6 +2412,7 @@ async fn a_chat_can_be_started_with_any_agent_and_keeps_it() {
     // Someone other than the owner is offered no agent and can't pick one.
     let guest = WebUser {
         user: UserId::new("guest").unwrap(),
+        role: doozers_store::Role::Member,
         sender: NativeId::new("guest").unwrap(),
         csrf: CSRF.into(),
         login: auth::Login::Test,

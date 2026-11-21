@@ -98,15 +98,15 @@ with a message that says to convert the key with `ssh-keygen -p -f <file>`.
 ## Permissions
 
 `SshKeys` is the service. It is held by `Runtime::ssh_keys` over the `Store`, the
-`Arc<dyn SecretProvider>`, and the clock. Every call takes the user who acts.
+`Arc<dyn SecretProvider>`, the clock, and the `UserList`. Every call takes the user who acts.
 
 | Call | Who |
 | ---- | --- |
 | `list`, `get`, `generate`, `upload`, `rename`, `delete` | The acting user, on their own keys only. A key of someone else's is `NotFound`, the same as a key that doesn't exist. |
-| `all_keys`, `any_key`, `delete_any` | The owner only (`SshKeys::may_administer`, which is the web `may_administer`). Anyone else gets `Forbidden`. |
+| `all_keys`, `any_key`, `delete_any` | An active admin only (`SshKeys::may_administer`, which asks the shared `UserList` at each call, as the web `may_administer` asks the role of the request). Anyone else, a demoted or disabled admin included, gets `Forbidden`. |
 
-The owner can see any user's key details and delete a key. The owner can't use another user's key:
-`private_key` takes the user whose key it is, and the owner is only that for their own.
+An admin can see any user's key details and delete a key. An admin can't use another user's key:
+`private_key` takes the user whose key it is, and an admin is only that for their own.
 
 No call returns a private key. The signing path, which is inside the core, is the only reader:
 
@@ -388,7 +388,7 @@ recorded. The rows move with `doozers environment rename` ([Instance rename](ins
 
 ### Admin page and pinning
 
-`KnownHosts` has the calls of the **Known SSH hosts** page, `/admin/ssh-hosts`, which only the owner
+`KnownHosts` has the calls of the **Known SSH hosts** page, `/admin/ssh-hosts`, which only an admin
 opens ([Web channel](web-channel.md)): `all()`, `get(id)`, `delete(id)`, and
 `pin(admin, environment, line)`. Deleting removes one key. When a host has none left, its next
 connection is a first use again.

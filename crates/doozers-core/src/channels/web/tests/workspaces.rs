@@ -131,7 +131,7 @@ impl Wk {
 }
 
 #[tokio::test]
-async fn only_the_owner_gets_the_workspace_pages() {
+async fn only_an_admin_gets_the_workspace_pages() {
     let wk = Wk::new().await;
     let id = wk.create().await;
     let cases = [

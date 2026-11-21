@@ -118,15 +118,16 @@ A group's memories never show up in your direct conversations. What you told the
 never shows up in a group.
 
 A shared memory is visible in every conversation the agent has, including other people's and
-groups'. So only you can write one. The agent can create, share, change, or forget a shared memory
-only in these places:
+groups'. So only admins can write one. The agent can create, share, change, or forget a shared
+memory only in these places:
 
-- Your direct conversations.
-- Your own messages in a group.
-- Jobs, both those in `agent.toml` and those the agent schedules for you.
+- An admin's direct conversations.
+- An admin's own messages in a group.
+- Jobs the agent scheduled for an admin.
+- Jobs in `agent.toml`.
 
-Someone else's message in a group can't write shared memories. The agent can still keep private
-memories about that group.
+A member's message in a group, and a member's direct conversations, can't write shared memories. The
+agent can still keep private memories about that group.
 
 A job from `agent.toml` has no user. It sees only the shared memories, and what it remembers is
 shared too.

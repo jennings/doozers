@@ -25,7 +25,8 @@ both `AgentLoop::from_runtime(&runtime, board)` and
 `Runtime::start_sessions(runner, board, shutdown)`, so the replies the session manager receives
 reach the approvals the agent loop waits on. Each turn gets a
 `TurnApprovals::for_turn(board, agent, turn)`: the agent's `ask` globs and `approval_timeout`,
-answered by the turn's requester in the session's conversation.
+answered by the turn's requester in the session's conversation. No role changes who answers: an
+admin can't answer another user's approval, and no check compares the answerer to the owner.
 
 ## What waits
 

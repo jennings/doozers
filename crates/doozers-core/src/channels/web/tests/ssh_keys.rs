@@ -50,7 +50,12 @@ impl Ssh {
             .await
             .unwrap(),
         );
-        let keys = SshKeys::new(env.store.clone(), secrets.clone(), clock);
+        let keys = SshKeys::new(
+            env.store.clone(),
+            secrets.clone(),
+            clock,
+            env.channel.users().clone(),
+        );
         Self { env, keys, secrets }
     }
 
@@ -201,7 +206,7 @@ pub(super) fn url_encode(text: &str) -> String {
 }
 
 #[tokio::test]
-async fn every_page_needs_a_login_and_the_admin_pages_the_owner() {
+async fn every_page_needs_a_login_and_the_admin_pages_an_admin() {
     let ssh = Ssh::new().await;
     let key = ssh
         .keys
@@ -364,7 +369,7 @@ async fn the_page_lists_a_key_with_its_details_and_public_key_and_never_the_priv
 }
 
 #[tokio::test]
-async fn the_sidebar_links_the_page_for_everyone_and_the_admin_page_for_the_owner() {
+async fn the_sidebar_links_the_page_for_everyone_and_the_admin_page_for_admins() {
     let ssh = Ssh::new().await;
     let guest_page = ssh.get(&guest(), "/ssh-keys").await.body;
     assert!(guest_page.contains("href=\"/ssh-keys\""));
@@ -750,7 +755,7 @@ async fn another_users_key_is_not_found_on_every_route() {
 }
 
 #[tokio::test]
-async fn the_owner_sees_every_users_keys_on_the_admin_page_and_deletes_one() {
+async fn an_admin_sees_every_users_keys_on_the_admin_page_and_deletes_one() {
     let ssh = Ssh::new().await;
     let hers = ssh
         .keys

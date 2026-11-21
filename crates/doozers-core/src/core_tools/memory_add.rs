@@ -140,9 +140,9 @@ pub(super) fn spec() -> ToolSpec {
              prompt: find them with memory_recall.\n\n\
              A memory is private by default: only this user's conversations with you (or this \
              group conversation) can see it. A shared memory is visible in every conversation \
-             you have, including with other users and in groups, so only your owner's turns and \
-             scheduled jobs can create one. A scheduled job has no user, so what it remembers \
-             must be shared.\n\n\
+             you have, including with other users and in groups, so only admins' turns, their \
+             scheduled jobs, and jobs from agent.toml can create one. A job from agent.toml has no \
+             user, so what it remembers must be shared.\n\n\
              The prompt is a snapshot taken when the conversation started and doesn't change \
              while it runs: the result of this tool, not the prompt, shows what you changed."
         ),
@@ -165,8 +165,8 @@ pub(super) fn spec() -> ToolSpec {
                     "type": "boolean",
                     "default": false,
                     "description": "Make this memory visible in all your conversations, not \
-                                    only this user's or this group's. Only your owner's turns \
-                                    and scheduled jobs can do this.",
+                                    only this user's or this group's. Only admins' turns, \
+                                    their scheduled jobs, and jobs from agent.toml can do this.",
                 },
             },
             "required": ["content"],

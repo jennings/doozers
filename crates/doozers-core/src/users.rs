@@ -579,7 +579,9 @@ impl Users {
         Ok(self.load().await?)
     }
 
-    /// Creates an active user with `identities`, each verified at `now`.
+    /// Creates an active user with `identities`, each verified at `now`. The caller picks a fresh
+    /// random id: the store forgets a removed user's id, and nothing may be keyed by an id that
+    /// once was someone else's.
     ///
     /// # Errors
     ///
@@ -881,6 +883,17 @@ impl User {
     }
 }
 
+#[cfg(test)]
+impl User {
+    /// An active admin `id` with `identities` and no time zone.
+    pub(crate) fn admin(id: &str, identities: &[&str]) -> Self {
+        Self {
+            role: Role::Admin,
+            ..Self::member(id, identities)
+        }
+    }
+}
+
 /// The users of the `[owner]` of `config`, as importing it would make them, for tests that build
 /// a registry without opening the users.
 #[cfg(test)]
@@ -919,6 +932,17 @@ pub(crate) fn legacy_owner_users(config: &Config) -> Vec<User> {
 
 #[cfg(test)]
 impl UserList {
+    /// Active admins `admins` and active members `members`, with no identities.
+    pub(crate) fn with_roles(admins: &[&str], members: &[&str]) -> Self {
+        Self::new(
+            admins
+                .iter()
+                .map(|id| User::admin(id, &[]))
+                .chain(members.iter().map(|id| User::member(id, &[])))
+                .collect(),
+        )
+    }
+
     /// The owner, an admin with `identities`, the first of them the default, and `timezone` if
     /// set.
     pub(crate) fn owner(identities: &[&str], timezone: Option<&str>) -> Self {

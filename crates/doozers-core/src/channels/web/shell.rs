@@ -82,7 +82,7 @@ impl Shell {
         };
         let mut groups = vec![group("You", &YOU)];
         if may_administer(user) {
-            groups.push(group("Admin (owner only)", &ADMIN));
+            groups.push(group("Admin", &ADMIN));
         }
         let section = YOU
             .iter()
@@ -114,6 +114,11 @@ mod tests {
     fn user(id: &str) -> WebUser {
         WebUser {
             user: UserId::new(id).unwrap(),
+            role: if id == "owner" {
+                doozers_store::Role::Admin
+            } else {
+                doozers_store::Role::Member
+            },
             sender: NativeId::new(id).unwrap(),
             csrf: "token".into(),
             login: Login::Test,
@@ -139,7 +144,7 @@ mod tests {
                     vec!["Chats", "Scheduled jobs", "Connections", "SSH keys"]
                 ),
                 (
-                    "Admin (owner only)",
+                    "Admin",
                     vec![
                         "Status",
                         "Plugins",

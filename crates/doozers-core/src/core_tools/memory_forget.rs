@@ -99,7 +99,8 @@ pub(super) fn spec() -> ToolSpec {
         description: "Delete a memory by its id. It is gone for good: nothing keeps its earlier \
                       text. Use it for what is wrong, outdated, or no longer worth keeping, and to \
                       make room when a scope's core memories are full. Forgetting a shared memory \
-                      is only for your owner's turns and scheduled jobs. An id you can't see \
+                      is only for admins' turns, their scheduled jobs, and jobs from \
+                      agent.toml. An id you can't see \
                       reads as no such memory.\n\n\
                       The prompt is a snapshot taken when the conversation started and doesn't \
                       change while it runs: the result of this tool shows what you forgot."

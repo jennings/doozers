@@ -79,8 +79,8 @@ pub enum Error {
     #[error("unknown memory {0}")]
     UnknownMemory(crate::MemoryId),
     /// The session isn't allowed to create, mark, change, or delete a shared memory: only the
-    /// owner's turns and config jobs are.
-    #[error("only the owner and config jobs can write shared memories")]
+    /// admins' turns and config jobs are.
+    #[error("only admins and config jobs can write shared memories")]
     SharedWriteForbidden,
     /// The memory was changed after the caller loaded it: an edit that named the `updated_at` it
     /// was based on found a different one. Nothing changed; the caller reloads and decides again.
