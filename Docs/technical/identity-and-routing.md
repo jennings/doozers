@@ -47,6 +47,13 @@ where `user` is the id of the user the sender resolved to: the turn's requester.
 attachments and `commands::parse` recognizes its text, it's `Inbound::Command`; otherwise
 `Inbound::Message`.
 
+The router reads no sessions, so one more check follows it: a conversation is held by one user at a
+time. The [session pump](sessions.md#the-inbound-pipeline) drops a routed message or command when a
+session of its channel instance and conversation belongs to another user: for good on the web, and
+only while the session is open on a channel whose conversation ids can change hands, like an IRC
+nickname. The session key has no user, and without that check a second user in the conversation
+would run in the first one's session.
+
 Core commands are recognized after routing, not before it: `/new`, `/stop`, `/env reset`, and
 approvals all act on a session, and the session key includes the routed agent. They still never
 reach the agent (§3.2). A command in a conversation no route matches is dropped like any other

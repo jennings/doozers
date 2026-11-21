@@ -26,7 +26,7 @@ use super::*;
 use crate::commands::{Answer, ApprovalReply};
 use crate::identity;
 use crate::routes::{Route, RouteList};
-use crate::users::UserList;
+use crate::users::{User, UserList};
 
 const INSTANCE: &str = "fake";
 const OWNER: &str = "owner";
@@ -287,6 +287,8 @@ struct Setup {
     channel: Arc<FakeChannel>,
     clock: Arc<TestClock>,
     policy: AgentPolicy,
+    /// The users the router knows: the owner, who has the identity `fake:owner`.
+    users: UserList,
     /// Whether the channel is registered for recovery (it's attached by `start` either way).
     registered: bool,
     approvals: Arc<FakeApprovals>,
@@ -321,6 +323,7 @@ impl Setup {
                 start: Instant::now(),
             }),
             policy,
+            users: UserList::owner(&[&format!("{INSTANCE}:{OWNER}")], None),
             registered: true,
             approvals: Arc::default(),
             env_resets: Arc::default(),
@@ -338,7 +341,7 @@ impl Setup {
         let (turns_tx, turns) = mpsc::unbounded_channel();
         let agents: Arc<dyn AgentPolicies> = Arc::new(HashMap::from([(agent(), self.policy)]));
         let router = Router::new(
-            UserList::owner(&[&format!("{INSTANCE}:{OWNER}")], None),
+            self.users.clone(),
             RouteList::new(vec![Route {
                 channel: None,
                 kind: None,
@@ -1358,4 +1361,169 @@ async fn the_event_stream_is_reopened_with_backoff() {
     let reopened = channel.opened.lock().unwrap()[3];
     assert_eq!(reopened.duration_since(ended), Backoff::INITIAL);
     h.turn().await.complete();
+}
+
+/// The owner and a member `mia`, who has the identity `fake:mia`.
+fn two_users() -> UserList {
+    UserList::new(vec![
+        User::admin(OWNER, &[&format!("{INSTANCE}:{OWNER}")]),
+        User::member("mia", &[&format!("{INSTANCE}:mia")]),
+    ])
+}
+
+/// A direct message from `sender` into the conversation `conversation`.
+fn message_into(id: &str, sender: &str, conversation: &str, text: &str) -> ChannelEvent {
+    let mut message = inbound(sender, ConversationKind::Direct, text);
+    message.conversation.id = ConversationId::new(conversation).unwrap();
+    event(id, message)
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_conversation_belongs_to_the_user_who_started_it() {
+    let mut setup = Setup::new(queue()).await;
+    setup.users = two_users();
+    let events = setup.channel.push_stream();
+    let mut h = setup.start().await;
+
+    send(&events, message("o1", "owner's message"));
+    h.ack().await;
+    let first = h.turn().await;
+    let owners = first.session;
+    assert_eq!(first.requester, Some(identity::owner()));
+    first.complete();
+    h.settle().await;
+
+    // Mia names the owner's conversation: her message, her `/new`, `/stop`, `/env reset`, and
+    // a `yes` that would answer an approval are all dropped (and acked), and nothing of the
+    // owner's changes.
+    h.setup.approvals.pending.store(true, Ordering::SeqCst);
+    let attempts = [
+        ("m1", "hello"),
+        ("m2", "/new"),
+        ("m3", "/stop"),
+        ("m4", "/env reset"),
+        ("m5", "yes 4821"),
+    ];
+    for (id, text) in attempts {
+        send(&events, message_into(id, "mia", OWNER, text));
+        assert_eq!(h.ack().await.event, id);
+    }
+    h.assert_no_turn().await;
+    h.setup.approvals.pending.store(false, Ordering::SeqCst);
+    assert!(h.setup.approvals.answers.lock().unwrap().is_empty());
+    assert!(h.setup.env_resets.asked.lock().unwrap().is_empty());
+    let open = h.store().find_open_session(key()).await.unwrap().unwrap();
+    assert_eq!(open.id, owners, "the owner's session is still open");
+    assert_eq!(open.user, Some(identity::owner()));
+    for (id, _) in attempts {
+        assert!(h.key_is_free(id).await, "{id} left a row behind");
+    }
+
+    // Each user's own conversation still works.
+    send(&events, message("o2", "again"));
+    h.ack().await;
+    let again = h.turn().await;
+    assert_eq!(again.session, owners);
+    assert_eq!(again.texts, ["again"]);
+    again.complete();
+    send(&events, message_into("m6", "mia", "mia", "my own chat"));
+    h.ack().await;
+    let hers = h.turn().await;
+    let mias = hers.session;
+    assert_ne!(mias, owners);
+    assert_eq!(hers.requester, Some(UserId::new("mia").unwrap()));
+    assert_eq!(hers.texts, ["my own chat"]);
+    hers.complete();
+
+    // The owner can't act in Mia's conversation either.
+    send(&events, message_into("o3", OWNER, "mia", "/new"));
+    h.ack().await;
+    let mia_key = SessionKey {
+        conversation: ConversationId::new("mia").unwrap(),
+        ..key()
+    };
+    let session = h.store().find_open_session(mia_key).await.unwrap().unwrap();
+    assert_eq!(session.id, mias);
+    assert!(h.key_is_free("o3").await);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_conversation_id_passes_to_the_next_user_once_the_session_holding_it_ends() {
+    // A direct conversation id can follow whoever holds it, like an IRC nickname: here the owner
+    // and Mia both send from the conversation `owner`, one after the other.
+    let idle = Duration::from_secs(3600);
+    let mut setup = Setup::new(AgentPolicy {
+        busy_mode: BusyMode::Queue,
+        idle_reset: Some(idle),
+    })
+    .await;
+    setup.users = two_users();
+    let events = setup.channel.push_stream();
+    let mut h = setup.start().await;
+    let mia = || Some(UserId::new("mia").unwrap());
+
+    send(&events, message("o1", "owner's message"));
+    h.ack().await;
+    let first = h.turn().await;
+    let owners = first.session;
+    h.store()
+        .append_messages(
+            owners,
+            vec![Message {
+                role: Role::User,
+                content: vec![Block::text("hi")],
+                meta: MessageMeta::new(h.setup.now()),
+            }],
+        )
+        .await
+        .unwrap();
+    first.complete();
+    h.settle().await;
+
+    // While the owner's session is open, Mia's message is dropped.
+    send(&events, message_into("m1", "mia", OWNER, "hello"));
+    h.ack().await;
+    h.assert_no_turn().await;
+
+    // After `/new` the conversation is free: Mia's message starts a session of her own, with her
+    // as the requester, and the owner's older messages stay the owner's.
+    send(&events, message("o2", "/new"));
+    h.ack().await;
+    h.settle().await;
+    send(&events, message_into("m2", "mia", OWNER, "hello again"));
+    h.ack().await;
+    let hers = h.turn().await;
+    let mias = hers.session;
+    assert_ne!(mias, owners);
+    assert_eq!(hers.requester, mia());
+    assert_eq!(hers.texts, ["hello again"]);
+    let session = h.store().session(hers.session).await.unwrap().unwrap();
+    assert_eq!(session.user, mia());
+    let old = h.store().session(owners).await.unwrap().unwrap();
+    assert_eq!(old.user, Some(identity::owner()));
+    h.store()
+        .append_messages(
+            hers.session,
+            vec![Message {
+                role: Role::User,
+                content: vec![Block::text("hello again")],
+                meta: MessageMeta::new(h.setup.now()),
+            }],
+        )
+        .await
+        .unwrap();
+    hers.complete();
+    h.settle().await;
+
+    // Now the owner is the one kept out, until Mia's session has been quiet for `idle_reset`.
+    send(&events, message("o3", "back again"));
+    h.ack().await;
+    h.assert_no_turn().await;
+    tokio::time::advance(idle).await;
+    send(&events, message("o4", "still me"));
+    h.ack().await;
+    let back = h.turn().await;
+    assert_eq!(back.requester, Some(identity::owner()));
+    assert_ne!(back.session, mias);
+    assert_ne!(back.session, owners);
 }
