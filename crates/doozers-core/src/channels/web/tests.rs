@@ -16,7 +16,7 @@ use axum::http::header::{
 use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
 use doozers_store::{
-    BlobMeta, BlobStore, InboxState, NewInboxEvent, SessionKey, SessionKind, Store,
+    BlobMeta, BlobStore, InboxState, NewInboxEvent, SessionKey, SessionKind, SignInMethod, Store,
 };
 use doozers_types::{
     AgentId, Block, Channel, ChannelEvent, ChannelStatus, ConversationId, Error, MediaRef, Message,
@@ -1395,6 +1395,7 @@ async fn a_login_link_logs_in_once_with_a_30_day_cookie() {
         .unwrap()
         .unwrap();
     assert_eq!(stored.user, identity::owner());
+    assert_eq!(stored.method, SignInMethod::Recovery);
     assert_eq!(
         stored.expires_at.as_millisecond() - stored.created_at.as_millisecond(),
         30 * 24 * 60 * 60 * 1000
@@ -1472,6 +1473,7 @@ async fn expired_unknown_and_orphaned_sessions_are_logged_out() {
         .web_session_create(
             &expired,
             identity::owner(),
+            SignInMethod::Recovery,
             long_ago,
             long_ago.checked_add(WEB_SESSION_TTL).unwrap(),
         )
@@ -1502,6 +1504,7 @@ async fn expired_unknown_and_orphaned_sessions_are_logged_out() {
         .web_session_create(
             &token,
             identity::owner(),
+            SignInMethod::Recovery,
             now,
             now.checked_add(WEB_SESSION_TTL).unwrap(),
         )
@@ -1529,6 +1532,7 @@ async fn expired_sessions_are_deleted_until_shutdown() {
         .web_session_create(
             &expired,
             identity::owner(),
+            SignInMethod::Recovery,
             long_ago,
             long_ago.checked_add(WEB_SESSION_TTL).unwrap(),
         )
@@ -1827,7 +1831,7 @@ async fn a_cookie_session_ends_when_its_user_is_disabled_or_gone() {
     ] {
         let (token, id) = cookie(user);
         env.store
-            .web_session_create(&token, id, now, expires)
+            .web_session_create(&token, id, SignInMethod::Recovery, now, expires)
             .await
             .unwrap();
         let response = call(

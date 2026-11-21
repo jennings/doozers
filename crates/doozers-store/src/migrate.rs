@@ -90,6 +90,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "0017_inbox_user",
         sql: include_str!("migrations/0017_inbox_user.sql"),
     },
+    Migration {
+        name: "0018_user_invites",
+        sql: include_str!("migrations/0018_user_invites.sql"),
+    },
 ];
 
 /// The schema version this binary writes.
@@ -321,6 +325,7 @@ mod tests {
             "secrets",
             "secret_key",
             "archived_conversations",
+            "user_invites",
         ] {
             assert!(tables(&conn).iter().any(|t| t == table), "missing {table}");
         }
@@ -569,5 +574,30 @@ mod tests {
             .is_err(),
             "a group conversation still has one"
         );
+    }
+
+    #[test]
+    fn the_user_invites_migration_calls_existing_sessions_recovery_logins() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &MIGRATIONS[..17], None).unwrap();
+        conn.execute(
+            "INSERT INTO web_sessions (token_hash, user_id, created_at, expires_at)
+             VALUES (zeroblob(32), 'owner', 1, 2)",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(migrate(&mut conn, MIGRATIONS, None).unwrap(), 17);
+        assert_eq!(user_version(&conn).unwrap(), SCHEMA_VERSION);
+        let method: String = conn
+            .query_row("SELECT method FROM web_sessions", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(method, "recovery");
+        let unknown = conn.execute(
+            "INSERT INTO web_sessions (token_hash, user_id, method, created_at, expires_at)
+             VALUES (zeroblob(31) || x'01', 'owner', 'telepathy', 1, 2)",
+            [],
+        );
+        assert!(unknown.is_err(), "the method is one the store knows");
     }
 }
