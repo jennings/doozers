@@ -36,7 +36,7 @@ the live-output hook.
 | `POST /chats/<id>/delete`      | Deletes the user's chat and its workspaces (CSRF-checked), 303 to the list it was in; 409 while it's being worked on. |
 | `POST /chats/<id>/approvals`   | An approval button: posts `<answer> <code>` (CSRF-checked).      |
 | `GET /chats/<id>/events`       | Server-sent events for the page.                                 |
-| `GET /blobs/<sha256>`          | An attachment.                                                   |
+| `GET /blobs/<sha256>`          | An attachment, for a user who owns a message that refers to it ([Blobs](#blobs)). |
 | `GET /jobs`                    | The user's scheduled jobs with every agent ([Jobs page](#jobs-page)). |
 | `GET /jobs/new`                | The form that schedules a job.                                   |
 | `POST /jobs`                   | Schedules the job (CSRF-checked), 303 to the list.               |
@@ -147,6 +147,7 @@ exception: they are about the instance, not about an object of someone's, and an
 | SSH key | Its user | `SshKeys` compares the key's user on every call | 404 |
 | OAuth connection | The user | Tokens live under `users/<user>/..`; a pending sign-in is bound to the user who began it | "Expired" |
 | Workspace | Its conversation or job run | Reached through its chat, and listed for admins on the [Workspaces page](#workspaces-page) | The chat's 404 |
+| Blob | Not owned: stored once per content | `BlobStore::reference_of`: a message of the user's refers to it ([Blobs](#blobs)) | 404, an admin included |
 | Usage | Recorded with the requester | No page shows it per user; the admin report sums it by agent and model | Admins' only |
 
 A web chat is claimed, not assigned. `/chats/new` mints a random id and stores nothing until the
@@ -466,15 +467,28 @@ timeout, `/stop`, or denial by a new message, PLAN section 6.4). `ApprovalOutcom
 ## Blobs
 
 `GET /blobs/<sha256>` (PLAN section 9, 1.7's contract): the id must be 64 lowercase hex digits; the
-user must be allowed to see blobs (admins only for now, since no per-blob check says whose a blob
-is; scoping blobs to their users comes with the per-user audit, #146); then the blob is streamed
-from the blob store (hash verified at the end; a mismatch aborts the response). Headers: the stored
-media type (or `application/octet-stream` if it isn't a valid header value), `Content-Length`,
+user must own a message that refers to the blob (`BlobStore::reference_of`, below), else the answer
+is the same 404 as for a blob that isn't stored; then the blob is streamed from the blob store (hash
+verified at the end; a mismatch aborts the response). Headers: the stored media type (or
+`application/octet-stream` if it isn't a valid header value), `Content-Length`,
 `Content-Security-Policy: sandbox` (next to the base policy), `nosniff` (from the security headers),
 `Content-Disposition: inline` for raster images (PNG, JPEG, GIF, WebP, AVIF, the set the renderer
 keeps) and `attachment; filename*=UTF-8''<name>` for anything else, and
 `Cache-Control: private, max-age=31536000, immutable` (the URL is the content hash). An HTML or SVG
 blob therefore downloads, and even opened directly it runs in a sandboxed opaque origin.
+
+Blobs are stored once per content, whoever sent them, so the blob store knows no owner and the check
+is a question to the database: does a message of this user's refer to it? A reference is media in
+the content of a message in one of the user's sessions (an attachment, or media in a tool result),
+an attachment of an inbound event of theirs still in the inbox, or an attachment of an outbound
+message for them still in the outbox. The same bytes sent by two users are each one's own. Only that
+structure counts: a hash in text, in a tool call's input, or in an inbound message's other fields
+doesn't, since the user or the model could write the hash of a file somebody else has and be served
+it. A search for the hash finds the candidate rows, and each is parsed. An admin has no wider
+access, because no admin page shows another user's media. The check runs before the blob store is
+asked, so a 404 doesn't say whether the blob exists. The media type and file name in the headers are
+those of the user's own reference (`reference_of` returns it), not the blob row's, which keeps the
+first sender's.
 
 ## Jobs page
 

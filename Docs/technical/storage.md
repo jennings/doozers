@@ -137,7 +137,7 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 16)
+## Schema (version 17)
 
 The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
 table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`,
@@ -758,6 +758,18 @@ data/blobs/sha256/
   repairs it. The reader hashes as it goes, and the read that reaches the end fails with
   `InvalidData` if the content doesn't match its id, so a consumer that reads to the end never
   accepts damaged bytes. `stat(id)` returns the metadata alone.
+- **Whose.** A blob has no owner: the same content is one file for every user who sent it.
+  `reference_of(id, user)` asks whether a message of the user's refers to it: media blocks in the
+  content of a message in one of the user's sessions (tool results included), an attachment of an
+  inbox event of theirs, or an attachment of an outbox message for them. A text search for the hash
+  finds the candidate rows; each is parsed, and only media in those places counts, never text or a
+  tool call's input. It returns the user's own `MediaRef`, whose name and media type a download
+  shows, since the blob row keeps the first sender's. Newest rows are tried first (the newest
+  session's newest message, then back), the messages are reached through the user's sessions, and
+  `0017_inbox_user.sql` indexes the sessions and the inbox by user for it, so a miss reads none of
+  other users' messages. It is how the web channel decides who may see `/blobs/<sha256>`
+  ([Web channel](web-channel.md#blobs)). The sweep's `REFERENCING_COLUMNS` is a different question
+  (does anything refer to it?) and a wider one.
 
 Concurrent puts of the same content need no lock among themselves: each writes its own temp file, a
 rename over an existing file is atomic, and the row upsert is idempotent. Hashing runs on the async

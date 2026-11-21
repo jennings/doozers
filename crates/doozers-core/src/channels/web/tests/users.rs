@@ -444,3 +444,118 @@ async fn a_deleted_chat_leaves_nothing_for_the_next_user_of_its_id_to_replay() {
     .await;
     assert!(!page.contains("deleted secret"), "{page}");
 }
+
+/// Puts an image blob of `bytes`.
+async fn put_image(env: &Env, bytes: &'static [u8]) -> MediaRef {
+    env.blobs
+        .put(
+            bytes,
+            1024,
+            BlobMeta {
+                media_type: "image/png".into(),
+                name: Some("pic.png".into()),
+            },
+            Timestamp::now(),
+        )
+        .await
+        .unwrap()
+}
+
+/// Stores a chat of `user` in `chat` that shows `media`.
+async fn chat_with_image(env: &Env, user: &UserId, chat: &ConversationId, media: &MediaRef) {
+    let (session, _) = env
+        .store
+        .open_session(
+            SessionKey {
+                agent: AgentId::new("jeeves").unwrap(),
+                channel: INSTANCE.into(),
+                conversation: chat.clone(),
+            },
+            SessionKind::Direct,
+            Some(user.clone()),
+            Timestamp::now(),
+        )
+        .await
+        .unwrap();
+    env.store
+        .append_messages(
+            session.id,
+            vec![stored(
+                Role::User,
+                vec![Block::Image {
+                    media: media.clone(),
+                }],
+            )],
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_blob_is_served_only_to_users_who_own_a_message_that_refers_to_it() {
+    let env = env().await;
+    stored_users(&env).await;
+    let owner_browser = Browser::log_in(&env, "owner").await;
+    let root = Browser::log_in(&env, "root").await;
+    let mia = Browser::log_in(&env, "mia").await;
+    let private = put_image(&env, b"the owner's private photo").await;
+    let shared = put_image(&env, b"a photo both sent").await;
+    let mias = put_image(&env, b"mia's photo").await;
+    let nobodys = put_image(&env, b"nobody's photo").await;
+    chat_with_image(&env, &identity::owner(), &chat_n(0x77), &private).await;
+    // Both sent the same bytes under their own names; the blob row keeps the first sender's.
+    let named = |name: &str| MediaRef {
+        name: Some(name.to_owned()),
+        media_type: "application/octet-stream".to_owned(),
+        ..shared.clone()
+    };
+    chat_with_image(
+        &env,
+        &identity::owner(),
+        &chat_n(0x78),
+        &named("owner-name.bin"),
+    )
+    .await;
+    chat_with_image(&env, &mia_user(), &chat_n(0x79), &named("mia-name.bin")).await;
+    chat_with_image(&env, &mia_user(), &chat_n(0x7a), &mias).await;
+
+    let get = async |who: &Browser, media: &MediaRef| {
+        who.send(
+            env.main_app(),
+            Method::GET,
+            &format!("/blobs/{}", media.id),
+            "",
+        )
+        .await
+        .status()
+    };
+    let (ok, missing) = (StatusCode::OK, StatusCode::NOT_FOUND);
+    // The same bytes are each sender's own; the rest belong to whoever's messages show them.
+    assert_eq!(get(&owner_browser, &private).await, ok);
+    assert_eq!(get(&mia, &private).await, missing);
+    assert_eq!(get(&root, &private).await, missing, "an admin is no owner");
+    assert_eq!(get(&owner_browser, &shared).await, ok);
+    assert_eq!(get(&mia, &shared).await, ok);
+    assert_eq!(get(&root, &shared).await, missing);
+    // Each is shown the name of their own copy.
+    for (who, name) in [(&owner_browser, "owner-name.bin"), (&mia, "mia-name.bin")] {
+        let response = who
+            .send(
+                env.main_app(),
+                Method::GET,
+                &format!("/blobs/{}", shared.id),
+                "",
+            )
+            .await;
+        assert_eq!(
+            response.headers()[CONTENT_DISPOSITION],
+            format!("attachment; filename*=UTF-8''{name}")
+        );
+        assert_eq!(response.headers()[CONTENT_TYPE], "application/octet-stream");
+    }
+    assert_eq!(get(&mia, &mias).await, ok);
+    assert_eq!(get(&owner_browser, &mias).await, missing);
+    for who in [&owner_browser, &root, &mia] {
+        assert_eq!(get(who, &nobodys).await, missing);
+    }
+}
