@@ -3,7 +3,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use doozers_store::{InboxState, NewInboxEvent, Session, SessionId, SessionKind};
+use doozers_store::{
+    ConversationAccess, InboxState, NewInboxEvent, Session, SessionId, SessionKind,
+};
 use doozers_types::{
     Channel, ChannelEvent, ChannelStatus, EventId, OutboundMessage, SendTarget, Timestamp,
 };
@@ -13,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::{EnvReset, Inner, lock};
+use crate::channels::chat_ids;
 use crate::commands::CoreCommand;
 use crate::config::InstanceName;
 use crate::router::{ChannelSource, Inbound, Routed};
@@ -150,7 +153,37 @@ async fn handle(
         return Ok(());
     };
     let pending = |to: &Routed, code: Option<&str>| inner.approvals.is_pending(to, code);
-    match inner.router.classify(source, id, message, &pending) {
+    let classified = inner.router.classify(source, id, message, &pending);
+    if let Inbound::Message(to) = &classified {
+        // An idle session that is over doesn't keep the conversation from its next user.
+        end_if_idle(inner, to, now).await?;
+    }
+    if let Inbound::Message(to) | Inbound::Command { to, .. } = &classified {
+        let strict = source.component == chat_ids::COMPONENT;
+        if foreign_conversation(inner, to, strict).await? {
+            // Not the router's drop: it can't see the conversation's sessions. Both an ordinary
+            // message and a command act on the conversation's session, so neither may pass.
+            let conversation = message.conversation.id.as_str();
+            if strict {
+                warn!(
+                    instance = %source.instance,
+                    event = %id,
+                    conversation,
+                    "dropped inbound message: the conversation belongs to another user"
+                );
+            } else {
+                info!(
+                    instance = %source.instance,
+                    event = %id,
+                    conversation,
+                    "dropped inbound message: another user's session holds the conversation"
+                );
+            }
+            ack(source, channel, id).await;
+            return Ok(());
+        }
+    }
+    match classified {
         Inbound::Drop(_) => ack(source, channel, id).await,
         Inbound::Message(to) => {
             let session = session_for(inner, &to, now).await?;
@@ -208,13 +241,41 @@ async fn ack(source: &ChannelSource<'_>, channel: &dyn Channel, event: &EventId)
     }
 }
 
-/// The open session for a routed message, after ending it first if the agent's `idle_reset` has
-/// passed since its last message and it has no running or queued turn.
-pub(super) async fn session_for(
+/// Whether the conversation `to` is for is held by another user (or by none). A session key names
+/// no user, so without this a second user in the same conversation would run in the first one's
+/// session, with their history, workspace, and memories.
+///
+/// A web chat's id is random and belongs to the user who started it for good, so every session of
+/// it counts, ended ones too (`strict`). The conversation id of another channel can follow
+/// whoever holds it, like an IRC nickname, so there only open sessions count: the other user's
+/// message is dropped until their session ends (`/new`, idle reset), then starts the user's own.
+async fn foreign_conversation(
+    inner: &Inner,
+    to: &Routed,
+    strict: bool,
+) -> Result<bool, doozers_store::Error> {
+    let (channel, conversation) = (&to.session.channel, &to.session.conversation);
+    let access = if strict {
+        inner
+            .store
+            .conversation_access(channel, conversation, &to.user)
+            .await?
+    } else {
+        inner
+            .store
+            .open_conversation_access(channel, conversation, &to.user)
+            .await?
+    };
+    Ok(access == ConversationAccess::Foreign)
+}
+
+/// Ends the open session of `to`'s key if the agent's `idle_reset` has passed since its last
+/// message and it has no running or queued turn.
+async fn end_if_idle(
     inner: &Inner,
     to: &Routed,
     now: Timestamp,
-) -> Result<SessionId, doozers_store::Error> {
+) -> Result<(), doozers_store::Error> {
     if let Some(idle) = inner.policy(&to.session.agent).idle_reset
         && let Some(open) = inner.store.find_open_session(to.session.clone()).await?
         && !inner.is_live(open.id)
@@ -223,6 +284,17 @@ pub(super) async fn session_for(
     {
         info!(session = %open.id, agent = %open.agent, "session ended by idle_reset");
     }
+    Ok(())
+}
+
+/// The open session for a routed message, after ending it first if the agent's `idle_reset` has
+/// passed since its last message and it has no running or queued turn.
+pub(super) async fn session_for(
+    inner: &Inner,
+    to: &Routed,
+    now: Timestamp,
+) -> Result<SessionId, doozers_store::Error> {
+    end_if_idle(inner, to, now).await?;
     let (session, created) = inner
         .store
         .open_session(

@@ -81,6 +81,27 @@ Commands act after their ack, so a crash between the two loses the command but n
   doesn't call it, so a fresh session keeps the workspace.
 - An approval reply goes to `Approvals::answer`. `classify` only returns one while `is_pending` says
   it's an approval reply, so with nothing waiting `yes` and `no` stay ordinary messages.
+- **A conversation is held by one user at a time.** A session key names no user, so before it queues
+  a message or acts on a command the pump asks the store whether a session of the key's channel
+  instance and conversation, with any agent, belongs to someone else. If one does, the event is
+  acked and dropped, whatever it says: an ordinary message, `/new`, `/stop`, `/env reset`, or a
+  `yes` that would answer an approval. Without this, a user who named another user's conversation id
+  would run turns in that user's session, with their transcript, workspace, memories, and SSH keys,
+  as the session's owner. What counts as holding depends on the channel:
+  - On the web, a chat id is random and belongs for good to the user who started it, so every
+    session counts, ended ones too ([`conversation_access`](storage.md#conversations)), and the drop
+    is logged at `warn`. The web pages refuse such a post before it gets here.
+  - On other channels a conversation id can follow whoever holds it: an IRC direct conversation is
+    the sender's current nickname, so a member who takes a nickname inherits its conversation. There
+    only open sessions count (`open_conversation_access`), and the drop is logged at `info`. The
+    first user's session ends with `/new` or an idle reset, which the pump applies to the key's
+    session before it checks, and then the next user's message starts a session of their own. Until
+    then it is dropped, so nobody ever runs in, or sees the history of, a session that isn't theirs.
+    The conversation's workspace is keyed by agent, instance, and conversation, so it passes to the
+    next user as it is.
+
+  A conversation with no session in it is anyone's; the first message that creates a session claims
+  it.
 
 ## Sessions and idle reset
 

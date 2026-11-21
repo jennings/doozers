@@ -45,7 +45,8 @@ pub use blobs::{
     Blob, BlobMeta, BlobReader, BlobStore, SWEEP_GRACE, SweepGuard, SweepHold, SweepReport,
 };
 pub use conversations::{
-    ConversationActivity, ConversationDeletion, ConversationMessage, ConversationTranscript,
+    ConversationAccess, ConversationActivity, ConversationDeletion, ConversationMessage,
+    ConversationTranscript,
 };
 pub use db::{OpenOptions, Store};
 pub use error::{BoxError, Error, Result};

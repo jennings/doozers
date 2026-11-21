@@ -64,6 +64,17 @@ pub enum ConversationDeletion {
     NotFound,
 }
 
+/// How a user stands to a conversation ([`Store::conversation_access`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationAccess {
+    /// No session counted exists in it.
+    Unstarted,
+    /// Every session counted belongs to the user.
+    Own,
+    /// A session counted belongs to someone else, or to nobody.
+    Foreign,
+}
+
 /// Whether `user` has a session in the conversation.
 fn has_conversation(
     conn: &Connection,
@@ -122,6 +133,64 @@ impl Store {
                     last_active_at: get_time(row, 2)?,
                     first_text: row.get(3)?,
                 })
+            })
+        })
+        .await
+    }
+
+    /// How `user` stands to the conversation `conversation` on channel instance `channel`:
+    /// [`Unstarted`](ConversationAccess::Unstarted) if it has no session,
+    /// [`Own`](ConversationAccess::Own) if all of its sessions are the user's, and
+    /// [`Foreign`](ConversationAccess::Foreign) if any belongs to someone else. Every session
+    /// counts, ended ones too: a conversation whose id belongs to one user for good, such as a
+    /// web chat's. A session with no user belongs to nobody, so it is foreign to everyone.
+    pub async fn conversation_access(
+        &self,
+        channel: &str,
+        conversation: &ConversationId,
+        user: &UserId,
+    ) -> Result<ConversationAccess> {
+        self.access(channel, conversation, user, false).await
+    }
+
+    /// [`conversation_access`](Self::conversation_access) counting only open sessions, so a
+    /// conversation is free once the sessions in it have ended: for a conversation id that follows
+    /// whoever holds it now, such as an IRC nickname.
+    pub async fn open_conversation_access(
+        &self,
+        channel: &str,
+        conversation: &ConversationId,
+        user: &UserId,
+    ) -> Result<ConversationAccess> {
+        self.access(channel, conversation, user, true).await
+    }
+
+    async fn access(
+        &self,
+        channel: &str,
+        conversation: &ConversationId,
+        user: &UserId,
+        open_only: bool,
+    ) -> Result<ConversationAccess> {
+        let (channel, conversation, user) = (
+            channel.to_owned(),
+            conversation.to_string(),
+            user.to_string(),
+        );
+        self.read(move |conn| {
+            let (sessions, foreign): (i64, i64) = conn
+                .prepare_cached(
+                    "SELECT count(*), coalesce(sum(user_id IS NOT ?3), 0) FROM sessions
+                     WHERE channel = ?1 AND conversation = ?2
+                       AND (?4 = 0 OR ended_at IS NULL)",
+                )?
+                .query_row(params![channel, conversation, user, open_only], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })?;
+            Ok(match (sessions, foreign) {
+                (0, _) => ConversationAccess::Unstarted,
+                (_, 0) => ConversationAccess::Own,
+                _ => ConversationAccess::Foreign,
             })
         })
         .await
@@ -956,5 +1025,78 @@ mod tests {
                 .unwrap(),
             ConversationDeletion::Deleted { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn a_conversation_is_foreign_to_everyone_but_the_user_of_its_sessions() {
+        let (_dir, store) = store().await;
+        let ann = UserId::new("ann").unwrap();
+        let bob = UserId::new("bob").unwrap();
+        let access = |conversation: &str, user: &UserId| {
+            let conversation = ConversationId::new(conversation).unwrap();
+            let user = user.clone();
+            let store = store.clone();
+            async move {
+                store
+                    .conversation_access("web", &conversation, &user)
+                    .await
+                    .unwrap()
+            }
+        };
+        let open = |agent: &str, conversation: &str, user: Option<&UserId>, secs: i64| {
+            store.open_session(
+                key(agent, "web", conversation),
+                SessionKind::Direct,
+                user.cloned(),
+                at(secs),
+            )
+        };
+
+        assert_eq!(access("a", &ann).await, ConversationAccess::Unstarted);
+        let (first, _) = open("jeeves", "a", Some(&ann), 0).await.unwrap();
+        assert_eq!(access("a", &ann).await, ConversationAccess::Own);
+        assert_eq!(access("a", &bob).await, ConversationAccess::Foreign);
+        // An ended session and another agent's session still make it hers.
+        store.end_session(first.id, at(1)).await.unwrap();
+        open("bunter", "a", Some(&ann), 2).await.unwrap();
+        assert_eq!(access("a", &ann).await, ConversationAccess::Own);
+        assert_eq!(access("a", &bob).await, ConversationAccess::Foreign);
+        // Another conversation, and the same id on another instance, are others.
+        assert_eq!(access("b", &bob).await, ConversationAccess::Unstarted);
+        assert_eq!(
+            store
+                .conversation_access("irc", &ConversationId::new("a").unwrap(), &bob)
+                .await
+                .unwrap(),
+            ConversationAccess::Unstarted
+        );
+        // One foreign session is enough, and a session with no user is nobody's.
+        open("jeeves", "c", Some(&ann), 3).await.unwrap();
+        open("bunter", "c", Some(&bob), 4).await.unwrap();
+        assert_eq!(access("c", &ann).await, ConversationAccess::Foreign);
+        assert_eq!(access("c", &bob).await, ConversationAccess::Foreign);
+        open("jeeves", "d", None, 5).await.unwrap();
+        assert_eq!(access("d", &ann).await, ConversationAccess::Foreign);
+
+        // Counting only open sessions, a conversation is free once its sessions have ended: the
+        // nickname of a direct conversation can pass to another user.
+        let open_access = |conversation: &str, user: &UserId| {
+            let conversation = ConversationId::new(conversation).unwrap();
+            let user = user.clone();
+            let store = store.clone();
+            async move {
+                store
+                    .open_conversation_access("web", &conversation, &user)
+                    .await
+                    .unwrap()
+            }
+        };
+        assert_eq!(open_access("c", &ann).await, ConversationAccess::Foreign);
+        let (second, _) = open("jeeves", "e", Some(&ann), 6).await.unwrap();
+        assert_eq!(open_access("e", &bob).await, ConversationAccess::Foreign);
+        store.end_session(second.id, at(7)).await.unwrap();
+        assert_eq!(open_access("e", &bob).await, ConversationAccess::Unstarted);
+        assert_eq!(access("e", &bob).await, ConversationAccess::Foreign);
+        assert_eq!(open_access("a", &bob).await, ConversationAccess::Foreign);
     }
 }
