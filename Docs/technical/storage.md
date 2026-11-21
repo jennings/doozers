@@ -137,15 +137,16 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 17)
+## Schema (version 18)
 
 The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
 table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`,
-`archived_conversations`, `ssh_keys`, `ssh_known_hosts`, `users`, `user_identities`, and
-`users_imported`, which `0002_blobs.sql`, `0003_routes.sql`, `0004_toolsets.sql`,
-`0005_workspaces.sql`, `0007_secrets.sql`, `0009_archived_conversations.sql`, `0012_ssh_keys.sql`,
-`0014_ssh_known_hosts.sql`, and `0015_users.sql` add (`0013_workspace_key_user.sql` adds
-`workspaces.key_user`, and `0016_workspace_user.sql` adds `workspaces.user_id`). This is their
+`archived_conversations`, `ssh_keys`, `ssh_known_hosts`, `users`, `user_identities`,
+`users_imported`, and `user_invites`, which `0002_blobs.sql`, `0003_routes.sql`,
+`0004_toolsets.sql`, `0005_workspaces.sql`, `0007_secrets.sql`, `0009_archived_conversations.sql`,
+`0012_ssh_keys.sql`, `0014_ssh_known_hosts.sql`, `0015_users.sql`, and `0018_user_invites.sql` add
+(`0013_workspace_key_user.sql` adds `workspaces.key_user`, `0016_workspace_user.sql` adds
+`workspaces.user_id`, and `0018_user_invites.sql` adds `web_sessions.method`). This is their
 outline.
 
 | Table          | Columns and rules                                                                    |
@@ -159,7 +160,7 @@ outline.
 | `jobs`         | Runtime jobs: `agent`, `creator`, `spec` (JSON), `created_at`; ids never reused.      |
 | `job_runs`     | (`agent`, `job`) to `last_run_at`; `job` is `config:<id>` or `runtime:<jobs.id>`.      |
 | `usage`        | `at`, `provider`, `model`, `agent`, `user_id`, `session_id`, four token counts, `fallback`. |
-| `web_sessions` | `token_hash` (SHA-256 of the cookie token), `user_id`, `created_at`, `expires_at`.     |
+| `web_sessions` | `token_hash` (SHA-256 of the cookie token), `user_id`, `method` (how it signed in: `invite`, `recovery`, `password`, `passkey`, `oidc`), `created_at`, `expires_at`. |
 | `blobs`        | `id` (hex SHA-256), `size`, `media_type`, `name`, `created_at`, `stored_at` (latest put). |
 | `routes`       | The ordered routing rules: `position` (dense, 0 first), `channel`, `kind` (`direct`, `group`), `conversation` (each null for any), `agent`. Ids are `AUTOINCREMENT`, never reused. |
 | `routes_imported` | One row, once the `[[routes]]` of `doozers.toml` were imported: `at`.                |
@@ -173,6 +174,7 @@ outline.
 | `users`        | The users: `id` (opaque, never changes), `username` (unique, `NOCASE`), `display_name`, `role` (`admin`, `member`), `state` (`active`, `disabled`), `timezone` (an IANA name, or null), `default_identity` (one of the user's identities, or null), `created_at`, `updated_at`. See [Users](#users). |
 | `user_identities` | The channel identities of users: (`namespace`, `native_id`) as the primary key, `user_id` (cascades), `verified_at`, `verification` (`link`, `admin`, `imported`), and `identity`, the generated joined `<namespace>:<native id>`, which is unique. |
 | `users_imported` | One row, once the `[owner]` of `doozers.toml` was imported: `at`.                  |
+| `user_invites` | The one-time invite and recovery links: `token_hash` (SHA-256 of the token), `user_id` (cascades), `kind` (`invite`, `recovery`), `created_by` (null for the operator, and set null when that admin is removed), `created_at`, `expires_at`, `used_at`. See [User invites](#user-invites). |
 
 `pairings` is deferred with multi-user support (PLAN 1.1, D49) and doesn't exist yet.
 
@@ -487,8 +489,11 @@ is updated without a trigger on the column, so the search index is untouched.
 `web_sessions` backs the login cookie (PLAN 3.4). The store hashes the cookie token with SHA-256 and
 keeps only the hash, so a database copy can't be replayed as a login. The token is random with at
 least 128 bits of entropy, so a plain hash suffices. `web_session_create` (`Conflict` on a token
-collision), `web_session(token, now)` (only unexpired sessions), `web_session_delete` (logout), and
-`web_sessions_expire(now)`. The 30-day lifetime is the caller's `expires_at`.
+collision) takes the `SignInMethod` the session signed in with, which `web_session(token, now)`
+(only unexpired sessions) returns with it. Then `web_session_delete` (logout) and
+`web_sessions_expire(now)`. The 30-day lifetime is the caller's `expires_at`. Sessions that existed
+before the column was added are `recovery`, since the one-time login link they came from is what a
+recovery link replaced.
 
 ## Routes
 
@@ -555,7 +560,7 @@ inside the write transaction of the change.
 | `user_create(user, identities, now)`    | Creates an active user with identities verified at `now`. `Error::UserIdTaken`, `Error::UsernameTaken`, or `Error::IdentityTaken` store nothing. The default identity must be one of the identities. |
 | `user_set_state(id, state, now)`        | Sets `active` or `disabled`; `Error::NoSuchUser` if absent. `Error::LastAdmin` for disabling the last active admin. |
 | `user_set_role(id, role, now)`          | Sets `admin` or `member`; `Error::NoSuchUser` if absent. `Error::LastAdmin` for demoting the last active admin. |
-| `user_delete(id)`                       | Deletes the user and, by cascade, their identities, and returns the user as it was; nothing else the user owns. `Error::NoSuchUser` if absent, `Error::LastAdmin` for the last active admin. |
+| `user_delete(id)`                       | Deletes the user and, by cascade, their identities and invite links, clears `created_by` on the links they made, and returns the user as it was; nothing else the user owns. `Error::NoSuchUser` if absent, `Error::LastAdmin` for the last active admin. |
 | `user_identity_add(id, identity, now)`  | Adds an identity; the user's first becomes their default. `Error::IdentityTaken` if any user has it. |
 | `user_identity_remove(id, identity, now)` | Removes an identity, named as `<namespace>:<native id>`. If it was the default, the oldest one left is, or there is none. |
 | `users_imported`                        | Whether the import below has run.                                |
@@ -568,6 +573,23 @@ returns whether it created the user. If the row exists it does nothing and retur
 `owner` holds something new and even when every user has since been deleted: the marker, not the
 table being empty, says the import happened. A config with no `[owner]` still records the import, so
 a fresh install's first admin, made by `doozers admin login-link`, is never followed by an import.
+
+## User invites
+
+`user_invites` holds the one-time links that sign a user in: an `invite` sets up a new account, and
+a `recovery` link gets a user who lost every sign-in method back in (PLAN 3.4). Like
+[web sessions](#web-sessions), the table keeps only the SHA-256 of the 256-bit token, so a database
+copy can't be used to sign in. A link lasts until `expires_at`, which the caller sets 72 hours after
+`created_at`, and works once. A link that is spent stays in the table, with `used_at`, until it
+expires. `created_by` is the admin who made the link, and null for the operator's
+`doozers admin login-link`.
+
+| Method                                                                 | Contract                                                         |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `user_invite_create(token, user, kind, created_by, now, expires_at)`   | Stores a link. `Error::NoSuchUser` if the user or `created_by` doesn't exist, `Error::Conflict` for a token collision. |
+| `user_invite(token, now)`                                              | The link, if it exists, is unused, and hasn't expired. Doesn't use it up. |
+| `user_invite_redeem(token, now)`                                       | Marks the link used and returns it, in one statement, so of two requests with the same token one gets `None`. |
+| `user_invites_expire(now)`                                             | Deletes every expired link, used or not.                         |
 
 ## Toolsets
 

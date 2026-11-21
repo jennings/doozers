@@ -19,6 +19,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
+use doozers_store::SignInMethod;
 use doozers_types::{NativeId, UserId};
 use serde::Deserialize;
 use tracing::{debug, info, warn};
@@ -214,7 +215,13 @@ async fn log_in(
     if let Err(err) = app
         .inner
         .store
-        .web_session_create(&token, user_id.clone(), now, expires_at)
+        .web_session_create(
+            &token,
+            user_id.clone(),
+            SignInMethod::Recovery,
+            now,
+            expires_at,
+        )
         .await
     {
         return internal_error("cannot store a web session", &err);
