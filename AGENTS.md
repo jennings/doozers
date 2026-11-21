@@ -23,6 +23,10 @@
     field on the web agent forms in the same commit or stack.
   - User documentation shows the web UI as the way to change an agent setting, and `agent.toml` as
     the alternative.
+- A web page that shows a URL or other programmatic string the user is expected to copy (a link, a
+  command to send, a key, a redirect URI) puts it in a read-only field with a copy button, the way
+  the SSH keys page shows a public key: an `.input-group` with a `button[data-copy-from]`, and the
+  page loads `copy-button.js` in its `head` block.
 
 ## Writing user documentation
 
