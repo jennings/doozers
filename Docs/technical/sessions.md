@@ -72,13 +72,14 @@ Commands act after their ack, so a crash between the two loses the command but n
 - `/stop` cancels `Turn::cancel` of the turn running for the key, in whichever session it runs. With
   nothing running it's logged and ignored. Making the cancellation reach toolsets, and filling
   unanswered tool calls with `cancelled`, is the agent loop's job.
-- `/env reset` goes to `EnvResets::reset` (`Workspaces` implements it: `recreate` with
-  `DeleteReason::UserReset`) in a task of its own, since creating the new workspace can take a while
-  and mustn't hold up the channel's other events. The user gets a reply in the conversation (sent
-  through the channel registered for the key's instance, not through a turn): a new workspace was
-  made, the conversation has none, or the reset failed with the reason. It needs no session, and
-  never cancels the running turn: the turn's next workspace call opens the new workspace. `/new`
-  doesn't call it, so a fresh session keeps the workspace.
+- `/env reset` goes to `EnvResets::reset(key, user)` (`Workspaces` implements it: `recreate` with
+  `DeleteReason::UserReset`, for the workspace of the key and the sender, so it never touches
+  another user's of the same conversation id) in a task of its own, since creating the new workspace
+  can take a while and mustn't hold up the channel's other events. The user gets a reply in the
+  conversation (sent through the channel registered for the key's instance, not through a turn): a
+  new workspace was made, the conversation has none, or the reset failed with the reason. It needs
+  no session, and never cancels the running turn: the turn's next workspace call opens the new
+  workspace. `/new` doesn't call it, so a fresh session keeps the workspace.
 - An approval reply goes to `Approvals::answer`. `classify` only returns one while `is_pending` says
   it's an approval reply, so with nothing waiting `yes` and `no` stay ordinary messages.
 - **A conversation is held by one user at a time.** A session key names no user, so before it queues
@@ -97,8 +98,9 @@ Commands act after their ack, so a crash between the two loses the command but n
     first user's session ends with `/new` or an idle reset, which the pump applies to the key's
     session before it checks, and then the next user's message starts a session of their own. Until
     then it is dropped, so nobody ever runs in, or sees the history of, a session that isn't theirs.
-    The conversation's workspace is keyed by agent, instance, and conversation, so it passes to the
-    next user as it is.
+    The conversation's workspace is owned by agent, instance, conversation, and user, so the next
+    user has no workspace until they create one, and the first user's stays theirs
+    ([SSH keys](ssh.md#whose-workspace-it-is)).
 
   A conversation with no session in it is anyone's; the first message that creates a session claims
   it.
@@ -167,7 +169,10 @@ the DM between turns (§6.11). It does so through a hold:
 - `wait_idle(session)` waits until the session has no driver: no turn, no hold, nothing queued (a
   job's `idle_only`), or until shutdown.
 - `open_direct(key, user)` opens a DM session the way an inbound message from `user` would,
-  `idle_reset` included.
+  `idle_reset` included. It never hands a user another user's open session: a job of Alice's in a
+  conversation Bob holds gets `Error::Conflict` instead of Bob's session, with his transcript,
+  workspace, and SSH keys (the scheduler checks first, and uses Alice's own DM instead). The session
+  may be opened for the user if the other's has ended, as an inbound message would.
 
 ## Startup recovery
 

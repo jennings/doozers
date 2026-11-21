@@ -116,6 +116,7 @@ fn workspace_owner(chat: &ConversationId) -> WorkspaceOwner {
         agent: AgentId::new("jeeves").unwrap(),
         channel: INSTANCE.into(),
         conversation: chat.clone(),
+        user: Some(identity::owner()),
     }
 }
 

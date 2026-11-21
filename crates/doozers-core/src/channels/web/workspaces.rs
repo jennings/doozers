@@ -96,6 +96,8 @@ struct OwnerCell {
     conversation: String,
     /// The web chat, if the conversation is one of this instance's.
     chat: Option<String>,
+    /// The user of a direct conversation, whose workspace it is.
+    user: Option<String>,
     /// For a job run: the job session.
     job: Option<i64>,
 }
@@ -107,6 +109,7 @@ impl OwnerCell {
                 agent,
                 channel,
                 conversation,
+                user,
             } => Self {
                 agent: Some((
                     agent.to_string(),
@@ -117,6 +120,7 @@ impl OwnerCell {
                 conversation: conversation.to_string(),
                 chat: (channel == web_instance && is_chat_id(conversation.as_str()))
                     .then(|| format!("/chats/{conversation}")),
+                user: user.as_ref().map(ToString::to_string),
                 job: None,
             },
             WorkspaceOwner::Job { session } => Self {
@@ -124,6 +128,7 @@ impl OwnerCell {
                 channel: String::new(),
                 conversation: String::new(),
                 chat: None,
+                user: None,
                 job: Some(session.get()),
             },
         }

@@ -82,6 +82,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "0015_users",
         sql: include_str!("migrations/0015_users.sql"),
     },
+    Migration {
+        name: "0016_workspace_user",
+        sql: include_str!("migrations/0016_workspace_user.sql"),
+    },
 ];
 
 /// The schema version this binary writes.
@@ -498,6 +502,68 @@ mod tests {
                 ("ws-nosession".to_owned(), None),
                 ("ws-old".to_owned(), Some("owner".to_owned())),
             ]
+        );
+    }
+
+    #[test]
+    fn the_workspace_user_migration_gives_conversation_workspaces_their_key_user_as_owner() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &MIGRATIONS[..15], None).unwrap();
+        conn.execute_batch(
+            "INSERT INTO workspaces (id, environment, agent, channel, conversation, job_session,
+                 options, description, state, created_at, last_used_at, deleted_at, delete_reason,
+                 key_user)
+             VALUES ('ws-direct', 'box', 'jeeves', 'web', 'c1', NULL, '{}', 'a box', 'active', 1,
+                 1, NULL, NULL, 'owner'),
+                    ('ws-group', 'box', 'jeeves', 'chat', 'g1', NULL, '{}', 'a box', 'active', 1,
+                 1, NULL, NULL, NULL),
+                    ('ws-old', 'box', 'jeeves', 'web', 'c1', NULL, '{}', 'a box', 'deleted', 1, 1,
+                 2, 'operator', 'owner'),
+                    ('ws-job', 'box', NULL, NULL, NULL, 5, '{}', 'a box', 'active', 1, 1, NULL,
+                 NULL, 'owner');",
+        )
+        .unwrap();
+
+        assert_eq!(migrate(&mut conn, MIGRATIONS, None).unwrap(), 15);
+        assert_eq!(user_version(&conn).unwrap(), SCHEMA_VERSION);
+        let rows: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, user_id FROM workspaces ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                ("ws-direct".to_owned(), Some("owner".to_owned())),
+                ("ws-group".to_owned(), None),
+                ("ws-job".to_owned(), None),
+                ("ws-old".to_owned(), Some("owner".to_owned())),
+            ]
+        );
+
+        // The one-active-workspace index now allows one per user, and still one per group.
+        let insert = |id: &str, channel: &str, user: Option<&str>| {
+            conn.execute(
+                "INSERT INTO workspaces (id, environment, agent, channel, conversation, options,
+                     description, state, created_at, last_used_at, user_id)
+                 VALUES (?1, 'box', 'jeeves', ?2, 'c1', '{}', 'a box', 'active', 6, 6, ?3)",
+                rusqlite::params![id, channel, user],
+            )
+        };
+        assert!(insert("ws-again", "web", Some("owner")).is_err());
+        insert("ws-bob", "web", Some("bob")).unwrap();
+        assert!(
+            conn.execute(
+                "INSERT INTO workspaces (id, environment, agent, channel, conversation, options,
+                     description, state, created_at, last_used_at)
+                 VALUES ('ws-group-twice', 'box', 'jeeves', 'chat', 'g1', '{}', 'a box', 'active',
+                     6, 6)",
+                [],
+            )
+            .is_err(),
+            "a group conversation still has one"
         );
     }
 }

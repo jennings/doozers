@@ -138,10 +138,29 @@ Several users' keys can't be kept apart in one workspace. Every command can conn
 socket, and an SSH connection opened in one user's turn, such as a `ControlMaster`, stays usable in
 another's. A group workspace therefore gets no keys, which matches per-user MCP toolsets.
 
+### Whose workspace it is
+
+A conversation id can pass from one user to the next: an IRC direct conversation is the sender's
+nickname, so a member who takes a nickname inherits its conversation once the earlier user's session
+has ended ([Sessions and turns](sessions.md#the-inbound-pipeline)). A workspace is therefore owned
+by agent, channel instance, conversation, and, for a direct conversation, its user
+([Environment workspaces](environments.md#owners-and-ids)), and the key user of a direct
+conversation's workspace is always its owner's user. Two users never share a workspace, so the
+second user can't run in the first one's files or sign with their keys, and there is nothing to
+replace when a conversation changes hands: the second user has no workspace until they create one,
+and the first user's stays theirs. Every workspace call, `environment_status`, `environment_create`,
+`environment_reset`, `/env reset`, and the relay's own requests included, is made for the owner of
+the calling turn's session, so a turn still running after a `/new` and the next user's first message
+keeps using its own user's workspace and neither deletes the other's. Jobs can't get into a held
+conversation either: a runtime job whose conversation another user holds uses its own user's DM and
+default identity instead, and `Sessions::open_direct` refuses to hand a user another user's open
+session ([Sessions and turns](sessions.md), [Scheduler](scheduler.md#one-run)).
+
 A workspace keeps its key user for its life. `recreate` and `/env reset` pass the record's on to the
 new workspace, while the model's own `environment_reset` creates the new workspace from the current
 turn like `environment_create` does. Migration `0013` filled `key_user` for existing conversation
-rows from the newest `direct` session of their key and left job rows without one.
+rows from the newest `direct` session of their key and left job rows without one, and migration
+`0016` filled each conversation row's owner user (`workspaces.user_id`) from its `key_user`.
 
 ## The agent relay
 

@@ -62,13 +62,17 @@ delivered, so a job that cancels itself in its last run still reports. Only `/st
 
 1. **The DM.** The job's user is a runtime job's creator, else the owner. A runtime job with a
    `conversation` whose channel instance is still configured has that conversation as its DM (its
-   open session, if any, for the excerpt and `idle_only`), and its reply goes there. Any other job
-   (a config job, a runtime job made on the web jobs page, or one whose instance is gone, which is
-   logged) uses the user's DM on their default identity: the direct session of that user with the
-   agent, open or ended, with the newest activity on a channel instance that can own the identity,
-   one whose registered channel's namespace and `:` start the identity, or, not registered yet,
-   whose component is its first segment (`Store::latest_direct_session`). Its reply goes to the
-   default identity.
+   open session, if any, for the excerpt and `idle_only`), and its reply goes there. If another user
+   holds that conversation (an open session of someone else's: an IRC nickname's conversation id can
+   change hands), it isn't the job's DM: the job is treated as if the conversation were gone, with a
+   warning in the log, so its transcript, workspace, and SSH keys are never the job's, and nothing
+   is queued into it. Any other job (a config job, a runtime job made on the web jobs page, or one
+   whose instance is gone or whose conversation is held by another user, which is logged) uses the
+   user's DM on their default identity: the direct session of that user with the agent, open or
+   ended, with the newest activity on a channel instance that can own the identity, one whose
+   registered channel's namespace and `:` start the identity, or, not registered yet, whose
+   component is its first segment (`Store::latest_direct_session`). Its reply goes to the default
+   identity.
 2. **`idle_only`**: waits until the DM has no running turn, hold, or queued message
    (`Sessions::wait_idle`). Then `active_hours` is checked again: a run whose wait ended outside
    them is skipped and not recorded.
@@ -92,7 +96,11 @@ delivered, so a job that cancels itself in its last run still reports. Only `/st
      its creator, with the creator's memories.
    - `dm`: the DM's open session (`Sessions::open_direct`, `idle_reset` applied), held
      (`Sessions::hold`) so the run is its own turn after the turns ahead of it; `/stop` there
-     cancels it. With no DM yet it runs like an isolated job.
+     cancels it. With no DM yet it runs like an isolated job. If another user takes the conversation
+     between the check in step 1 and the open, `open_direct` refuses (`Error::Conflict`): the run is
+     skipped, with an `info` line in the log, and never runs in the holder's session with their
+     workspace and SSH keys. An isolated run's reply that was delivered isn't appended to that
+     holder's transcript either (also logged at `info`).
 6. **The reply** is read back from the transcript (`job_reply`): `NoReply` when the last assistant
    message's text is exactly `NO_REPLY`, else the text of every assistant message of the run.
    - `NO_REPLY`: nothing is sent; an isolated run's session is deleted, a `dm` run's messages are

@@ -384,10 +384,10 @@ can still be deleted.
   post of the chat the core hasn't acked, or `is_busy` says so. Then `Store::delete_conversation`
   deletes the conversation in one transaction, refusing (409 too) while an inbox row of it is queued
   or started. Last, for each agent the conversation's sessions were with, `Workspaces::delete`
-  deletes the conversation's workspace with `DeleteReason::ChatDeleted`. A store error there is a
-  500 after the chat is gone; the sweep deletes the leftover workspace later, since its owner has no
-  activity. The answer is 303 to `/chats/archived` for a chat that was archived and to `/`
-  otherwise.
+  deletes the workspace of the conversation and the user who deleted it (a chat is one user's) with
+  `DeleteReason::ChatDeleted`. A store error there is a 500 after the chat is gone; the sweep
+  deletes the leftover workspace later, since its owner has no activity. The answer is 303 to
+  `/chats/archived` for a chat that was archived and to `/` otherwise.
 
 What deleting leaves: usage rows (without their session), memories the agent saved (their
 `source_session` is only recorded), and runtime jobs scheduled in the chat. Such a job's next run
@@ -885,13 +885,14 @@ every POST. [Environment workspaces](environments.md#calls) describes the calls 
   (environment, owner, created, last used, in use, disk used, SSH keys, description, working
   directory, details) don't fit a table in the page's width. **SSH keys** is the workspace's
   `key_user` (the user whose keys its agent offers, [SSH](ssh.md#how-a-workspace-gets-its-keys)), or
-  `none`. The owner is the agent (a link to its page if it is configured), the channel, and the
+  `none`. The owner is the agent (a link to its page if it is configured), the channel, the
   conversation, which links to `/chats/<id>` when the channel is this web instance and the
-  conversation is a chat id; a job run shows its session. Above the list, each environment shows its
-  free space, or why it isn't known (not connected, failed, no longer configured). A workspace the
-  plugin didn't answer for shows `unknown` for its state, disk use, and details, and what Doozers
-  stored of its description. There is no timeout of its own and no cache: the page waits for the
-  plugins like any call to them does.
+  conversation is a chat id, and, for a direct conversation, `for <user>` (two users of one
+  conversation id have workspaces of their own); a job run shows its session. Above the list, each
+  environment shows its free space, or why it isn't known (not connected, failed, no longer
+  configured). A workspace the plugin didn't answer for shows `unknown` for its state, disk use, and
+  details, and what Doozers stored of its description. There is no timeout of its own and no cache:
+  the page waits for the plugins like any call to them does.
 - What a plugin reports (description, working directory, `details`) is the plugin's text: the
   template escapes it and nothing interprets it. `details` is rendered as a nested definition list
   in the plugin's order.

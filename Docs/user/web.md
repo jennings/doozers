@@ -495,7 +495,8 @@ see what they use and stop or delete one. Only an admin can open it.
 Each workspace shows:
 
 - **Environment** and **Owner**: the agent and the conversation, which links to the web chat when it
-  is one, or the job run.
+  is one, and the user whose conversation it is (two users who held one IRC nickname at different
+  times have workspaces of their own), or the job run.
 - **Created** and **Last used**.
 - **In use**: whether a running turn is using it now.
 - **SSH keys**: the user whose [SSH keys](ssh.md#use-ssh-in-a-workspace) the workspace gets, or

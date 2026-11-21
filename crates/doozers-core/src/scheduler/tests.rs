@@ -959,6 +959,91 @@ async fn a_dm_runtime_job_runs_in_the_conversation_it_was_scheduled_in() {
     h.stop().await;
 }
 
+/// Bob holds `other_key()` with a short exchange in it, as a nickname's DM an earlier user of the
+/// nickname left.
+async fn bob_holds_the_conversation(h: &Harness) -> Session {
+    let (session, _) = h
+        .store
+        .open_session(
+            other_key(),
+            SessionKind::Direct,
+            Some(UserId::new("bob").unwrap()),
+            h.now(),
+        )
+        .await
+        .unwrap();
+    let message = |role, text: &str| Message {
+        role,
+        content: vec![Block::text(text)],
+        meta: MessageMeta::new(h.now()),
+    };
+    h.store
+        .append_messages(
+            session.id,
+            vec![
+                message(Role::User, "Bob's secret"),
+                message(Role::Assistant, "Noted."),
+            ],
+        )
+        .await
+        .unwrap();
+    session
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dm_runtime_job_in_a_conversation_another_user_holds_runs_in_the_users_own_dm() {
+    let mut h = Harness::new("", &[]).await;
+    *h.replies.workspaces.lock().unwrap() = Some(h.workspaces.clone());
+    let dm = h.dm(&["Hi", "Hello."]).await;
+    let bobs = bob_holds_the_conversation(&h).await;
+    h.start().await;
+    job_in_conversation(&h, "other", "dm").await;
+
+    // The job uses the owner's own DM, as if its conversation were gone, and not Bob's session,
+    // with his workspace and SSH keys.
+    let ran = h.ran().await;
+    assert_eq!(ran.session.id, dm.id);
+    assert_eq!(h.delivered(1).await[0].conversation, None);
+    h.settle().await;
+    assert_eq!(h.texts(bobs.id).await, ["Bob's secret", "Noted."]);
+    let open = h
+        .store
+        .find_open_session(other_key())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(open.id, bobs.id);
+    assert_eq!(open.user, Some(UserId::new("bob").unwrap()));
+    let rows = h.store.workspaces_of("box").await.unwrap();
+    assert!(
+        rows.iter()
+            .all(|row| row.owner == WorkspaceOwner::of_session(&dm))
+    );
+    h.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_isolated_runtime_job_in_a_conversation_another_user_holds_delivers_to_its_user() {
+    let mut h = Harness::new("", &[]).await;
+    let dm = h.dm(&["Hi", "Hello."]).await;
+    let bobs = bob_holds_the_conversation(&h).await;
+    h.start().await;
+    job_in_conversation(&h, "other", "isolated").await;
+
+    // The reply is queued for the owner's default identity, not into Bob's conversation, and
+    // nothing is appended to Bob's transcript.
+    let ran = h.ran().await;
+    assert_eq!(ran.session.kind, SessionKind::Job);
+    assert_eq!(ran.session.user, Some(owner()));
+    let delivered = h.delivered(1).await;
+    assert_eq!(delivered[0].markdown, "Report.");
+    assert_eq!(delivered[0].conversation, None);
+    h.settle().await;
+    assert_eq!(h.texts(bobs.id).await, ["Bob's secret", "Noted."]);
+    assert_eq!(h.texts(dm.id).await, ["Hi", "Hello.", "Report."]);
+    h.stop().await;
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_runtime_job_whose_conversations_channel_is_gone_uses_the_default_identity() {
     let mut h = Harness::new("", &[]).await;
