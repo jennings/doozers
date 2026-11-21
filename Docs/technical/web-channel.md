@@ -93,13 +93,13 @@ who started it ([Whose data is whose](#whose-data-is-whose)). The chat id helper
 A plain chat goes to whichever agent the stored routes pick. The chat list also has a picker, a
 `GET` form to `/chats/new?agent=<id>`, listing the agents the user may start a chat with
 (`agent_choices`, read from the running configuration, `WebApp`'s `LiveConfig`, so an agent added
-while Doozers runs is offered at once). Every user may use every agent for now; with per-user
-allowlists, that function is where they apply. The chat it opens has the id `<agent>.<hex>`, and the
-router sends its messages to that agent ahead of every route
-([Identity and Routing](identity-and-routing.md#routing)), so a new agent needs no route. A chat's
-page shows its agent ("with Jeeves (jeeves)"), and so does the chat list. If the agent isn't
-configured (any more), or the user may not use it, `/chats/new?agent=`, the chat page, and both
-POSTs answer 404 "No such agent" (and the router would drop the message anyway).
+while Doozers runs is offered at once). Every user, admin or member, may use every agent; with
+per-user allowlists, that function is where they apply. The jobs page offers the same agents. The
+chat it opens has the id `<agent>.<hex>`, and the router sends its messages to that agent ahead of
+every route ([Identity and Routing](identity-and-routing.md#routing)), so a new agent needs no
+route. A chat's page shows its agent ("with Jeeves (jeeves)"), and so does the chat list. If the
+agent isn't configured (any more), `/chats/new?agent=`, the chat page, and both POSTs answer 404 "No
+such agent" (and the router would drop the message anyway).
 
 ## Who is asking
 
@@ -139,6 +139,8 @@ exception: they are about the instance, not about an object of someone's, and an
 | ------ | ---------- | --------------------- | ----------------- |
 | Chat: page, event stream, post, approval button, archive, unarchive, delete | The user of its sessions | `pages::own_chat` runs first in every `/chats/<id>` handler; below | 404 "No such chat" |
 | Chat list, archived list | The signed-in user | `Store::channel_conversations(instance, user, ..)` lists only the user's sessions | Their own chats only |
+| Session | Its user | The session pump drops messages and commands in a conversation another user's session holds | Dropped |
+| Agent picker | Nobody's | Every user may use every agent | The same list |
 | Transcript and waiting messages | The user of the sessions | `Store::conversation_transcript(instance, chat, user, ..)` reads only the user's sessions | Nothing, even past the check |
 | Approval prompt | The turn's requester | The button is a chat route; the core matches the user and the session | 404 on the web; an ordinary message elsewhere ([Approvals](approvals.md#replies)) |
 | Scheduled job | Its creator | `jobs::own_job` loads the job and compares `creator` | 404 |
@@ -159,9 +161,9 @@ poster claims it. The id of a chat nobody has started is therefore a secret unti
 and a page for an unknown id shows an empty new chat where another user's chat is 404. That tells
 only someone who already has the id that the chat exists.
 
-The core enforces the same rule below the web pages. The session pump drops a message or command in
-a conversation with a session of another user, so a post that got past the pages (or any other
-channel's event) can't run in someone else's session
+The core enforces the same rule below the web pages. For a web chat the session pump drops a message
+or command in a conversation with a session of another user, ended sessions included, so a post that
+got past the pages can't run in someone else's session
 ([Sessions and turns](sessions.md#the-inbound-pipeline)). `own_chat` runs before the handler touches
 the chat's hub, so a stranger can't subscribe to a chat's events, make its hub, or mark its prompt
 answered.
@@ -1204,10 +1206,20 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   workspace with `chat_deleted`, then 303s to the list it was in; a busy chat (the activity, or an
   unacked post) isn't deleted; every action needs a login and the CSRF token; a chat with nothing
   stored has no buttons and both posts are 404.
+- Two users (`tests/users.rs`): an admin, a second admin, and a member, made through the `Users` API
+  and logged in through real sessions (only a cookie and CSRF token, so roles come from the stored
+  users). The member names the owner's objects on every route that takes an id and gets 404 (403 on
+  the admin pages) with nothing changed: chats and archived chats (page, event stream, post,
+  approval button, archive, unarchive, delete), a chat waiting for the core, an approval prompt,
+  blobs, jobs, SSH keys, and memories. A deleted chat's id replays nothing of it. Each user sees
+  only their own lists, and the same blob is each sender's own, with their own file name. A member
+  can start a chat with any agent and post in it as themselves, and schedule a job. On the
+  connections page the member signing out leaves the owner's tokens alone (finishing another user's
+  sign-in is tested in `tests/toolset_oauth.rs`).
 - Jobs page (`tests/jobs.rs`): one list across agents, soonest first, with config jobs for the user
   `owner` only, a "Doesn't run" note for a job of an unconfigured agent, and no other user's jobs.
   The form stores the spec the `schedule` tool would and notifies the scheduler; it refuses a blank
-  prompt, a bad cron pattern, a past time, an agent the user may not use, a missing CSRF token, and
+  prompt, a bad cron pattern, a past time, an agent that isn't configured, a missing CSRF token, and
   a job past the cap, keeping what was typed. Edit, disable, enable, and delete change only the
   user's own jobs (404 for another's), an edit keeps `disabled` and `conversation`, and a passed
   one-shot can't be enabled. `jobs.rs` unit tests cover the next run inside active hours.

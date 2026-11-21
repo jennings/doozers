@@ -2453,7 +2453,7 @@ async fn a_chat_can_be_started_with_any_agent_and_keeps_it() {
     // Only the message to Jeeves is waiting.
     assert_eq!(env.pending_texts().await, ["hello"]);
 
-    // Someone other than the owner is offered no agent and can't pick one.
+    // A member is offered every agent and can pick one, like an admin.
     let guest = WebUser {
         user: UserId::new("guest").unwrap(),
         role: doozers_store::Role::Member,
@@ -2466,15 +2466,27 @@ async fn a_chat_can_be_started_with_any_agent_and_keeps_it() {
             .await,
     )
     .await;
-    assert!(!list.contains("agent-picker"), "{list}");
+    assert!(list.contains("agent-picker"), "{list}");
+    for agent in ["jeeves", "bunter"] {
+        assert!(
+            list.contains(&format!(r#"<option value="{agent}">"#)),
+            "{list}"
+        );
+    }
     let response = env
         .request(
-            Some(guest),
+            Some(guest.clone()),
             Method::GET,
             "/chats/new?agent=jeeves",
             &[],
             None,
         )
         .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let chat = response.headers()[LOCATION].to_str().unwrap().to_owned();
+    assert!(chat.starts_with("/chats/jeeves."), "{chat}");
+    let response = env
+        .request(Some(guest), Method::GET, &chat, &[], None)
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
 }

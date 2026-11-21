@@ -27,7 +27,6 @@ use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
-use super::admin::may_administer;
 use super::auth::{WebUser, check_csrf};
 use super::chat_actions::no_such_chat;
 use super::hub::{Event, Subscription};
@@ -296,12 +295,9 @@ pub(super) struct AgentChoice {
     pub(super) label: String,
 }
 
-/// The agents `user` may start a chat with, by id: every agent for an admin, none for anyone else
-/// until per-user scoping (#146) opens the chats to every user.
-pub(super) fn agent_choices(config: &Config, user: &WebUser) -> Vec<AgentChoice> {
-    if !may_administer(user) {
-        return Vec::new();
-    }
+/// The agents a user may start a chat with, by id: every configured agent, for every user (a member
+/// may use any agent; per-user allowlists would apply here).
+pub(super) fn agent_choices(config: &Config) -> Vec<AgentChoice> {
     config
         .agents
         .keys()
@@ -361,7 +357,7 @@ impl ChatList {
             .collect();
         Ok(Self {
             chats,
-            agents: agent_choices(&config, user),
+            agents: agent_choices(&config),
             archived,
         })
     }
@@ -415,14 +411,14 @@ struct NewChatQuery {
 /// is stored until the first message.
 async fn new_chat(
     State(app): State<WebApp>,
-    user: WebUser,
+    _: WebUser,
     Query(query): Query<NewChatQuery>,
 ) -> Response {
     let Some(agent) = query.agent.filter(|a| !a.is_empty()) else {
         return Redirect::to(&format!("/chats/{}", new_chat_id())).into_response();
     };
     let config = app.inner.agents.get();
-    let Some(choice) = agent_choices(&config, &user)
+    let Some(choice) = agent_choices(&config)
         .into_iter()
         .find(|choice| choice.id == agent)
     else {
@@ -432,7 +428,7 @@ async fn new_chat(
     Redirect::to(&format!("/chats/{}", new_agent_chat_id(&agent))).into_response()
 }
 
-/// 404 for a chat with an agent that isn't configured (or that the user may not use).
+/// 404 for a chat with an agent that isn't configured.
 fn no_such_agent(agent: &str) -> Response {
     error_page(
         StatusCode::NOT_FOUND,
@@ -441,18 +437,14 @@ fn no_such_agent(agent: &str) -> Response {
     )
 }
 
-/// For a chat started with an agent: the agent's label, or the agent as the error if `user` may
-/// not use it (it isn't configured). `Ok(None)` for a chat routed by the stored routes.
-fn chosen_agent(
-    app: &WebApp,
-    user: &WebUser,
-    chat: &ConversationId,
-) -> Result<Option<String>, AgentId> {
+/// For a chat started with an agent: the agent's label, or the agent as the error if it isn't
+/// configured. `Ok(None)` for a chat routed by the stored routes.
+fn chosen_agent(app: &WebApp, chat: &ConversationId) -> Result<Option<String>, AgentId> {
     let Some(agent) = chat_agent(chat.as_str()) else {
         return Ok(None);
     };
     let config = app.inner.agents.get();
-    agent_choices(&config, user)
+    agent_choices(&config)
         .into_iter()
         .find(|choice| choice.id == agent.as_str())
         .map(|choice| Some(choice.label))
@@ -497,7 +489,7 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
     if let Err(response) = own_chat(&app, &user, &chat).await {
         return *response;
     }
-    let agent = match chosen_agent(&app, &user, &chat) {
+    let agent = match chosen_agent(&app, &chat) {
         Ok(agent) => agent,
         Err(agent) => return no_such_agent(agent.as_str()),
     };
@@ -602,7 +594,7 @@ async fn post_message(
     if let Err(response) = own_chat(&app, &user, &chat).await {
         return *response;
     }
-    if let Err(agent) = chosen_agent(&app, &user, &chat) {
+    if let Err(agent) = chosen_agent(&app, &chat) {
         return no_such_agent(agent.as_str());
     }
     if let Err(rejected) = check_csrf(&user, &headers, form.csrf.as_deref()) {
@@ -675,7 +667,7 @@ async fn post_approval(
     if let Err(response) = own_chat(&app, &user, &chat).await {
         return *response;
     }
-    if let Err(agent) = chosen_agent(&app, &user, &chat) {
+    if let Err(agent) = chosen_agent(&app, &chat) {
         return no_such_agent(agent.as_str());
     }
     if let Err(rejected) = check_csrf(&user, &headers, form.csrf.as_deref()) {

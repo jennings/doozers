@@ -301,7 +301,7 @@ async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Response {
     http::render(&JobsPage {
         shell: Shell::new(&user, Nav::Jobs),
         jobs: rows,
-        can_create: !agent_choices(&config, &user).is_empty(),
+        can_create: !agent_choices(&config).is_empty(),
         csrf: user.csrf.clone(),
     })
 }
@@ -440,7 +440,7 @@ fn render_form(
     let config = app.inner.agents.get();
     let (title, action, submit, agents, agent, zone) = match target {
         Target::New => {
-            let agents = agent_choices(&config, user);
+            let agents = agent_choices(&config);
             // The zone of the chosen agent: say which when they all agree.
             let mut zones = agents.iter().filter_map(|choice| {
                 AgentId::new(&choice.id)
@@ -575,7 +575,7 @@ async fn create(
         render_form(&app, &user, &Target::New, &form, Some((status, error)))
     };
     let config = app.inner.agents.get();
-    let agent = match agent_choices(&config, &user)
+    let agent = match agent_choices(&config)
         .iter()
         .find(|choice| choice.id == form.agent)
         .and_then(|choice| AgentId::new(&choice.id).ok())
