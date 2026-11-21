@@ -490,6 +490,19 @@ impl WebChannel {
         self.hubs.get(chat)
     }
 
+    /// Whether a message from another user waits in chat `chat`, not taken by the core yet: the
+    /// chat has no session, so the store can't say whose it is, but the first poster claims it.
+    /// Senders are compared as users, since one user can have a cookie sender and a proxy one.
+    fn posted_by_other(&self, chat: &ConversationId, user: &UserId) -> bool {
+        let users = self.users.get();
+        lock(&self.inbound).pending.iter().any(|event| match event {
+            ChannelEvent::Message { message, .. } if message.conversation.id == *chat => users
+                .resolve(COMPONENT, &message.sender)
+                .is_none_or(|poster| poster.id != *user),
+            _ => false,
+        })
+    }
+
     /// The posted messages in chat `chat` the core hasn't taken yet (not acked), oldest first.
     fn unacked(&self, chat: &ConversationId) -> Vec<(EventId, InboundMessage)> {
         lock(&self.inbound)

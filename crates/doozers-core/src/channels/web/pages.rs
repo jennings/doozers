@@ -18,7 +18,7 @@ use axum::middleware::from_fn_with_state;
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
-use doozers_store::{BlobStore, Store};
+use doozers_store::{BlobStore, ConversationAccess, Store};
 use doozers_types::{AgentId, ConversationId, MediaId};
 use futures::{Stream, StreamExt, stream};
 use serde::Deserialize;
@@ -29,6 +29,7 @@ use tracing::error;
 
 use super::admin::may_administer;
 use super::auth::{WebUser, check_csrf};
+use super::chat_actions::no_such_chat;
 use super::hub::{Event, Subscription};
 use super::shell::{Nav, Shell};
 use super::{
@@ -233,6 +234,30 @@ pub(super) fn chat_id(raw: &str) -> Option<ConversationId> {
     is_chat_id(raw)
         .then(|| ConversationId::new(raw).ok())
         .flatten()
+}
+
+/// Checks that chat `chat` is the user's to use: a chat of theirs, or one nobody has started. A
+/// chat that has a session of another user's, or a message from another sender waiting for the
+/// core, answers 404 like a chat that doesn't exist, so the page doesn't say whose it is. Every
+/// handler that takes a chat id calls this before it reads or changes anything of the chat,
+/// the live state in its hub included.
+pub(super) async fn own_chat(
+    app: &WebApp,
+    user: &WebUser,
+    chat: &ConversationId,
+) -> Result<(), Box<Response>> {
+    let channel = &app.inner.channel;
+    match app
+        .inner
+        .store
+        .conversation_access(channel.instance().as_str(), chat, &user.user)
+        .await
+    {
+        Ok(ConversationAccess::Own) => Ok(()),
+        Ok(ConversationAccess::Unstarted) if !channel.posted_by_other(chat, &user.user) => Ok(()),
+        Ok(_) => Err(Box::new(no_such_chat())),
+        Err(err) => Err(Box::new(internal_error("cannot check a web chat", &err))),
+    }
 }
 
 /// Whether htmx sent the request (as opposed to a plain form post).
@@ -469,6 +494,9 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
     let Some(chat) = chat_id(&chat) else {
         return not_found();
     };
+    if let Err(response) = own_chat(&app, &user, &chat).await {
+        return *response;
+    }
     let agent = match chosen_agent(&app, &user, &chat) {
         Ok(agent) => agent,
         Err(agent) => return no_such_agent(agent.as_str()),
@@ -480,7 +508,12 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
     let transcript = match app
         .inner
         .store
-        .conversation_transcript(channel.instance().as_str(), &chat, HISTORY_LIMIT)
+        .conversation_transcript(
+            channel.instance().as_str(),
+            &chat,
+            &user.user,
+            HISTORY_LIMIT,
+        )
         .await
     {
         Ok(transcript) => transcript,
@@ -566,6 +599,9 @@ async fn post_message(
     let Some(chat) = chat_id(&chat) else {
         return not_found();
     };
+    if let Err(response) = own_chat(&app, &user, &chat).await {
+        return *response;
+    }
     if let Err(agent) = chosen_agent(&app, &user, &chat) {
         return no_such_agent(agent.as_str());
     }
@@ -597,7 +633,12 @@ async fn post_message(
         );
     }
     let channel = app.inner.channel.instance().as_str();
-    if let Err(err) = app.inner.store.unarchive_conversation(channel, &chat).await {
+    if let Err(err) = app
+        .inner
+        .store
+        .unarchive_conversation(channel, &chat, &user.user)
+        .await
+    {
         return internal_error("cannot unarchive a web chat", &err);
     }
     let now = app.inner.clock.now();
@@ -631,6 +672,9 @@ async fn post_approval(
     let Some(chat) = chat_id(&chat) else {
         return not_found();
     };
+    if let Err(response) = own_chat(&app, &user, &chat).await {
+        return *response;
+    }
     if let Err(agent) = chosen_agent(&app, &user, &chat) {
         return no_such_agent(agent.as_str());
     }
@@ -682,7 +726,7 @@ enum Item {
 /// shuts down.
 async fn events(
     State(app): State<WebApp>,
-    _: WebUser,
+    user: WebUser,
     Path(chat): Path<String>,
     Query(query): Query<EventsQuery>,
     headers: HeaderMap,
@@ -690,6 +734,9 @@ async fn events(
     let Some(chat) = chat_id(&chat) else {
         return not_found();
     };
+    if let Err(response) = own_chat(&app, &user, &chat).await {
+        return *response;
+    }
     let channel = app.inner.channel.clone();
     let cursor = headers
         .get("last-event-id")

@@ -29,7 +29,7 @@ the live-output hook.
 | `GET /`                        | The user's chats on this instance that aren't archived, most recently active first, and the agent picker. |
 | `GET /chats/archived`          | The user's archived chats, most recently active first.           |
 | `GET /chats/new`               | 303 to `/chats/<new id>`; nothing is stored until a message. `?agent=<id>`: a chat with that agent. |
-| `GET /chats/<id>`              | The chat list it is in, then the chat: transcript, live messages, pending prompts, and the form. Its title is its first message's, from the list. |
+| `GET /chats/<id>`              | The chat list it is in, then the chat: transcript, live messages, pending prompts, and the form. Its title is its first message's, from the list. Every `/chats/<id>` route is the chat's user's only: 404 for anyone else. |
 | `POST /chats/<id>/messages`    | Unarchives the chat, then posts `text` as the user (CSRF-checked). |
 | `POST /chats/<id>/archive`     | Archives the user's chat (CSRF-checked), 303 to `/` ([Archiving and deleting chats](#archiving-and-deleting-chats)). |
 | `POST /chats/<id>/unarchive`   | Unarchives the chat (CSRF-checked), 303 to the chat.            |
@@ -84,9 +84,9 @@ Every route except the two login routes needs a `WebUser` (below); without one i
 saying how to log in. A chat id is 128 random bits as 32 lowercase hex digits (`new_chat_id`), or
 `<agent>.<32 hex digits>` for a chat started with a chosen agent (`new_agent_chat_id`); either is
 the conversation id (PLAN section 10): web chats are created by the user. `is_chat_id` accepts both,
-and any other id in a path is a 404. A chat is `ConversationKind::Direct`; v1 has one user, so every
-chat is the owner's. The chat id helpers are in `channels::chat_ids`, outside the feature, because
-the router reads them.
+and any other id in a path is a 404. A chat is `ConversationKind::Direct`, and belongs to the user
+who started it ([Whose data is whose](#whose-data-is-whose)). The chat id helpers are in
+`channels::chat_ids`, outside the feature, because the router reads them.
 
 ### Choosing an agent
 
@@ -127,6 +127,43 @@ needs a login checks it before acting. The token is per login and needs no stora
   and a reload fixes them.
 
 On top of the token, the cookie is `SameSite=Lax`, so cross-site POSTs don't carry it at all.
+
+## Whose data is whose
+
+Every page and post that takes the id of a user's object is that user's alone. Anyone else gets the
+404 page of an object that doesn't exist, never a 403 that says it does. The admin pages are the
+exception: they are about the instance, not about an object of someone's, and answer 403 to a member
+([Admin pages](#admin-pages)). The rule, per object:
+
+| Object | Belongs to | How a handler decides | Another user gets |
+| ------ | ---------- | --------------------- | ----------------- |
+| Chat: page, event stream, post, approval button, archive, unarchive, delete | The user of its sessions | `pages::own_chat` runs first in every `/chats/<id>` handler; below | 404 "No such chat" |
+| Chat list, archived list | The signed-in user | `Store::channel_conversations(instance, user, ..)` lists only the user's sessions | Their own chats only |
+| Transcript and waiting messages | The user of the sessions | `Store::conversation_transcript(instance, chat, user, ..)` reads only the user's sessions | Nothing, even past the check |
+| Approval prompt | The turn's requester | The button is a chat route; the core matches the user and the session | 404 on the web; an ordinary message elsewhere ([Approvals](approvals.md#replies)) |
+| Scheduled job | Its creator | `jobs::own_job` loads the job and compares `creator` | 404 |
+| Config job | The user `owner` | The page lists config jobs only for that user, whatever their role | Not listed |
+| Memory | `MemoryOwner::User`, or shared | The memory store, asked as the user's viewer; a group's section is admins' | 404 "no memory you can see"; shared ones are admins' to write |
+| SSH key | Its user | `SshKeys` compares the key's user on every call | 404 |
+| OAuth connection | The user | Tokens live under `users/<user>/..`; a pending sign-in is bound to the user who began it | "Expired" |
+| Workspace | Its conversation or job run | Reached through its chat, and listed for admins on the [Workspaces page](#workspaces-page) | The chat's 404 |
+| Usage | Recorded with the requester | No page shows it per user; the admin report sums it by agent and model | Admins' only |
+
+A web chat is claimed, not assigned. `/chats/new` mints a random id and stores nothing until the
+first message. A chat with a session is its user's: `Store::conversation_access` says `Own`,
+`Unstarted`, or `Foreign` (any session, ended ones and other agents' included, with another user or
+none), and `own_chat` answers 404 for `Foreign`. A chat with no session yet is the user's unless a
+message from another user is waiting in it for the core (`WebChannel::posted_by_other`): the first
+poster claims it. The id of a chat nobody has started is therefore a secret until its first message,
+and a page for an unknown id shows an empty new chat where another user's chat is 404. That tells
+only someone who already has the id that the chat exists.
+
+The core enforces the same rule below the web pages. The session pump drops a message or command in
+a conversation with a session of another user, so a post that got past the pages (or any other
+channel's event) can't run in someone else's session
+([Sessions and turns](sessions.md#the-inbound-pipeline)). `own_chat` runs before the handler touches
+the chat's hub, so a stranger can't subscribe to a chat's events, make its hub, or mark its prompt
+answered.
 
 ## Login
 
@@ -320,23 +357,23 @@ original `after` cursor and replays events the page already showed. A reload fix
 ### History
 
 The chat page shows the stored transcript, not a log of what was displayed:
-`Store::conversation_transcript(instance, chat, HISTORY_LIMIT)` (the last 200 rows across every
-session of the conversation, any agent, summarized messages included, and the inbox rows still
-waiting; see [Storage](storage.md#conversations)). `render::history` shows text blocks (joined by
-blank lines) and media of user and assistant messages, and drops reasoning and provider data (PLAN
-section 6.9); a message left with nothing to show is skipped. After its message's text, each
-`ToolUse` block shows as tool call `t-<slot row id>`, with the result from its slot row, or
-"Running…" while the slot is empty. A call whose slot row isn't among the loaded rows is left out. A
-user message's time prefix (`[Thu 2026-10-22 14:03 PDT] `, which the agent loop stores for the
-model) is cut with `agent_loop::history::strip_time_prefix`, here and in chat titles, and a media
-reference stored right before its media (`[media:<id> <name> <type>]`) is left out, since the media
-itself is shown. A `send_attachment` call whose result isn't an error also shows as an assistant
-message with its caption and the media it sent (looked up by id among the media of the loaded rows).
-A "New session" marker separates sessions (`/new`, idle reset). Messages sent with `send` that the
-agent loop doesn't store (notices) are only on pages that were open at the time. The chat list is
-`Store::channel_conversations(instance, user, archived, 200)`, titled with the first line of the
-first user message (80 characters at most). A chat page lists the archived chats when its chat is
-archived (`Store::conversation_archived_at`), and the others otherwise.
+`Store::conversation_transcript(instance, chat, user, HISTORY_LIMIT)` (the last 200 rows across
+every session of the conversation that is the user's, any agent, summarized messages included, and
+the inbox rows still waiting; see [Storage](storage.md#conversations)). `render::history` shows text
+blocks (joined by blank lines) and media of user and assistant messages, and drops reasoning and
+provider data (PLAN section 6.9); a message left with nothing to show is skipped. After its
+message's text, each `ToolUse` block shows as tool call `t-<slot row id>`, with the result from its
+slot row, or "Running…" while the slot is empty. A call whose slot row isn't among the loaded rows
+is left out. A user message's time prefix (`[Thu 2026-10-22 14:03 PDT] `, which the agent loop
+stores for the model) is cut with `agent_loop::history::strip_time_prefix`, here and in chat titles,
+and a media reference stored right before its media (`[media:<id> <name> <type>]`) is left out,
+since the media itself is shown. A `send_attachment` call whose result isn't an error also shows as
+an assistant message with its caption and the media it sent (looked up by id among the media of the
+loaded rows). A "New session" marker separates sessions (`/new`, idle reset). Messages sent with
+`send` that the agent loop doesn't store (notices) are only on pages that were open at the time. The
+chat list is `Store::channel_conversations(instance, user, archived, 200)`, titled with the first
+line of the first user message (80 characters at most). A chat page lists the archived chats when
+its chat is archived (`Store::conversation_archived_at`), and the others otherwise.
 
 The page is assembled so that a message or tool call is shown once, whatever happens while it loads:
 
@@ -371,11 +408,12 @@ answer 404 "No such chat". Neither post checks the chat's agent, so a chat whose
 can still be deleted.
 
 - **Archive** (`Store::archive_conversation`) and **Unarchive** (`Store::unarchive_conversation`)
-  move the chat between the lists and change nothing else. They are part of `install`. Archiving
-  isn't refused while the agent works: the turn finishes and its reply is stored in the archived
-  chat. The chat's workspace is left to the sweep, which stops and deletes it like any idle one.
-  `POST /chats/<id>/messages` unarchives before it posts, so writing in an archived chat brings it
-  back. Nothing else does: a job's reply into an archived chat leaves it archived.
+  move the user's chat between the lists and change nothing else. Both take the user and do nothing
+  for a chat of someone else's. They are part of `install`. Archiving isn't refused while the agent
+  works: the turn finishes and its reply is stored in the archived chat. The chat's workspace is
+  left to the sweep, which stops and deletes it like any idle one. `POST /chats/<id>/messages`
+  unarchives before it posts, so writing in an archived chat brings it back. Nothing else does: a
+  job's reply into an archived chat leaves it archived.
 - **Delete** is installed separately, by `web.install_chat_deletion(builder, activity, workspaces)`,
   because it needs the session manager and the workspace service, which `serve` has only after the
   web app is built. `ChatActivity::is_busy(instance, chat)` is the seam; the daemon's is `Sessions`
@@ -392,7 +430,8 @@ can still be deleted.
 What deleting leaves: usage rows (without their session), memories the agent saved (their
 `source_session` is only recorded), and runtime jobs scheduled in the chat. Such a job's next run
 opens a session in the conversation again, which brings the chat back. The chat's hub, if one is
-open, is dropped when idle like any other.
+open, is dropped at once, which ends its open streams, so whoever next posts with the id can't
+replay its events.
 
 The confirmation is a `<dialog>` on the chat page ([Confirmations](web-ui.md#confirmations)).
 
@@ -405,7 +444,8 @@ code must be 1 to 32 ASCII letters and digits (what `commands::parse` accepts), 
 `InvalidRequest`. The prompt stays in the hub, so page loads show it, until it's resolved; a restart
 forgets it, as it does the approval.
 
-The POST checks CSRF, the answer (`yes`, `yes!`, `no`), and the code, then
+The POST checks that the chat is the user's (`own_chat`: 404 otherwise, before anything is posted or
+shown as sent), CSRF, the answer (`yes`, `yes!`, `no`), and the code, then
 `answer_approval(user, chat, code, answer, now)` posts `<answer> <code>` as an ordinary message from
 the user (so the core's command parsing and pending-approval check decide what it means) and
 replaces the prompt's buttons with what was sent ("Sent: yes!"), not an outcome: the prompt may have
