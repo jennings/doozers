@@ -351,7 +351,11 @@ impl Harness {
             [("github", "url = \"https://example.com/mcp\"\n")],
         );
         let memory_dbs = MemoryDbs::new(root.clone(), JournalMode::Wal);
-        let registry = Arc::new(Registry::new(root, Arc::new(config)));
+        let config = Arc::new(config);
+        let registry = Arc::new(Registry::new(root, config.clone()));
+        registry
+            .users()
+            .set(crate::users::legacy_owner_users(&config));
         let provider = Arc::new(FakeProvider::default());
         registry
             .register_provider(&name("anthropic"), provider.clone())

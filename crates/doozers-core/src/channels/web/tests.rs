@@ -38,7 +38,7 @@ use crate::sessions::{
     AgentPolicies, AgentPolicy, ChannelLookup, Sessions, SessionsOptions, SystemClock, Turn,
     TurnOutcome, TurnRunner,
 };
-use crate::users::UserList;
+use crate::users::{User, UserList};
 
 mod admin;
 mod agent_edit;
@@ -1447,7 +1447,7 @@ async fn expired_unknown_and_orphaned_sessions_are_logged_out() {
         );
     }
 
-    // A live session whose `web:<user>` identity was removed from `[owner]` logs nobody in.
+    // A live session whose `web:<user>` identity is gone logs nobody in.
     let token = log_in(&env).await;
     let moved = env_with(WebConfig::default(), &["irc:libera.chat:owner"]).await;
     let now = Timestamp::now();
@@ -1651,7 +1651,7 @@ async fn the_identity_header_counts_only_on_the_proxy_listener() {
     let html = body_text(response).await;
     assert!(!html.contains("/logout"), "nothing to log out of: {html}");
 
-    // Someone the owner config doesn't list is refused.
+    // Someone no user has the identity of is refused.
     let mallory = [("x-user", "mallory@example.com")];
     let response = call(env.proxy_app(), Method::GET, "/", &mallory, None).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -1702,6 +1702,138 @@ async fn the_identity_header_counts_only_on_the_proxy_listener() {
         .unwrap();
     let response = redeem(env.proxy_app(), &link, &https).await;
     assert!(set_cookie(&response).ends_with("; Secure"));
+}
+
+/// The owner, `ann` (a member with the `web` identity `ann@example.com`, and `web:ann`), and
+/// `away`, who is disabled (`away@example.com`, and `web:away`).
+fn several_users() -> UserList {
+    let mut users = vec![User::member("owner", &["web:owner"])];
+    users.push(User::member("ann", &["web:ann@example.com", "web:ann"]));
+    let mut away = User::member("away", &["web:away@example.com", "web:away"]);
+    away.state = doozers_store::UserState::Disabled;
+    users.push(away);
+    UserList::new(users)
+}
+
+#[tokio::test]
+async fn the_identity_header_logs_in_the_user_who_has_that_identity() {
+    let env = env_with(
+        proxy_config(serde_json::json!({"identity_header": "x-user"})),
+        &["web:owner"],
+    )
+    .await;
+    env.channel
+        .users()
+        .set(several_users().get().users().to_vec());
+
+    let ann = [("x-user", "ann@example.com")];
+    let response = call(env.proxy_app(), Method::GET, "/", &ann, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    // The login is ann's, and what she posts is from `web:ann@example.com`, which the router
+    // resolves to her.
+    let sender = NativeId::new("ann@example.com").unwrap();
+    let csrf = auth::proxy_csrf(&env.channel.proxy_key, &sender);
+    let path = format!("/chats/{}", chat());
+    let response = call(
+        env.proxy_app(),
+        Method::POST,
+        &format!("{path}/messages"),
+        &[ann[0], ("x-csrf-token", &csrf)],
+        Some("text=hi"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let directory = env.channel.users().get();
+    assert_eq!(
+        directory.resolve("web", &sender).unwrap().id,
+        UserId::new("ann").unwrap()
+    );
+    // A disabled user is refused, and so is an identity nobody has.
+    for header in ["away@example.com", "mallory@example.com"] {
+        let response = call(
+            env.proxy_app(),
+            Method::GET,
+            "/",
+            &[("x-user", header)],
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{header}");
+    }
+}
+
+#[tokio::test]
+async fn a_cookie_session_ends_when_its_user_is_disabled_or_gone() {
+    let env = env().await;
+    env.channel
+        .users()
+        .set(several_users().get().users().to_vec());
+    let now = Timestamp::now();
+    let expires = now.checked_add(WEB_SESSION_TTL).unwrap();
+    let cookie = |user: &str| {
+        let token = user.repeat(64)[..64].to_owned();
+        (token, UserId::new(user).unwrap())
+    };
+    for (user, status) in [
+        ("ann", StatusCode::OK),
+        ("away", StatusCode::UNAUTHORIZED),
+        ("gone", StatusCode::UNAUTHORIZED),
+    ] {
+        let (token, id) = cookie(user);
+        env.store
+            .web_session_create(&token, id, now, expires)
+            .await
+            .unwrap();
+        let response = call(
+            env.main_app(),
+            Method::GET,
+            "/",
+            &[("cookie", &session(&token))],
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), status, "{user}");
+    }
+}
+
+#[tokio::test]
+async fn login_links_are_for_active_users_with_a_web_identity() {
+    let env = env().await;
+    env.channel
+        .users()
+        .set(several_users().get().users().to_vec());
+    let now = Timestamp::now();
+    let id = |user: &str| UserId::new(user).unwrap();
+    assert!(env.channel.create_login_link(&id("ann"), now).is_ok());
+    assert_eq!(
+        env.channel.create_login_link(&id("away"), now),
+        Err(LoginLinkError::Disabled(id("away")))
+    );
+    let mut users = several_users().get().users().to_vec();
+    users.push(User::member("bare", &["whatsapp:+1"]));
+    env.channel.users().set(users);
+    assert_eq!(
+        env.channel.create_login_link(&id("bare"), now),
+        Err(LoginLinkError::NoWebIdentity(id("bare")))
+    );
+    // A link is for the user it was made for.
+    let link = env.channel.create_login_link(&id("ann"), now).unwrap();
+    let response = redeem(env.main_app(), &link, &[]).await;
+    let cookie = set_cookie(&response);
+    let token = cookie
+        .strip_prefix("doozers_session=")
+        .and_then(|rest| rest.split(';').next())
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        env.store
+            .web_session(&token, now)
+            .await
+            .unwrap()
+            .unwrap()
+            .user,
+        id("ann")
+    );
 }
 
 #[tokio::test]

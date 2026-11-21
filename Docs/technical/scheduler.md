@@ -28,16 +28,16 @@ before `Sessions::closed()`.
 
 ## Timing
 
-Each job has a task. Its time zone is the owner's, else the agent's, else the system's (the job's
-user is the owner in v1). At start, `first_fire(since, now)` with `since` the later of the job's
-`job_runs` time and `JobDef::since` (a runtime job's creation time, or its spec's `changed_at`, the
-last edit or switch back on): if a time fell between `since` and `now` (the core was down), the
-missed times are coalesced into one run now; otherwise the next match after `now`. So an edited or
-re-enabled job never makes up the times before its change. The task sleeps in steps of at most
-`MAX_SLEEP` (60 s), reading the clock again, so a jumping wall clock delays a job by at most that.
-After each run the next time is the first match after the clock, so times that pass during a long
-run are skipped. A time outside `active_hours` is skipped (not recorded). A one-shot runtime job is
-deleted after its time, run or not.
+Each job has a task. Its time zone is its user's (a runtime job's creator; a config job's is the
+owner), else the agent's, else the system's. At start, `first_fire(since, now)` with `since` the
+later of the job's `job_runs` time and `JobDef::since` (a runtime job's creation time, or its spec's
+`changed_at`, the last edit or switch back on): if a time fell between `since` and `now` (the core
+was down), the missed times are coalesced into one run now; otherwise the next match after `now`. So
+an edited or re-enabled job never makes up the times before its change. The task sleeps in steps of
+at most `MAX_SLEEP` (60 s), reading the clock again, so a jumping wall clock delays a job by at most
+that. After each run the next time is the first match after the clock, so times that pass during a
+long run are skipped. A time outside `active_hours` is skipped (not recorded). A one-shot runtime
+job is deleted after its time, run or not.
 
 Config jobs follow the running configuration ([Registry](registry.md#the-running-configuration)). At
 start, and whenever `LiveConfig` changes, `reconcile_config_jobs` compares each agent's `[[jobs]]`
@@ -126,7 +126,7 @@ Limits: a turn without a requester (a config job's run) can only list. A job run
 has `job` set) can list and cancel but not create, so no job can spawn more jobs. A user has at most
 `MAX_RUNTIME_JOBS_PER_USER` (20) runtime jobs with one agent; `create` beyond that answers "too many
 scheduled jobs (at most 20); cancel one first". Times are shown in the same zone messages use (the
-owner's, else the agent's, else the system's).
+requester's, else the agent's, else the system's).
 
 ## Tests
 

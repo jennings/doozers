@@ -253,6 +253,9 @@ impl Harness {
         let config = Arc::new(config);
         let registry = Arc::new(Registry::new(root, config.clone()));
         registry
+            .users()
+            .set(crate::users::legacy_owner_users(&config));
+        registry
             .register_channel(
                 &InstanceName::new("fake").unwrap(),
                 Arc::new(FakeChannel {

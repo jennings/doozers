@@ -3,13 +3,9 @@
 The built-in web channel lets you talk to your agents in a browser. It runs on
 [the same web server](running.md#the-web-interface) as the rest of Doozers.
 
-To turn it on, add a `[channel.web]` table to `doozers.toml`. `[owner] identities` must list
-`web:owner`, which is the identity you use in the browser.
+To turn it on, add a `[channel.web]` table to `doozers.toml`:
 
 ```toml
-[owner]
-identities = ["web:owner"]
-
 [channel.web]
 ```
 
@@ -25,8 +21,12 @@ Every page needs a login. You log in with a one-time link, or through a trusted 
 Run this to get a login link:
 
 ```sh
-doozers admin login-link --user owner
+doozers admin login-link
 ```
+
+On a fresh install, this creates the first admin. With one user, the link is for that user. With
+several, name the user with `--user <id>`, such as `--user owner` for the owner you imported from
+[`[owner]`](configuration.md#owner). The command prints whose link it is.
 
 Open the link and press **Log in** to log that browser in for 30 days. The link works once, and only
 for 10 minutes. **Log out** at the bottom of the sidebar ends the login. See [Command line](cli.md).
@@ -59,8 +59,11 @@ Doozers runs as can connect to it, so run the proxy as that user and point it at
 data root's path is too long for a socket, Doozers puts it under `$TMPDIR` instead and logs where,
 in the line `trusted-proxy listener open`.
 
-The header's value is your identity in the `web` namespace. List it in `[owner] identities`, such as
-`"web:alice@example.com"`.
+The header's value is your identity in the `web` namespace, such as `web:alice@example.com`. Doozers
+logs you in as the user who has that identity. A header value that no user has, or one of a disabled
+user, gets a "Not allowed" page, and the log shows the value. Identities come from the
+[`[owner]` import](configuration.md#owner), so list the identity there before the first start. An
+install that has already started can't add one yet.
 
 If the proxy can't use a Unix socket, give the listener a TCP address and a shared secret. The proxy
 must send the secret in a header with every request:

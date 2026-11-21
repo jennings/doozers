@@ -36,11 +36,17 @@ flowchart LR
 v1 is used by one person, the owner, who talks to agents on several channels. Sections describing
 several users and group chats are the design for later; v1 builds this subset of them:
 
-- Users: one implicit user, the owner. The owner's identities are declared in `doozers.toml`, e.g.
-  `[owner] identities = ["whatsapp:+15551234567", "email:me@example.com"]`, with
-  `default = "whatsapp:+15551234567"` naming the identity jobs and proactive messages go to. There
-  are no user records, roles, pairing, or self-linking (section 3). Messages from any other identity
-  are dropped and logged. Sender authenticity (section 3.3) still applies to the owner's identities.
+- Users: user records and their channel identities are stored in the database (sections 3.2 and
+  11.4), not in `doozers.toml`. A user has an opaque id, a username, a role (`admin` or `member`), a
+  state (`active` or `disabled`), a time zone, identities, and a default identity, which is where
+  jobs and proactive messages go. v1's one user is the owner. A `doozers.toml` that has
+  `[owner] identities = ["whatsapp:+15551234567", "email:me@example.com"]`, with optional `default`
+  and `timezone`, has it imported once, at the first start, as an `admin` whose id stays `owner`;
+  after that `[owner]` is ignored, with a warning at every start (section 11.2). A fresh install has
+  no `[owner]`: `doozers admin login-link` creates the first admin. There is no pairing,
+  self-linking, or way to add another user yet (section 3). Messages from an identity no user has,
+  and from a disabled user, are dropped and logged. Sender authenticity (section 3.3) still applies
+  to every identity.
 - Group chats: not supported. Channels report the conversation kind, and the core ignores group
   conversations: no turn, no reply, nothing stored.
 - Web login: only the `doozers admin login-link` one-time URL and the trusted-proxy header.
@@ -50,8 +56,8 @@ several users and group chats are the design for later; v1 builds this subset of
   web UI, which change the running configuration (section 8.7), remote toolsets, which are stored in
   the database and changed in the web UI while Doozers runs (section 7.10), and routes, which the
   web UI changes for the next message (section 6.1). Agent Markdown files are read per turn. v1
-  keeps the owner, the provider and channel instances, and the stdio toolsets in `doozers.toml`; the
-  owner and the instances that launch no program move to the web UI later (section 11.2).
+  keeps the provider and channel instances and the stdio toolsets in `doozers.toml`; the instances
+  that launch no program move to the web UI later (section 11.2).
 
 Deferred decisions, each with what v1 does meanwhile and when to revisit it, are in
 `Docs/decisions/`: D28, D49, D57, D58, D63, D65, D66.
@@ -78,7 +84,7 @@ many tools from one process.
   credentials in `secrets.toml`. Users, agents, routes, and the rest are managed by Doozers and
   changed by admins in the web UI (section 11.2).
 - Every person who talks to an agent is a user, with exactly one role. An admin adds users in the
-  web UI. In the current layout a user is a `users/<user>/user.toml` file (section 11.3).
+  web UI. A user is a row of the `users` table (section 11.4).
 - Roles are defined in config. Each role lists the agents its users may talk to and tool globs they
   may trigger. Doozers ships three defaults, which config can change or extend:
 
@@ -108,9 +114,15 @@ reports both the phone number and the LID, since group participants usually appe
 identity. The core keys on the canonical id (`sender`) and treats a message as from a known identity
 if the sender or any alias matches.
 
-Identity links map identities to users and live in SQLite. User records and roles live in TOML in
-the current layout; where Doozers stores them is decided with their web UI (section 11.2).
-(Multi-user identity storage is deferred: D49.)
+Identity links map identities to users and live in SQLite, in `user_identities`, beside the users in
+`users` (section 11.4). A link records when and how it was verified: `link` (the user sent a link
+code from the identity), `admin` (an admin or the operator set it, such as a proxy login identity or
+the `web:<id>` identity a login link signs in as), or `imported` (it was in `[owner]`, section 1.1).
+The router resolves the sender, or an alias, to a user through a snapshot of the stored identities
+that every change replaces, so a change applies to the next message with no restart. The turn's
+requester is that user, and a message from a disabled user is dropped. Identities are compared as
+the joined `<namespace>:<native id>` string, exactly except for the domain of an `email` identity.
+(Pairing and self-linking below are still design: D49.)
 
 Messages from identities with no link never reach an agent. What happens instead is a per-instance
 `unknown_senders` policy:
@@ -119,12 +131,12 @@ Messages from identities with no link never reach an agent. What happens instead
 | ------------------- | ------------------------------------------------------------------------- |
 | `pairing` (default) | Reply once with a one-time pairing code, valid for 1 hour                 |
 | `disabled`          | Drop silently (logged)                                                    |
-| `open`              | Create a guest user (`users/guest-<id>/user.toml`, role `guest`) and link the identity |
+| `open`              | Create a guest user (role `guest`) and link the identity |
 
 Pairing: an admin approves a code with `doozers pair approve <code> --user <user>` or on the web
 admin pages, linking the identity to an existing user. `--new-user <user> [--role <role>]` instead
-creates `users/<user>/user.toml` (default role `guest`) and links to it. `doozers pair deny <code>`
-rejects it. Further messages from the same identity while a code is valid don't produce new codes.
+creates the user (default role `guest`) and links to it. `doozers pair deny <code>` rejects it.
+Further messages from the same identity while a code is valid don't produce new codes.
 
 Self-linking: a known user sends `/link` on a channel where they're linked and gets a code. Sending
 `/link <code>` from the new identity within 10 minutes links it. This works under `pairing` and
@@ -176,8 +188,12 @@ Channels also drop messages that must never start a turn: echoes of the agent's 
   (`run/proxy.sock`, mode 0600) or a TCP listener that also requires a shared-secret header the
   proxy adds. Never by source address: any local process, including network-enabled plugins, can
   connect from loopback.
-- Bootstrap: `doozers admin login-link --user <user>` prints a one-time URL valid for 10 minutes,
-  for the first login before any channel is linked.
+- Bootstrap: `doozers admin login-link [--user <id>]` prints a one-time URL valid for 10 minutes,
+  for the first login before any channel is linked. On a fresh install, with no users, it creates
+  the first admin, whose id is `owner` and username `admin`. With exactly one user the link is that
+  user's, so a single-user install runs it with no arguments; with several it needs `--user`. It
+  prints whose link it is, and gives that user the identity `web:<id>`, the one a link login sends
+  as, if they lack it.
 - Passkeys: later.
 
 ## 4. Components and traits
@@ -1404,7 +1420,8 @@ program on the host. The operator writes them and Doozers never edits them:
 Most other settings are managed by Doozers and meant to be changed in the web UI, not in files, so
 Doozers creates and edits them:
 
-- Users: an admin adds users in the web UI.
+- Users: stored in SQLite (section 11.4). The one user so far, the owner, is imported from `[owner]`
+  (section 1.1); an admin adds users in the web UI later.
 - Agents and their files: `agent.toml`, `SOUL.md`, and memories (section 11.3).
 - Routes from channel identities to users and agents: identity links (section 3.2) and routing rules
   (section 6.1). Routing rules are the first of these built: they're stored in SQLite and edited in
@@ -1420,17 +1437,19 @@ Where each kind of data is stored, in SQLite or in Markdown, JSONL, or other tex
 names its bearer token's secret there (`{ secret = "<name>" }`), and where secrets for other
 settings managed in the web UI live is open.
 
-Transition: the current implementation still reads the owner (section 1.1) and the provider and
-channel instances from `doozers.toml`, and the multi-user design below keeps roles there and users
-in `user.toml`. Each moves to storage Doozers manages as its web UI lands; the migration isn't
-designed, except for routes, which already moved: `[[routes]]` is imported once into the database
-and then ignored (section 6.1). Remote toolsets moved with no migration (above). Open: the first
-login (section 3.4) needs the owner's identity, so whether some bootstrap identity stays in
-`doozers.toml` is undecided.
+Transition: the current implementation still reads the provider and channel instances from
+`doozers.toml`. Each moves to storage Doozers manages as its web UI lands; the migration isn't
+designed, except for routes and the owner, which already moved. `[[routes]]` is imported once into
+the database and then ignored (section 6.1), and so is `[owner]` (section 1.1): the first start
+creates the owner as an `admin` user with the id `owner`, with its identities, default identity, and
+time zone, and records that it did (`users_imported`), and every later start ignores `[owner]` and
+logs a warning while the file still has it. An `[owner]` that is invalid stops the first start, and
+nothing is imported. A fresh install has no `[owner]` and records the import anyway, so an `[owner]`
+added later is ignored too. The first login (section 3.4) creates the first admin, so no bootstrap
+identity stays in `doozers.toml`. Remote toolsets moved with no migration (above).
 
-The current layout has three kinds of TOML file: `doozers.toml`, `agents/<agent>/agent.toml`, and
-`users/<user>/user.toml`. Doozers may create and edit `agent.toml` and `user.toml` files, for
-example for an agent created in the web UI or a user created at runtime (section 3.2).
+The current layout has two kinds of TOML file: `doozers.toml` and `agents/<agent>/agent.toml`.
+Doozers may create and edit `agent.toml` files, for example for an agent created in the web UI.
 
 `doozers.toml`, current layout:
 
@@ -1517,22 +1536,13 @@ prompt_file = "morning.md"
 deliver_to = "stephen"
 ```
 
-`users/<user>/user.toml`:
-
-```toml
-name = "Stephen"
-role = "admin"
-timezone = "America/Los_Angeles"
-default_channel = "whatsapp"
-```
-
 Reload (reopened: _Deferred, D28_): the core watches these files and `secrets.toml`. After changes
 settle (500 ms), it parses and validates the whole config.
 
 - Invalid: keep running the previous config, log the error, and report it in `doozers status`.
-- Valid: apply the difference. Roles, agents, and users apply to the next turn (routes already
-  change at runtime in the web UI and aren't read from these files). A changed instance is restarted
-  with its new config; a removed one is stopped; a new one is started.
+- Valid: apply the difference. Roles and agents apply to the next turn (routes already change at
+  runtime in the web UI and aren't read from these files). A changed instance is restarted with its
+  new config; a removed one is stopped; a new one is started.
 - `[core]` settings such as `http_listen` need a restart; the core logs that.
 
 Markdown files (`SOUL.md`, `USER.md`, job prompt files, skills) are read when a turn assembles its
@@ -1548,7 +1558,6 @@ agents/<agent>/
   memory.db                                  # the agent's memories (SQLite, section 6.7)
   skills/<skill>/SKILL.md                    # agent-local skills
 users/<user>/
-  user.toml
   USER.md                                    # profile, written by people, loaded in DMs only
 ```
 
@@ -1601,7 +1610,6 @@ Per-user operations:
     covering those messages are deleted and regenerated.
   - The `search` index is maintained by triggers, so their rows leave it with the messages.
   - Usage rows keep their token counts with the user cleared.
-  - `user.toml` is listed for the operator to delete; the core doesn't delete TOML files.
 
 Backups: copying a live SQLite file can capture a broken state (in WAL mode the main file is behind
 the WAL), so `doozers backup <dir>` is the supported way: `VACUUM INTO` for the database and for

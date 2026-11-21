@@ -25,14 +25,15 @@ each channel. The agent loop plugs in as a `TurnRunner`; the decision before any
 
 `doozers serve` calls `Runtime::start_sessions(runner, approvals, shutdown)` after `Runtime::start`
 and binding the HTTP listener: it's the last startup step that can fail, since recovery changes
-state and resumed turns start running. It builds the `Router` from `[owner]` and the routes
-`Runtime::start` loaded (`Runtime::routes`), passes the registry's `LiveConfig` as the
-`AgentPolicies` (so an agent created in the web UI gets its policy without a restart; a session of
-an agent no longer configured gets the defaults), runs `Sessions::start` (recovery, then resume,
-then the prune task), and attaches every channel registered so far. The plugin host then registers
-each plugin channel as it comes up and attaches it with
-`Sessions::attach_channel(instance, component, channel)` ([Plugin host](plugin-host.md)); attaching
-an instance again (a restarted plugin) stops the earlier pump after its current event.
+state and resumed turns start running. It builds the `Router` from the users snapshot
+(`Registry::users`, which `Runtime::start` filled from the database) and the routes it loaded
+(`Runtime::routes`), passes the registry's `LiveConfig` as the `AgentPolicies` (so an agent created
+in the web UI gets its policy without a restart; a session of an agent no longer configured gets the
+defaults), runs `Sessions::start` (recovery, then resume, then the prune task), and attaches every
+channel registered so far. The plugin host then registers each plugin channel as it comes up and
+attaches it with `Sessions::attach_channel(instance, component, channel)`
+([Plugin host](plugin-host.md)); attaching an instance again (a restarted plugin) stops the earlier
+pump after its current event.
 
 After the HTTP server has drained at shutdown, `serve` awaits `Sessions::closed()`, which waits for
 every task the manager spawned (pumps, drivers, turns, pruning) to stop.

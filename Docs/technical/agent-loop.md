@@ -143,10 +143,10 @@ it after writing summaries, and the turn goes on with the returned prompt.
 Each inbound message is stored as a `User` message whose first text block starts with a time prefix,
 `[Thu 2026-10-22 14:03 PDT]` (`%a %Y-%m-%d %H:%M %Z`), then a space and the text (just the prefix
 when the text is empty). The time is the channel's `sent_at`, else when the core received it, shown
-in `[owner] timezone`, else the agent's `timezone`, else the system's. The prefix is part of the
-stored text, so every later request renders the message identically and `memory_search` snippets
-carry the date. `meta.at` is when the core received it (it drives `idle_reset`), and `meta.sender`
-the requester. Attachments follow the text (below, Media).
+in the requesting user's time zone (a config job's is the owner's), else the agent's `timezone`,
+else the system's. The prefix is part of the stored text, so every later request renders the message
+identically and `memory_search` snippets carry the date. `meta.at` is when the core received it (it
+drives `idle_reset`), and `meta.sender` the requester. Attachments follow the text (below, Media).
 
 A request's messages come from `Store::load_history`, reloaded before each request: the newest
 summary, if any, as a leading `User` message (`Summary of the earlier conversation:` and the text),

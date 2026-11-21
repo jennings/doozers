@@ -93,9 +93,9 @@ the router reads them.
 A plain chat goes to whichever agent the stored routes pick. The chat list also has a picker, a
 `GET` form to `/chats/new?agent=<id>`, listing the agents the user may start a chat with
 (`agent_choices`, read from the running configuration, `WebApp`'s `LiveConfig`, so an agent added
-while Doozers runs is offered at once). v1 has one user, the owner, who may use every agent; with
-roles (PLAN section 3.1), that function is where a member's `agents` globs apply. The chat it opens
-has the id `<agent>.<hex>`, and the router sends its messages to that agent ahead of every route
+while Doozers runs is offered at once). Every user may use every agent for now; with per-user
+allowlists, that function is where they apply. The chat it opens has the id `<agent>.<hex>`, and the
+router sends its messages to that agent ahead of every route
 ([Identity and Routing](identity-and-routing.md#routing)), so a new agent needs no route. A chat's
 page shows its agent ("with Jeeves (jeeves)"), and so does the chat list. If the agent isn't
 configured (any more), or the user may not use it, `/chats/new?agent=`, the chat page, and both
@@ -109,9 +109,9 @@ with the login page. The authentication middleware (`login::authenticate`, appli
 inserts it; the extractor is the seam, so the admin pages use the same one (their router must be
 wrapped in the same middleware: `from_fn_with_state(web_app, authenticate)`, or merged through
 `WebApp`). `sender` is the native id in the `web` namespace that posted messages carry
-(`InboundMessage::sender`, with `sender_authenticated: true`); the router matches it against
-`[owner] identities` as `web:<sender>`, like any channel's sender. `can_log_out()` is true for a
-cookie login.
+(`InboundMessage::sender`, with `sender_authenticated: true`); the router matches it against the
+users' identities as `web:<sender>`, like any channel's sender. `can_log_out()` is true for a cookie
+login.
 
 CSRF: `check_csrf(&user, &headers, form_field) -> Result<(), CsrfRejected>` accepts the token from
 the `X-CSRF-Token` header (htmx: the chat page sets `hx-headers` with it, inherited by every form on
@@ -156,11 +156,13 @@ scrubbed of secrets):
 ### Login links
 
 `WebChannel::create_login_link(&UserId, now) -> Result<LoginLink { url, expires_at }, LoginLinkError>`
-is what `doozers admin login-link --user` calls over the admin service (2.24; the registry's
-`web_channel()` gives the typed channel). It refuses anyone but the owner (`UnknownUser`) and an
-owner without a `web:<user>` identity (`NoWebIdentity`: the router would drop their messages). The
-link is `<link base>/login/<token>`, 256 random bits as 64 hex digits, valid for `LOGIN_LINK_TTL`
-(10 minutes). Pending links live in memory only, by the SHA-256 of the token (`links::LoginLinks`):
+is what `doozers admin login-link` calls over the admin service (2.24; the registry's
+`web_channel()` gives the typed channel), after `Users::login_user` has found the user, created the
+first admin on a fresh install, and given the user the `web:<user>` identity. It refuses a user who
+doesn't exist (`UnknownUser`), a disabled one (`Disabled`), and one without a `web:<user>` identity
+(`NoWebIdentity`: the router would drop their messages), which the admin service can't hit. The link
+is `<link base>/login/<token>`, 256 random bits as 64 hex digits, valid for `LOGIN_LINK_TTL` (10
+minutes). Pending links live in memory only, by the SHA-256 of the token (`links::LoginLinks`):
 nothing on disk can be replayed, and a restart invalidates them. Expired links are dropped whenever
 one is created or redeemed.
 
@@ -174,17 +176,18 @@ over HTTPS). A link that doesn't exist, was used, or expired gets the same 410 p
 answers are `Cache-Control: no-store`. The `Referrer-Policy: no-referrer` security header keeps the
 token out of `Referer`.
 
-No login CSRF check on `POST /login`: v1 has one user, so a forged login would log the victim in as
-the owner, which needs a valid link anyway.
+No login CSRF check on `POST /login`: a forged login would log the victim in as the user the link is
+for, which needs a valid link anyway.
 
 ### The session cookie
 
 The middleware reads `doozers_session` (`WEB_SESSION_TTL`, 30 days), looks the token up with
 `Store::web_session(token, now)` (expired rows don't count), and builds the `WebUser`: `user` and
-`sender` are the session's user id, so a link login posts as `web:owner`. If the owner's identities
-no longer include `web:<user>`, the session logs nobody in. A cookie that names no live session gets
-a deleting `Set-Cookie` on the response. A store error is a 500. `WebApp::expire_sessions` deletes
-expired rows now and every hour (`Store::web_sessions_expire`) until shutdown.
+`sender` are the session's user id, so a link login posts as `web:<id>` (`web:owner` for the owner).
+If the user is gone or disabled, or no longer has the identity `web:<user>`, the session logs nobody
+in. A cookie that names no live session gets a deleting `Set-Cookie` on the response. A store error
+is a 500. `WebApp::expire_sessions` deletes expired rows now and every hour
+(`Store::web_sessions_expire`) until shutdown.
 
 `POST /logout` (CSRF-checked) deletes the session and the cookie. A proxy login has nothing to end,
 so the sidebar shows no logout button for it.
@@ -208,9 +211,9 @@ there.
   `http::serve` and removes the socket file afterwards. `serve` runs both servers in one task that
   ends at the first failure.
 - With the mark, a request carrying the identity header is that identity: if
-  `UserDirectory::resolve("web", value)` finds a user, a `WebUser` for that user with that `sender`;
-  otherwise a 403 page (the value is logged so the operator can add it). Without the header, the
-  cookie applies as usual.
+  `UserDirectory::resolve("web", value)` finds an active user, a `WebUser` for that user with that
+  `sender`; otherwise a 403 page, for a value no user has and for a disabled user (the value is
+  logged so the operator can see it). Without the header, the cookie applies as usual.
 - `X-Forwarded-Proto: https` marks the cookie `Secure` only with the mark.
 
 ### Rate limits

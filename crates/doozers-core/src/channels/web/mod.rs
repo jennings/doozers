@@ -198,15 +198,16 @@ pub struct LoginLink {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LoginLinkError {
-    /// No such user. v1 has one, the owner (PLAN section 1.1).
-    #[error(
-        "there is no user `{0}`: this Doozers has one user, `{owner}`",
-        owner = identity::OWNER
-    )]
+    /// No such user.
+    #[error("there is no user `{0}`")]
     UnknownUser(UserId),
-    /// The user has no identity in the `web` namespace, so the router would drop their messages.
+    /// The user is disabled, and can't log in.
+    #[error("user `{0}` is disabled")]
+    Disabled(UserId),
+    /// The user has no identity `web:<user>`, the one a login link signs in as, so the router
+    /// would drop their messages.
     #[error(
-        "`[owner] identities` doesn't list `web:{0}`; add it, or messages from the web chat are \
+        "user `{0}` doesn't have the identity `web:{0}`, so messages from the web chat would be \
          dropped as from an unknown sender"
     )]
     NoWebIdentity(UserId),
@@ -302,21 +303,26 @@ impl WebChannel {
 
     /// Creates a one-time login link for `user`: it logs in whoever opens it first, within
     /// [`LOGIN_LINK_TTL`] (10 minutes), with a 30-day session cookie. This is what
-    /// `doozers admin login-link --user <user>` calls over the admin service. Links
+    /// `doozers admin login-link` calls over the admin service. Links
     /// live in memory: a restart invalidates them.
     ///
     /// # Errors
     ///
-    /// [`LoginLinkError::UnknownUser`] for anyone but the owner (v1);
-    /// [`LoginLinkError::NoWebIdentity`] if `[owner] identities` lacks `web:<user>`, the identity
-    /// a link login sends as.
+    /// [`LoginLinkError::UnknownUser`] if there is no such user;
+    /// [`LoginLinkError::Disabled`] if the user is disabled;
+    /// [`LoginLinkError::NoWebIdentity`] if the user doesn't have `web:<user>`, the identity a
+    /// link login sends as.
     pub fn create_login_link(
         &self,
         user: &UserId,
         now: Timestamp,
     ) -> Result<LoginLink, LoginLinkError> {
-        if *user != identity::owner() {
-            return Err(LoginLinkError::UnknownUser(user.clone()));
+        match self.users.get().user(user) {
+            None => return Err(LoginLinkError::UnknownUser(user.clone())),
+            Some(found) if !found.is_active() => {
+                return Err(LoginLinkError::Disabled(user.clone()));
+            }
+            Some(_) => {}
         }
         if !self.is_web_identity(user) {
             return Err(LoginLinkError::NoWebIdentity(user.clone()));

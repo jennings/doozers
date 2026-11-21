@@ -20,6 +20,7 @@ use crate::scheduler::{JobChanges, OutboxDelivery, Scheduler, SchedulerOptions};
 use crate::secrets::{KeyError, KeyFile, LocalSecrets, SecretProvider};
 use crate::sessions::{Approvals, Clock, Sessions, SessionsOptions, SystemClock, TurnRunner};
 use crate::ssh::SshKeys;
+use crate::users::{Users, UsersError};
 use crate::workspaces::{self, WorkspaceSweep, Workspaces};
 
 /// Startup failed.
@@ -65,6 +66,9 @@ pub enum StartError {
     /// The routes couldn't be imported from `doozers.toml` or loaded.
     #[error(transparent)]
     Routes(#[from] RoutesError),
+    /// The owner couldn't be imported from `doozers.toml` or the users couldn't be loaded.
+    #[error(transparent)]
+    Users(#[from] UsersError),
     /// Startup recovery of the sessions failed (PLAN section 6.3).
     #[error("cannot recover the sessions: {0}")]
     Sessions(#[source] doozers_store::Error),
@@ -111,6 +115,9 @@ pub struct Runtime {
     /// The routing rules, stored in the database and changed through the web UI. The router
     /// reads them ([`Routes::list`]).
     pub routes: Arc<Routes>,
+    /// The users and their identities, stored in the database. The router and the web login read
+    /// them ([`Users::list`], the registry's [`users`](Registry::users)).
+    pub users: Arc<Users>,
     /// Proactive sends to identities (PLAN section 6.11): job replies, approval prompts of job
     /// turns, login codes. Its sender starts with [`start_outbox`](Self::start_outbox).
     pub outbox: Outbox,
@@ -127,8 +134,8 @@ impl Runtime {
     /// Opens (and migrates) the database, unlocks the local secret store
     /// ([`LocalSecrets::open`]), opens the blob store under `root`, builds the registry
     /// from `config` with built-in providers reading attachments from the blob store, imports
-    /// `doozers.toml`'s `[[routes]]` if that never happened and loads the routes
-    /// ([`Routes::open`]), and registers the core tools. The data root's layout must exist. `serve`
+    /// `doozers.toml`'s `[owner]` if that never happened and loads the users ([`Users::open`]),
+    /// does the same for `[[routes]]` ([`Routes::open`]), and registers the core tools. The data root's layout must exist. `serve`
     /// logs the registry's summary ([`Registry::log_summary`]) once it has registered the toolsets.
     ///
     /// # Errors
@@ -161,6 +168,15 @@ impl Runtime {
             .map_err(|source| StartError::Blobs { path, source })?;
         let media = Arc::new(BlobMedia::new(blobs.clone()));
         let registry = Arc::new(Registry::from_config(root.clone(), config.clone(), media)?);
+        let users = Arc::new(
+            Users::open(
+                store.clone(),
+                registry.users(),
+                &registry.config(),
+                &root.config_file(),
+            )
+            .await?,
+        );
         let routes = Arc::new(Routes::open(store.clone(), registry.live_config().clone()).await?);
         let secrets: Arc<dyn SecretProvider> = Arc::new(secrets);
         let ssh_keys = SshKeys::new(store.clone(), secrets.clone(), clock.clone());
@@ -181,6 +197,7 @@ impl Runtime {
             secrets,
             registry,
             routes,
+            users,
             jobs: JobChanges::default(),
             workspaces,
         };
@@ -335,6 +352,52 @@ mod tests {
         let mut name = root.database_file().into_os_string();
         name.push(suffix);
         Path::new(&name).exists()
+    }
+
+    #[tokio::test]
+    async fn start_imports_the_owner_once_and_the_registry_shares_the_users() {
+        let (_dir, root) = data_root("");
+        let runtime = start(&root).await.unwrap();
+        let users = runtime.registry.users().get();
+        let owner = users.user(&crate::identity::owner()).unwrap();
+        assert_eq!(owner.role, doozers_store::Role::Admin);
+        assert_eq!(runtime.users.list().get().users().len(), 1);
+        drop(runtime);
+
+        // The database is the truth from then on: `[owner]` can change or go, and a start
+        // that has none and never had one makes no user.
+        std::fs::write(
+            root.config_file(),
+            "[owner]\nidentities = [\"web:other\"]\n",
+        )
+        .unwrap();
+        let runtime = start(&root).await.unwrap();
+        let users = runtime.registry.users().get();
+        assert_eq!(users.users().len(), 1);
+        assert!(
+            users
+                .resolve("web", &doozers_types::NativeId::new("owner").unwrap())
+                .is_some()
+        );
+        drop(runtime);
+
+        let (_dir, root) = data_root("");
+        std::fs::write(root.config_file(), "").unwrap();
+        let runtime = start(&root).await.unwrap();
+        assert!(runtime.registry.users().get().users().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_invalid_owner_stops_the_first_start() {
+        let (_dir, root) = data_root("");
+        std::fs::write(root.config_file(), "[owner]\nidentities = []\n").unwrap();
+        let err = start(&root).await.unwrap_err();
+        assert!(matches!(err, StartError::Users(_)), "{err}");
+        assert!(
+            err.to_string()
+                .contains("owner.identities: must list at least one"),
+            "{err}"
+        );
     }
 
     #[tokio::test]

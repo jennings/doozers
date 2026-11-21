@@ -166,6 +166,9 @@ impl Harness {
         let db = dir.path().join("doozers.db");
         let store = Store::open(db.clone()).await.unwrap();
         let registry = Arc::new(Registry::new(root, config.clone()));
+        registry
+            .users()
+            .set(crate::users::legacy_owner_users(&config));
         let start = Instant::now();
         let outbox = Outbox::new(
             store.clone(),

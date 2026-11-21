@@ -115,6 +115,7 @@ async fn the_admin_service_shows_and_restarts_a_running_plugin() {
         channels: Arc::new(core.sessions.clone()),
         plugins: Some(core.host.clone() as Arc<dyn PluginControl>),
         login_links: None,
+        users: core.runtime.users.clone(),
         toolsets: None,
         clock: Arc::new(SystemClock),
     });
