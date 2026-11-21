@@ -14,6 +14,15 @@
 //! that spans reading the snapshot, validating the change, writing it, and replacing the snapshot,
 //! so the snapshot always equals what is stored. Only this process changes the tables.
 //!
+//! # Roles
+//!
+//! A user is an `admin` or a `member` ([`Role`]); all admins are equal. [`User::is_admin`] (through
+//! [`UserDirectory::is_admin`] or [`UserList::is_admin`]) says whether a user is an active admin,
+//! read from the current snapshot. The last active admin can't be removed, disabled, or demoted
+//! ([`UserError::LastAdmin`]): [`Users::set_state`], [`Users::set_role`], and [`Users::remove`]
+//! refuse it, and the store checks it inside the transaction of the change, so the check and the
+//! change can't be split by another one.
+//!
 //! # Import
 //!
 //! `doozers.toml`'s `[owner]` is imported once, by [`Users::open`], when the import has never run
@@ -22,6 +31,10 @@
 //! rewrite. After that `[owner]` is never read again; `open` warns while `doozers.toml` still
 //! has it. A fresh install has no `[owner]`: it starts with no users, and
 //! [`Users::login_user`] (`doozers admin login-link`) creates the first admin.
+//!
+//! The id `owner` is a data key. Config jobs (`[[jobs]]` of `agent.toml`, until
+//! #115 replaces them) run as the user `owner`, so the first admin of a fresh install has that
+//! id too.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -82,6 +95,12 @@ impl User {
     pub fn is_active(&self) -> bool {
         self.state == UserState::Active
     }
+
+    /// Whether the user may administer Doozers now: an active `admin`. This is the one test of
+    /// privilege (PLAN section 3.1); a disabled admin has none.
+    pub fn is_admin(&self) -> bool {
+        self.role == Role::Admin && self.is_active()
+    }
 }
 
 /// The directory of users one [`UserList`] snapshot holds.
@@ -135,6 +154,11 @@ impl UserDirectory {
         self.by_identity.contains_key(&identity_key(joined))
     }
 
+    /// Whether `id` is an active admin ([`User::is_admin`]). A user who doesn't exist is none.
+    pub fn is_admin(&self, id: &UserId) -> bool {
+        self.user(id).is_some_and(User::is_admin)
+    }
+
     /// The user the message's sender is: the one who has the sender's identity or, if none does,
     /// the first alias that is anyone's.
     pub fn resolve_sender(&self, namespace: &str, message: &InboundMessage) -> Option<&User> {
@@ -179,6 +203,11 @@ impl UserList {
     pub fn set(&self, users: Vec<User>) {
         *self.current.write().unwrap_or_else(PoisonError::into_inner) =
             Arc::new(UserDirectory::new(users));
+    }
+
+    /// Whether `id` is an active admin now ([`User::is_admin`]).
+    pub fn is_admin(&self, id: &UserId) -> bool {
+        self.get().is_admin(id)
     }
 
     /// The time zone of user `id`, if the user exists and has set one.
@@ -237,8 +266,8 @@ pub enum UserError {
     /// There is no such user.
     #[error("there is no user `{0}`")]
     NoSuchUser(UserId),
-    /// The change would leave no active admin.
-    #[error("the last active admin can't be disabled")]
+    /// The change would leave no active admin: it removes, disables, or demotes the last one.
+    #[error("the last active admin can't be removed, disabled, or demoted")]
     LastAdmin,
     /// The database failed.
     #[error("database error: {0}")]
@@ -256,6 +285,7 @@ impl UserError {
             Error::UsernameTaken => Self::UsernameTaken,
             Error::IdentityTaken { identity } => Self::IdentityTaken(identity),
             Error::NoSuchUser => Self::NoSuchUser(user.clone()),
+            Error::LastAdmin => Self::LastAdmin,
             Error::InvalidRequest(reason) => Self::Invalid(reason),
             other => Self::Store(other),
         }
@@ -600,23 +630,50 @@ impl Users {
         now: Timestamp,
     ) -> Result<User, UserError> {
         let _changing = self.changing.lock().await;
-        let directory = self.list.get();
-        let user = directory
-            .user(id)
-            .ok_or_else(|| UserError::NoSuchUser(id.clone()))?;
-        if state == UserState::Disabled
-            && user.role == Role::Admin
-            && user.is_active()
-            && !directory
-                .users()
-                .iter()
-                .any(|other| other.id != *id && other.role == Role::Admin && other.is_active())
-        {
-            return Err(UserError::LastAdmin);
-        }
         let stored = self
             .store
             .user_set_state(id, state, now)
+            .await
+            .map_err(|e| UserError::from_store(e, id))?;
+        self.publish().await?;
+        Ok(to_user(stored)?)
+    }
+
+    /// Sets the role of user `id`: promotes a member to admin or demotes an admin to member.
+    ///
+    /// # Errors
+    ///
+    /// [`UserError::NoSuchUser`], or [`UserError::LastAdmin`] if the user is the last active
+    /// admin and the role is `member`.
+    pub async fn set_role(
+        &self,
+        id: &UserId,
+        role: Role,
+        now: Timestamp,
+    ) -> Result<User, UserError> {
+        let _changing = self.changing.lock().await;
+        let stored = self
+            .store
+            .user_set_role(id, role, now)
+            .await
+            .map_err(|e| UserError::from_store(e, id))?;
+        self.publish().await?;
+        Ok(to_user(stored)?)
+    }
+
+    /// Deletes the account of user `id`, with its identities, and returns the user as it was.
+    /// Everything else the user owns stays: forgetting that data (PLAN section 11.4) is built on
+    /// this and does it in the same operation.
+    ///
+    /// # Errors
+    ///
+    /// [`UserError::NoSuchUser`], or [`UserError::LastAdmin`] if the user is the last active
+    /// admin.
+    pub async fn remove(&self, id: &UserId) -> Result<User, UserError> {
+        let _changing = self.changing.lock().await;
+        let stored = self
+            .store
+            .user_delete(id)
             .await
             .map_err(|e| UserError::from_store(e, id))?;
         self.publish().await?;
@@ -702,8 +759,8 @@ impl Users {
     /// `doozers admin login-link`.
     ///
     /// - With no `requested` user and no users at all, it creates the first admin, the id
-    ///   [`identity::OWNER`] (the id an imported owner has, which the owner-only pages compare
-    ///   against), and returns it.
+    ///   [`identity::OWNER`] (the id an imported owner has, and the user config jobs run as), and
+    ///   returns it.
     /// - With no `requested` user and exactly one user, it is that user, as before there were
     ///   several.
     /// - With no `requested` user and several users, it asks for one
@@ -1496,6 +1553,133 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, UserError::NoSuchUser(_)), "{err}");
+    }
+
+    #[tokio::test]
+    async fn the_last_active_admin_can_be_neither_demoted_nor_removed() {
+        let home = Home::new().await;
+        let (users, list) = home
+            .open("[owner]\nidentities = [\"web:owner\"]\n")
+            .await
+            .unwrap();
+        users.create(member("ann"), vec![], at(0)).await.unwrap();
+        let owner = identity::owner();
+        let is_admin = |user: &UserId| list.is_admin(user);
+        assert!(is_admin(&owner));
+        assert!(!is_admin(&id("ann")));
+        assert!(!is_admin(&id("nobody")));
+
+        for err in [
+            users
+                .set_role(&owner, Role::Member, at(1))
+                .await
+                .unwrap_err(),
+            users.remove(&owner).await.unwrap_err(),
+        ] {
+            assert!(matches!(err, UserError::LastAdmin), "{err}");
+        }
+        assert!(is_admin(&owner), "refused changes leave the admin");
+        assert_eq!(home.store.users().await.unwrap().len(), 2);
+
+        // A member promoted is an admin at once, and then the owner can go.
+        let ann = users
+            .set_role(&id("ann"), Role::Admin, at(2))
+            .await
+            .unwrap();
+        assert!(ann.is_admin());
+        assert!(is_admin(&id("ann")));
+        users.set_role(&owner, Role::Member, at(3)).await.unwrap();
+        assert!(!is_admin(&owner));
+        // Now ann is the last: demoting, disabling, and removing her are all refused.
+        for err in [
+            users
+                .set_role(&id("ann"), Role::Member, at(4))
+                .await
+                .unwrap_err(),
+            users
+                .set_state(&id("ann"), UserState::Disabled, at(4))
+                .await
+                .unwrap_err(),
+            users.remove(&id("ann")).await.unwrap_err(),
+        ] {
+            assert!(matches!(err, UserError::LastAdmin), "{err}");
+        }
+        assert!(is_admin(&id("ann")));
+
+        // A disabled admin has no privilege and doesn't count as one to keep.
+        users.set_role(&owner, Role::Admin, at(5)).await.unwrap();
+        users
+            .set_state(&owner, UserState::Disabled, at(6))
+            .await
+            .unwrap();
+        assert!(!is_admin(&owner));
+        let err = users.remove(&id("ann")).await.unwrap_err();
+        assert!(matches!(err, UserError::LastAdmin), "{err}");
+        users
+            .set_state(&owner, UserState::Active, at(7))
+            .await
+            .unwrap();
+        assert!(is_admin(&owner));
+
+        // Removing a user takes them from the list and the database, and they are no admin.
+        let removed = users.remove(&id("ann")).await.unwrap();
+        assert_eq!(removed.id, id("ann"));
+        assert!(list.get().user(&id("ann")).is_none());
+        assert!(!is_admin(&id("ann")));
+        assert_eq!(home.store.users().await.unwrap().len(), 1);
+        let err = users.remove(&id("ann")).await.unwrap_err();
+        assert!(matches!(err, UserError::NoSuchUser(_)), "{err}");
+        let err = users
+            .set_role(&id("ann"), Role::Admin, at(8))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::NoSuchUser(_)), "{err}");
+    }
+
+    #[tokio::test]
+    async fn changes_made_at_once_can_not_remove_every_admin() {
+        let home = Home::new().await;
+        let (users, list) = home.open("").await.unwrap();
+        let users = Arc::new(users);
+        for name in ["ann", "bob"] {
+            let admin = NewUser {
+                role: Role::Admin,
+                ..member(name)
+            };
+            users.create(admin, vec![], at(0)).await.unwrap();
+        }
+        let tasks: Vec<_> = ["ann", "bob"]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let users = users.clone();
+                tokio::spawn(async move {
+                    if i == 0 {
+                        users.set_role(&id(name), Role::Member, at(1)).await
+                    } else {
+                        users.set_state(&id(name), UserState::Disabled, at(1)).await
+                    }
+                })
+            })
+            .collect();
+        let mut refused = 0;
+        for task in tasks {
+            match task.await.unwrap() {
+                Ok(_) => {}
+                Err(UserError::LastAdmin) => refused += 1,
+                Err(other) => panic!("{other}"),
+            }
+        }
+        assert_eq!(refused, 1);
+        let directory = list.get();
+        assert_eq!(
+            directory
+                .users()
+                .iter()
+                .filter(|user| user.is_admin())
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]

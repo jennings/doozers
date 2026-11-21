@@ -521,7 +521,10 @@ import.
 `users` and `user_identities` hold who uses this Doozers and which channel identities are theirs
 (PLAN 1.1, 3.2). A user's `id` is opaque and never changes: sessions, inbox, usage, and outbox rows,
 memories, and secret paths name it, so nothing is rewritten when a username changes. The user that
-`[owner]` described keeps the id `owner`. `username` is unique without regard to ASCII case.
+`[owner]` described keeps the id `owner`. `username` is unique without regard to ASCII case. The
+store takes the id the caller gives and forgets it when `user_delete` removes the user, so the core
+must never give a deleted user's id to another user (random ids do not) and must delete everything
+keyed by it with the user.
 
 An identity belongs to one user. `(namespace, native_id)` is the key, and `identity`, the two joined
 with `:`, is unique as well. A namespace can contain `:` (`irc:libera.chat`), so two splits of one
@@ -538,14 +541,19 @@ can't belong to two users by differing in the case of a domain. Other identities
 
 The store checks the shapes the schema can: ids, usernames, and identities are unique, and a default
 identity is one of the user's identities. What a username may look like, which time zones exist, and
-who may do what are for the layer above the store to decide.
+who may do what are for the layer above the store to decide. One rule about roles is the store's,
+because it must hold when changes race: the last active admin (role `admin`, state `active`) can't
+be disabled, demoted, or deleted. `user_set_state`, `user_set_role`, and `user_delete` check it
+inside the write transaction of the change.
 
 | Method                                  | Contract                                                         |
 | --------------------------------------- | ---------------------------------------------------------------- |
 | `users`                                 | Every user with their identities, oldest first.                  |
 | `user(id)`                              | One user, or `None`.                                             |
 | `user_create(user, identities, now)`    | Creates an active user with identities verified at `now`. `Error::UserIdTaken`, `Error::UsernameTaken`, or `Error::IdentityTaken` store nothing. The default identity must be one of the identities. |
-| `user_set_state(id, state, now)`        | Sets `active` or `disabled`; `Error::NoSuchUser` if absent.      |
+| `user_set_state(id, state, now)`        | Sets `active` or `disabled`; `Error::NoSuchUser` if absent. `Error::LastAdmin` for disabling the last active admin. |
+| `user_set_role(id, role, now)`          | Sets `admin` or `member`; `Error::NoSuchUser` if absent. `Error::LastAdmin` for demoting the last active admin. |
+| `user_delete(id)`                       | Deletes the user and, by cascade, their identities, and returns the user as it was; nothing else the user owns. `Error::NoSuchUser` if absent, `Error::LastAdmin` for the last active admin. |
 | `user_identity_add(id, identity, now)`  | Adds an identity; the user's first becomes their default. `Error::IdentityTaken` if any user has it. |
 | `user_identity_remove(id, identity, now)` | Removes an identity, named as `<namespace>:<native id>`. If it was the default, the oldest one left is, or there is none. |
 | `users_imported`                        | Whether the import below has run.                                |

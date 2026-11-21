@@ -119,6 +119,10 @@ pub enum Error {
     /// There is no user with that id.
     #[error("no such user")]
     NoSuchUser,
+    /// The change would leave no active admin: it removes, disables, or demotes the last one.
+    /// Nothing changed.
+    #[error("the last active admin can't be removed, disabled, or demoted")]
+    LastAdmin,
     /// A memory's content is longer than the limit.
     #[error("memory content is {chars} characters; the limit is {max}")]
     MemoryTooLong {
