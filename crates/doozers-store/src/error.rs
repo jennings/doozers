@@ -103,6 +103,22 @@ pub enum Error {
         /// The label of the key they have.
         label: String,
     },
+    /// A user with that id exists already.
+    #[error("a user with that id already exists")]
+    UserIdTaken,
+    /// A user with that username exists already. Usernames are compared without regard to ASCII
+    /// case.
+    #[error("a user with that username already exists")]
+    UsernameTaken,
+    /// The identity belongs to a user already.
+    #[error("the identity {identity} belongs to a user already")]
+    IdentityTaken {
+        /// The identity, `<namespace>:<native id>`.
+        identity: String,
+    },
+    /// There is no user with that id.
+    #[error("no such user")]
+    NoSuchUser,
     /// A memory's content is longer than the limit.
     #[error("memory content is {chars} characters; the limit is {max}")]
     MemoryTooLong {
