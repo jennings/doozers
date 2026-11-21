@@ -79,6 +79,27 @@
 </div>
 </form>
 
+<h2 id="access">Access</h2>
+<div class="card">
+{%- if active %}
+<p>Disabling signs them out and cancels their unused recovery links. Scheduled jobs stop running. No data is deleted.</p>
+{%- if you %}
+<p class="help">You can't disable yourself. Ask another admin.</p>
+{%- else %}
+<form method="post" action="/admin/users/{{ id }}/disable">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button type="submit" class="button button-danger">Disable {{ username }}</button>
+</form>
+{%- endif %}
+{%- else %}
+<p>They are disabled.</p>
+<form method="post" action="/admin/users/{{ id }}/enable">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button type="submit" class="button button-primary">Enable {{ username }}</button>
+</form>
+{%- endif %}
+</div>
+
 <h2 id="recovery-link">Recovery link</h2>
 <div class="card">
 {%- if active %}
@@ -88,13 +109,13 @@
 <button type="submit" class="button">Make a recovery link</button>
 </form>
 {%- else %}
-<p>{{ username }} is disabled, and a disabled user can't sign in.</p>
+<p>{{ username }} is disabled. Enable them first.</p>
 {%- endif %}
 </div>
 
 <h2 id="remove">Remove</h2>
 <div class="card">
-<p>Removing a user deletes everything Doozers keeps about them.</p>
+<p>Removing a user deletes all data. Disable them instead to keep it.</p>
 <p><a class="button button-danger" href="/admin/users/{{ id }}/remove">Remove {{ username }}</a></p>
 </div>
 {% endblock %}
