@@ -52,6 +52,7 @@ mod routes;
 mod ssh_hosts;
 mod ssh_keys;
 mod toolsets;
+mod users;
 mod workspaces;
 
 const INSTANCE: &str = "web";

@@ -196,31 +196,34 @@ impl Store {
         .await
     }
 
-    /// The conversation `conversation` on channel instance `channel`: its last `limit`
-    /// transcript rows, oldest first (every session's messages in session order, then by
-    /// sequence number), and its inbound messages still waiting for a turn or in one. Summarized
+    /// The conversation `conversation` on channel instance `channel` as `user`'s: its last
+    /// `limit` transcript rows, oldest first (every session's messages in session order, then by
+    /// sequence number), and its inbound messages still waiting for a turn or in one. Only
+    /// `user`'s sessions count, so a conversation of someone else's reads as empty. Summarized
     /// messages are included (this is a transcript to show, not a prompt) and empty slots come
     /// back as [`Entry::EmptySlot`](crate::Entry::EmptySlot).
     pub async fn conversation_transcript(
         &self,
         channel: &str,
         conversation: &ConversationId,
+        user: &UserId,
         limit: u32,
     ) -> Result<ConversationTranscript> {
         let channel = channel.to_owned();
         let conversation = conversation.clone();
+        let user = user.clone();
         self.read(move |conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT * FROM (
                     SELECT m.id, m.seq, m.role, m.content, m.meta, m.tool_use_id, m.session_id
                     FROM messages m JOIN sessions s ON s.id = m.session_id
-                    WHERE s.channel = ?1 AND s.conversation = ?2
+                    WHERE s.channel = ?1 AND s.conversation = ?2 AND s.user_id = ?4
                     ORDER BY m.session_id DESC, m.seq DESC LIMIT ?3)
                  ORDER BY session_id, seq",
             )?;
             let messages = query_all(
                 &mut stmt,
-                params![channel, conversation.as_str(), limit],
+                params![channel, conversation.as_str(), limit, user.as_str()],
                 |row| {
                     Ok(ConversationMessage {
                         session: row.get(6)?,
@@ -230,13 +233,14 @@ impl Store {
             )?;
             let mut stmt = conn.prepare_cached(&format!(
                 "{} WHERE state IN ('queued', 'started') AND session_id IN
-                    (SELECT id FROM sessions WHERE channel = ?1 AND conversation = ?2)
+                    (SELECT id FROM sessions
+                     WHERE channel = ?1 AND conversation = ?2 AND user_id = ?3)
                  ORDER BY id",
                 inbox::SELECT
             ))?;
             let waiting = query_all(
                 &mut stmt,
-                params![channel, conversation.as_str()],
+                params![channel, conversation.as_str(), user.as_str()],
                 inbox::from_row,
             )?;
             Ok(ConversationTranscript { messages, waiting })
@@ -294,15 +298,24 @@ impl Store {
         .await
     }
 
-    /// Takes the conversation `conversation` on channel instance `channel` out of the archive.
-    /// Returns whether it was archived.
+    /// Takes `user`'s conversation `conversation` on channel instance `channel` out of the
+    /// archive. Returns whether it was archived; `false`, changing nothing, if the user has no
+    /// session in it.
     pub async fn unarchive_conversation(
         &self,
         channel: &str,
         conversation: &ConversationId,
+        user: &UserId,
     ) -> Result<bool> {
-        let (channel, conversation) = (channel.to_owned(), conversation.to_string());
+        let (channel, conversation, user) = (
+            channel.to_owned(),
+            conversation.to_string(),
+            user.to_string(),
+        );
         self.write(move |conn| {
+            if !has_conversation(conn, &channel, &conversation, &user)? {
+                return Ok(false);
+            }
             Ok(conn
                 .prepare_cached(
                     "DELETE FROM archived_conversations WHERE channel = ?1 AND conversation = ?2",
@@ -611,7 +624,7 @@ mod tests {
 
         let a = ConversationId::new("a").unwrap();
         let all = store
-            .conversation_transcript("web", &a, 100)
+            .conversation_transcript("web", &a, &owner(), 100)
             .await
             .unwrap()
             .messages;
@@ -623,13 +636,28 @@ mod tests {
         assert_eq!(all[2].message.id, appended[1].slots[0].id);
 
         let last = store
-            .conversation_transcript("web", &a, 3)
+            .conversation_transcript("web", &a, &owner(), 3)
             .await
             .unwrap()
             .messages;
         assert_eq!(texts(&last), ["slot:t1", "u2", "a2"]);
+        // Another user reads nothing of it.
+        let stranger = UserId::new("stranger").unwrap();
         assert_eq!(
-            store.conversation_transcript("irc", &a, 10).await.unwrap(),
+            store
+                .conversation_transcript("web", &a, &stranger, 100)
+                .await
+                .unwrap(),
+            ConversationTranscript {
+                messages: Vec::new(),
+                waiting: Vec::new(),
+            }
+        );
+        assert_eq!(
+            store
+                .conversation_transcript("irc", &a, &owner(), 10)
+                .await
+                .unwrap(),
             ConversationTranscript {
                 messages: Vec::new(),
                 waiting: Vec::new(),
@@ -671,7 +699,7 @@ mod tests {
 
         let a = ConversationId::new("a").unwrap();
         let waiting = store
-            .conversation_transcript("web", &a, 10)
+            .conversation_transcript("web", &a, &owner(), 10)
             .await
             .unwrap()
             .waiting;
@@ -772,8 +800,18 @@ mod tests {
             None
         );
 
-        assert!(store.unarchive_conversation("web", &a).await.unwrap());
-        assert!(!store.unarchive_conversation("web", &a).await.unwrap());
+        assert!(
+            store
+                .unarchive_conversation("web", &a, &owner())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .unarchive_conversation("web", &a, &owner())
+                .await
+                .unwrap()
+        );
         assert_eq!(
             store.conversation_archived_at("web", &a).await.unwrap(),
             None
@@ -824,6 +862,24 @@ mod tests {
         assert_eq!(
             store.conversation_archived_at("web", &none).await.unwrap(),
             None
+        );
+
+        // Nobody else takes it out of the archive either.
+        assert!(
+            store
+                .archive_conversation("web", &a, &owner(), at(2))
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .unarchive_conversation("web", &a, &other)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            store.conversation_archived_at("web", &a).await.unwrap(),
+            Some(at(2))
         );
     }
 
@@ -939,7 +995,7 @@ mod tests {
         assert_eq!(store.session(two.id).await.unwrap(), None);
         assert!(
             store
-                .conversation_transcript("web", &a, 10)
+                .conversation_transcript("web", &a, &owner(), 10)
                 .await
                 .unwrap()
                 .messages

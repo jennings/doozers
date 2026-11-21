@@ -131,6 +131,15 @@ core, never queued for the agent. `answer(to, reply)` then:
 that session (in any turn) run without asking, and the session's other calls of that tool still
 waiting are allowed at once too. Replies from another conversation or another user never match.
 
+Only the turn's requester can answer. An approval is addressed to one user in one session
+(`ApprovalTarget::answers` compares both), so a reply from anyone else, an admin included, never
+matches, whatever channel it comes in on. Two more checks stand in front of that rule. The session
+pump drops a message in a conversation that belongs to another user
+([Sessions and turns](sessions.md#the-inbound-pipeline)), so another user can't even send a reply
+into the requester's conversation. And on the web the button's post goes through the chat's
+ownership check, which answers 404 to anyone but the chat's user
+([Web channel](web-channel.md#whose-data-is-whose)).
+
 ## New messages
 
 A message from the requester while one of the turn's approvals waits denies it (§6.4) and becomes
@@ -166,10 +175,10 @@ once.
 `WebChannel::send_approval(chat, code, markdown)`: the prompt with Allow / Allow for this session /
 Deny buttons ([Web channel](web-channel.md)). Every outcome (an answer, a typed reply, expiry, a new
 message, `/stop`) retires it with `WebChannel::resolve_approval(chat, code, outcome)`, so the page
-shows how it ended. A button posts `yes <code>`, `yes! <code>`, or `no <code>` as the user, which
-reaches the board like a typed reply. On every other channel the prompt is the text, sent with
-`Reply::send` (`TextPresenter`), and the outcome isn't shown. `ApprovalOutcome` is defined here and
-re-exported by the web channel. `resolved` must not block.
+shows how it ended. A button posts `yes <code>`, `yes! <code>`, or `no <code>` as the user, but only
+the chat's user can post it, and it reaches the board like a typed reply. On every other channel the
+prompt is the text, sent with `Reply::send` (`TextPresenter`), and the outcome isn't shown.
+`ApprovalOutcome` is defined here and re-exported by the web channel. `resolved` must not block.
 
 ## Tests
 
@@ -180,3 +189,8 @@ channel. `crates/doozers-core/tests/approvals.rs` runs the whole path through
 `Runtime::start_sessions` and the agent loop: `yes`, `no`, `yes!` (and for the other waiting calls),
 a bare `yes` with two waiting, expiry and a late reply, denial by a new message in both busy modes,
 a question answered both ways, `/stop` while waiting, and the deadline not counting the wait.
+
+`approvals/tests.rs` also checks that only the requester in the same conversation answers. The
+session pump's tests drop a `yes` into another user's conversation, and
+`channels/web/tests/users.rs` has an admin and a member post the button of a chat that isn't theirs
+and get 404, with nothing sent to the core.

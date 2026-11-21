@@ -338,7 +338,7 @@ async fn only_an_admin_gets_the_admin_pages() {
 /// Opens the stored users of `env`, which imports the owner of the test configuration (an
 /// admin), and adds a second admin `root` and a member `mia`, each with the `web:<id>` identity a
 /// login signs in as.
-async fn stored_users(env: &Env) -> Arc<Users> {
+pub(super) async fn stored_users(env: &Env) -> Arc<Users> {
     let users = Users::open(
         env.store.clone(),
         env.channel.users().clone(),
@@ -370,7 +370,7 @@ async fn stored_users(env: &Env) -> Arc<Users> {
 }
 
 /// Logs `user` in with a login link on the main listener; the session token.
-async fn session_of(env: &Env, user: &str) -> String {
+pub(super) async fn session_of(env: &Env, user: &str) -> String {
     let link = env
         .channel
         .create_login_link(&UserId::new(user).unwrap(), Timestamp::now())
