@@ -86,6 +86,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "0016_workspace_user",
         sql: include_str!("migrations/0016_workspace_user.sql"),
     },
+    Migration {
+        name: "0017_inbox_user",
+        sql: include_str!("migrations/0017_inbox_user.sql"),
+    },
 ];
 
 /// The schema version this binary writes.

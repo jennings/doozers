@@ -1031,7 +1031,7 @@ async fn approval_buttons_answer_with_the_code() {
 }
 
 #[tokio::test]
-async fn blobs_are_served_safely_to_an_admin() {
+async fn blobs_are_served_safely_to_the_user_whose_message_refers_to_them() {
     let env = env().await;
     let now = Timestamp::now();
     let png = env
@@ -1055,6 +1055,37 @@ async fn blobs_are_served_safely_to_an_admin() {
             BlobMeta {
                 media_type: "text/html".into(),
                 name: Some("evil page.html".into()),
+            },
+            now,
+        )
+        .await
+        .unwrap();
+
+    // The owner's chat refers to both; nothing refers to the third.
+    store_chat(
+        &env,
+        &chat(),
+        INSTANCE,
+        vec![
+            stored(Role::User, vec![Block::Image { media: png.clone() }]),
+            stored(
+                Role::Assistant,
+                vec![Block::Document {
+                    media: page.clone(),
+                    name: None,
+                }],
+            ),
+        ],
+    )
+    .await;
+    let unreferenced = env
+        .blobs
+        .put(
+            &b"nobody's"[..],
+            1024,
+            BlobMeta {
+                media_type: "image/png".into(),
+                name: None,
             },
             now,
         )
@@ -1085,22 +1116,34 @@ async fn blobs_are_served_safely_to_an_admin() {
     let response = env.get(&format!("/blobs/{missing}")).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-    // Only an admin may see blobs, until blobs are scoped to their users.
-    let stranger = WebUser {
-        user: UserId::new("someone").unwrap(),
-        role: doozers_store::Role::Member,
-        ..owner()
-    };
-    let response = env
-        .request(
-            Some(stranger),
-            Method::GET,
-            &format!("/blobs/{}", png.id),
-            &[],
-            None,
-        )
-        .await;
+    // A blob no message of the user's refers to is not found, however it is stored.
+    let response = env.get(&format!("/blobs/{}", unreferenced.id)).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // Another user, an admin included, doesn't get the owner's blobs: they are no admin page's.
+    for (user, role) in [
+        ("someone", doozers_store::Role::Member),
+        ("root", doozers_store::Role::Admin),
+    ] {
+        let stranger = WebUser {
+            user: UserId::new(user).unwrap(),
+            role,
+            ..owner()
+        };
+        for id in [&png.id, &page.id] {
+            let response = env
+                .request(
+                    Some(stranger.clone()),
+                    Method::GET,
+                    &format!("/blobs/{id}"),
+                    &[],
+                    None,
+                )
+                .await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{user} {id}");
+            assert!(body_text(response).await.contains("Not found"));
+        }
+    }
 }
 
 /// Finds the web channel for its instance.

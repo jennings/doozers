@@ -793,13 +793,6 @@ fn sse_event(channel: &WebChannel, item: Item) -> SseEvent {
     }
 }
 
-/// Whether `user` may see blobs: admins only. A blob belongs to the conversations and jobs of the
-/// users that sent it, and no per-blob check says whose; per-user scoping (#146) adds it and opens
-/// blobs to the users they belong to.
-fn may_see_blobs(user: &WebUser) -> bool {
-    may_administer(user)
-}
-
 /// `filename*=` of `Content-Disposition` (RFC 6266, RFC 8187): UTF-8, percent-encoded.
 fn encoded_filename(name: &str) -> String {
     let mut out = String::from("UTF-8''");
@@ -813,36 +806,41 @@ fn encoded_filename(name: &str) -> String {
     out
 }
 
-/// `GET /blobs/<sha256>`: an attachment, for the logged-in user. Served with its stored media
-/// type, `nosniff` (from the security headers), and `Content-Security-Policy: sandbox`, and as a
-/// download unless it's a raster image, so a stored HTML or SVG blob can never run in Doozers'
-/// origin.
+/// `GET /blobs/<sha256>`: an attachment, for a user who owns a message that refers to it
+/// ([`BlobStore::reference_of`]; 404 for anyone else, an admin included, and for a blob that
+/// isn't stored, so the answer doesn't say which). Served with the media type and name of the
+/// user's own reference to it, `nosniff`
+/// (from the security headers), and `Content-Security-Policy: sandbox`, and as a download unless
+/// it's a raster image, so a stored HTML or SVG blob can never run in Doozers' origin.
 async fn blob(State(app): State<WebApp>, user: WebUser, Path(id): Path<String>) -> Response {
     let Ok(id) = id.parse::<MediaId>() else {
         return not_found();
     };
-    if !may_see_blobs(&user) {
-        return not_found();
-    }
+    // The type and name are the user's own reference's: the blob row keeps the first sender's.
+    let shown = match app.inner.blobs.reference_of(&id, &user.user).await {
+        Ok(Some(shown)) => shown,
+        Ok(None) => return not_found(),
+        Err(err) => return internal_error("cannot look up a blob's messages", &err),
+    };
     let blob = match app.inner.blobs.get(&id).await {
         Ok(Some(blob)) => blob,
         Ok(None) => return not_found(),
         Err(err) => return internal_error("cannot read a blob", &err),
     };
-    let media = blob.media;
-    let content_type = HeaderValue::from_str(&media.media_type)
+    let size = blob.media.size;
+    let content_type = HeaderValue::from_str(&shown.media_type)
         .unwrap_or(HeaderValue::from_static("application/octet-stream"));
-    let disposition = if render::is_inline_image(&media.media_type) {
+    let disposition = if render::is_inline_image(&shown.media_type) {
         HeaderValue::from_static("inline")
     } else {
-        let name = media.name.as_deref().unwrap_or(media.id.as_str());
+        let name = shown.name.as_deref().unwrap_or(shown.id.as_str());
         HeaderValue::from_str(&format!("attachment; filename*={}", encoded_filename(name)))
             .unwrap_or(HeaderValue::from_static("attachment"))
     };
     let mut response = Response::new(Body::from_stream(ReaderStream::new(blob.reader)));
     let headers = response.headers_mut();
     headers.insert(CONTENT_TYPE, content_type);
-    headers.insert(CONTENT_LENGTH, HeaderValue::from(media.size));
+    headers.insert(CONTENT_LENGTH, HeaderValue::from(size));
     headers.insert(CONTENT_DISPOSITION, disposition);
     headers.insert(CONTENT_SECURITY_POLICY, HeaderValue::from_static("sandbox"));
     headers.insert(CACHE_CONTROL, HeaderValue::from_static(BLOB_CACHE_CONTROL));
