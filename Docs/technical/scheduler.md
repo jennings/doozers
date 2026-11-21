@@ -22,8 +22,9 @@
 the session manager have started (approval prompts may only be queued once the outbox's sender has
 dropped the previous process's), with the same runner (the agent loop). Its `JobDelivery` is
 `OutboxDelivery`: an `OutboxItem` into the delivery's conversation (`Destination::Conversation`), or
-else `OutboxItem::to_owner`, with `JobReply` or `ApprovalPrompt` and the delivery's expiry; `remove`
-withdraws a prompt. At shutdown `serve` waits for `Scheduler::closed()` before `Sessions::closed()`.
+else `OutboxItem::to_user` for the delivery's user, with `JobReply` or `ApprovalPrompt` and the
+delivery's expiry; `remove` withdraws a prompt. At shutdown `serve` waits for `Scheduler::closed()`
+before `Sessions::closed()`.
 
 ## Timing
 

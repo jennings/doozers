@@ -39,7 +39,7 @@ use axum::middleware::map_response;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use doozers_store::{JobKey, RuntimeJob, RuntimeJobId};
-use doozers_types::{AgentId, Timestamp};
+use doozers_types::{AgentId, Timestamp, UserId};
 use jiff::tz::TimeZone;
 use serde::Deserialize;
 
@@ -54,6 +54,7 @@ use crate::config::{ActiveHours, Config, JobPrompt, JobSession, parse_cron};
 use crate::core_tools::MAX_RUNTIME_JOBS_PER_USER;
 use crate::core_tools::schedule::{parse_at, short, show_time};
 use crate::http;
+use crate::identity;
 use crate::scheduler::{JobDef, RuntimeSpec, When, in_active_hours};
 
 /// How many times of a job's schedule [`next_run`] tries against its active hours before it
@@ -164,15 +165,14 @@ fn session_name(session: JobSession) -> &'static str {
     }
 }
 
-/// The zone `agent`'s jobs run in; the owner's or the system's for an agent that isn't
-/// configured.
-fn zone(config: &Config, agent: &AgentId) -> TimeZone {
+/// The zone `agent`'s jobs of `user` (`None`: a config job) run in; the user's or the system's for
+/// an agent that isn't configured.
+fn zone(app: &WebApp, user: Option<&UserId>, config: &Config, agent: &AgentId) -> TimeZone {
+    let users = app.inner.channel.users();
     match config.agents.get(agent) {
-        Some(agent) => message_timezone(config, agent),
-        None => config
-            .owner
-            .timezone
-            .clone()
+        Some(agent) => message_timezone(users, user, agent),
+        None => users
+            .timezone(user.unwrap_or(&identity::owner()))
             .unwrap_or_else(TimeZone::system),
     }
 }
@@ -184,8 +184,14 @@ fn zone_name(tz: &TimeZone) -> String {
 }
 
 /// The row of a job the scheduler can run, with its last run.
-fn row(config: &Config, job: &JobDef, last: Option<Timestamp>, now: Timestamp) -> JobRow {
-    let tz = zone(config, &job.agent);
+fn row(
+    app: &WebApp,
+    config: &Config,
+    job: &JobDef,
+    last: Option<Timestamp>,
+    now: Timestamp,
+) -> JobRow {
+    let tz = zone(app, job.creator.as_ref(), config, &job.agent);
     let configured = config.agents.contains_key(&job.agent);
     let next_at = (configured && !job.disabled)
         .then(|| next_run(job, &tz, now))
@@ -282,7 +288,7 @@ async fn jobs_page(State(app): State<WebApp>, user: WebUser) -> Response {
             Ok(last) => last,
             Err(err) => return internal_error("cannot read a job's last run", &err),
         };
-        rows.push(row(&config, def, last, now));
+        rows.push(row(&app, &config, def, last, now));
     }
     // Stable: jobs with the same next run (or none) keep the order above.
     rows.sort_by(|a, b| match (a.next_at, b.next_at) {
@@ -438,7 +444,7 @@ fn render_form(
             let mut zones = agents.iter().filter_map(|choice| {
                 AgentId::new(&choice.id)
                     .ok()
-                    .map(|id| zone_name(&zone(&config, &id)))
+                    .map(|id| zone_name(&zone(app, Some(&user.user), &config, &id)))
             });
             let zone = match zones.next() {
                 Some(first) if zones.all(|other| other == first) => first,
@@ -460,7 +466,7 @@ fn render_form(
             "Save",
             Vec::new(),
             Some(agent_label(&config, &job.agent)),
-            zone_name(&zone(&config, &job.agent)),
+            zone_name(&zone(app, Some(&user.user), &config, &job.agent)),
         ),
     };
     let (status, error) = match error {
@@ -577,7 +583,7 @@ async fn create(
         None => return refuse(StatusCode::BAD_REQUEST, "Pick an agent.".to_owned()),
     };
     let now = app.inner.clock.now();
-    let spec = match form.spec(&zone(&config, &agent), now) {
+    let spec = match form.spec(&zone(&app, Some(&user.user), &config, &agent), now) {
         Ok(spec) => spec,
         Err(error) => return refuse(StatusCode::BAD_REQUEST, error),
     };
@@ -620,7 +626,7 @@ async fn edit_page(State(app): State<WebApp>, user: WebUser, Path(id): Path<Stri
     };
     let config = app.inner.agents.get();
     let form = match serde_json::from_value::<RuntimeSpec>(job.spec.clone()) {
-        Ok(spec) => JobForm::of(&spec, &zone(&config, &job.agent)),
+        Ok(spec) => JobForm::of(&spec, &zone(&app, Some(&user.user), &config, &job.agent)),
         Err(_) => JobForm::blank(),
     };
     render_form(&app, &user, &Target::Edit(&job), &form, None)
@@ -644,7 +650,7 @@ async fn edit(
     };
     let config = app.inner.agents.get();
     let now = app.inner.clock.now();
-    let mut spec = match form.spec(&zone(&config, &job.agent), now) {
+    let mut spec = match form.spec(&zone(&app, Some(&user.user), &config, &job.agent), now) {
         Ok(spec) => spec,
         Err(error) => {
             return render_form(

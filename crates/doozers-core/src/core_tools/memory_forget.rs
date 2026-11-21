@@ -17,6 +17,7 @@ use crate::agent_loop::ToolOutput;
 use crate::config::LiveConfig;
 use crate::memory_dbs::MemoryDbs;
 use crate::sessions::Clock;
+use crate::users::UserList;
 
 /// The tool's name.
 pub const MEMORY_FORGET: &str = "memory_forget";
@@ -29,11 +30,11 @@ pub struct MemoryForgetTool {
 
 impl MemoryForgetTool {
     /// Deletes from the memory databases in `dbs`, with each agent's `memory_cap` from `config`
-    /// (for the usage a result shows). `clock` is the one the other memory tools share; deleting
-    /// reads no time.
-    pub fn new(dbs: MemoryDbs, config: LiveConfig, clock: Arc<dyn Clock>) -> Self {
+    /// (for the usage a result shows). `users` gives the requester's time zone, as for the other
+    /// memory tools. `clock` is the one they share; deleting reads no time.
+    pub fn new(dbs: MemoryDbs, config: LiveConfig, users: UserList, clock: Arc<dyn Clock>) -> Self {
         Self {
-            env: MemoryEnv::new(dbs, config, clock),
+            env: MemoryEnv::new(dbs, config, users, clock),
         }
     }
 }

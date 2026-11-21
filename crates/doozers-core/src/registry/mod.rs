@@ -31,6 +31,7 @@ use crate::config::{
 use crate::core_tools::CoreTool;
 use crate::paths::{DataRoot, PathsError};
 use crate::providers::MediaSource;
+use crate::users::UserList;
 
 pub use tools::{
     CORE_TOOLS, ENVIRONMENT_TOOLS, IndexedTool, MAX_TOOL_NAME_CHARS, PREFIX_SEPARATOR, ToolIndex,
@@ -210,6 +211,9 @@ fn insert<T: ?Sized>(map: &Map<T>, name: &InstanceName, item: Arc<T>) -> Option<
 pub struct Registry {
     root: DataRoot,
     config: LiveConfig,
+    /// The users and their identities, which the router, the web login, and the time zone and
+    /// delivery lookups read.
+    users: UserList,
     providers: Map<dyn Provider>,
     channels: Map<dyn Channel>,
     toolsets: Map<dyn Toolset>,
@@ -254,6 +258,7 @@ impl Registry {
     pub fn new(root: DataRoot, config: Arc<Config>) -> Self {
         Self {
             root,
+            users: UserList::from_owner(&config.owner, jiff::Timestamp::now()),
             config: LiveConfig::new(config),
             providers: RwLock::default(),
             channels: RwLock::default(),
@@ -361,6 +366,11 @@ impl Registry {
     /// The shared configuration that agents created at runtime are added to.
     pub fn live_config(&self) -> &LiveConfig {
         &self.config
+    }
+
+    /// The users and their identities, shared with the router and the web login.
+    pub fn users(&self) -> UserList {
+        self.users.clone()
     }
 
     /// The tool index: the tools every user is offered.
@@ -860,7 +870,11 @@ fn build_channel(registry: &Registry, instance: &ChannelInstance) -> Built<dyn C
                     ),
                 ));
             }
-            let web = Arc::new(WebChannel::from_instance(instance, &registry.config())?);
+            let web = Arc::new(WebChannel::from_instance(
+                instance,
+                &registry.config(),
+                registry.users(),
+            )?);
             registry.web.get_or_init(|| web.clone());
             let unknown = web.config().unknown_keys.clone();
             Ok((web, unknown))

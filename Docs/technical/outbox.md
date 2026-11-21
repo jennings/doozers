@@ -13,7 +13,7 @@ lost.
 | `OutboxItem`            | `to: Destination`, `kind`, `user`, `markdown`, `attachments`, `expires_at` |
 | `Destination`           | `Identity(Identity)`, or `Conversation { instance, conversation }`      |
 | `OutboxItem::new`       | To a destination, no user, no attachments, default expiry               |
-| `OutboxItem::to_owner`  | To the owner's default identity, `user` = `owner`                       |
+| `OutboxItem::to_user`   | To a user's default identity, `user` = that user; `None` if they have none |
 | `OutboxKind`            | `JobReply`, `ApprovalPrompt`, `LoginCode`, `Notice` (`job_reply`, ...)  |
 | `OutboxError`           | `Unowned`, `CannotInitiate`, `UnknownInstance`, `MissingExpiry`, `Expired`, `Store` |
 | `DEFAULT_EXPIRY`        | 24 hours                                                                |

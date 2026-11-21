@@ -73,7 +73,11 @@ pub(super) async fn authenticate(
             .to_str()
             .ok()
             .and_then(|value| NativeId::new(value.trim()).ok());
-        let Some(sender) = sender.filter(|id| channel.owner.contains(COMPONENT, id)) else {
+        let directory = channel.users().get();
+        let known = sender
+            .as_ref()
+            .and_then(|id| directory.resolve(COMPONENT, id));
+        let (Some(sender), Some(known)) = (sender, known) else {
             warn!(
                 identity = ?value,
                 "the trusted proxy named someone who isn't one of the owner's web identities",
@@ -87,7 +91,7 @@ pub(super) async fn authenticate(
             );
         };
         request.extensions_mut().insert(WebUser {
-            user: identity::owner(),
+            user: known.id.clone(),
             csrf: proxy_csrf(&channel.proxy_key, &sender),
             sender,
             login: Login::Proxy,

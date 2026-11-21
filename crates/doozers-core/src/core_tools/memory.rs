@@ -27,13 +27,15 @@ use crate::config::LiveConfig;
 use crate::memory::{self, usage_header};
 use crate::memory_dbs::MemoryDbs;
 use crate::sessions::Clock;
+use crate::users::UserList;
 
 /// What the memory tools need for their whole life: where the databases are, each agent's
-/// `memory_cap`, and the clock.
+/// `memory_cap`, the users' time zones, and the clock.
 #[derive(Clone)]
 pub(super) struct MemoryEnv {
     dbs: MemoryDbs,
     config: LiveConfig,
+    users: UserList,
     clock: Arc<dyn Clock>,
 }
 
@@ -46,8 +48,18 @@ impl std::fmt::Debug for MemoryEnv {
 }
 
 impl MemoryEnv {
-    pub(super) fn new(dbs: MemoryDbs, config: LiveConfig, clock: Arc<dyn Clock>) -> Self {
-        Self { dbs, config, clock }
+    pub(super) fn new(
+        dbs: MemoryDbs,
+        config: LiveConfig,
+        users: UserList,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            dbs,
+            config,
+            users,
+            clock,
+        }
     }
 
     /// Opens what a call of `agent` in `session`, in a turn of `requester` (`None`: a config job),
@@ -79,7 +91,7 @@ impl MemoryEnv {
             store,
             viewer,
             cap: agent_config.memory_cap as usize,
-            tz: message_timezone(&config, agent_config),
+            tz: message_timezone(&self.users, requester, agent_config),
             session: session.id,
             now: self.clock.now(),
         })

@@ -35,11 +35,11 @@ pub use run::{JobReply, NO_REPLY, job_reply};
 pub use schedule::{When, in_active_hours};
 
 use crate::agent_loop::history::message_timezone;
-use crate::config::{Job, OwnerConfig};
-use crate::identity;
+use crate::config::Job;
 use crate::outbox::{Destination, Outbox, OutboxItem, OutboxKind};
 use crate::registry::Registry;
 use crate::sessions::{Clock, Sessions, TurnRunner};
+use crate::users::UserList;
 use crate::workspaces::Workspaces;
 
 /// The longest the scheduler sleeps before looking at the clock again, so a wall clock that
@@ -90,18 +90,19 @@ pub trait JobDelivery: Send + Sync {
     async fn remove(&self, id: OutboxId);
 }
 
-/// The daemon's [`JobDelivery`]: the outbox, into the job's conversation, or else to the owner's
-/// default identity (v1's only user with identities).
+/// The daemon's [`JobDelivery`]: the outbox, into the job's conversation, or else to the user's
+/// default identity.
 #[derive(Debug, Clone)]
 pub struct OutboxDelivery {
     outbox: Outbox,
-    owner: OwnerConfig,
+    users: UserList,
 }
 
 impl OutboxDelivery {
-    /// Sends through `outbox`, to `owner`'s default identity when there's no conversation.
-    pub fn new(outbox: Outbox, owner: OwnerConfig) -> Self {
-        Self { outbox, owner }
+    /// Sends through `outbox`, to the default identity of the delivery's user in `users` when
+    /// there's no conversation.
+    pub fn new(outbox: Outbox, users: UserList) -> Self {
+        Self { outbox, users }
     }
 }
 
@@ -124,10 +125,13 @@ impl JobDelivery for OutboxDelivery {
                     delivery.markdown,
                 )
             },
-            None if delivery.user != identity::owner() => {
-                return Err(format!("user {} has no identity", delivery.user));
+            None => {
+                let directory = self.users.get();
+                directory
+                    .user(&delivery.user)
+                    .and_then(|user| OutboxItem::to_user(user, kind, delivery.markdown))
+                    .ok_or_else(|| format!("user {} has no identity", delivery.user))?
             }
-            None => OutboxItem::to_owner(&self.owner, kind, delivery.markdown),
         };
         item.expires_at = delivery.expires_at;
         self.outbox
@@ -471,7 +475,7 @@ async fn job_task(context: Arc<Context>, job: JobDef, stop: CancellationToken) {
         warn!(job = %label, agent = %job.agent, "job of an agent that isn't configured; skipped");
         return;
     };
-    let mut tz = message_timezone(&config, agent);
+    let mut tz = message_timezone(&context.registry.users(), job.creator.as_ref(), agent);
     let last = match context
         .store
         .job_last_run(job.agent.clone(), job.key.clone())
@@ -502,7 +506,7 @@ async fn job_task(context: Arc<Context>, job: JobDef, stop: CancellationToken) {
             info!(job = %label, agent = %job.agent, "the job's agent was removed; the job stops");
             return;
         };
-        tz = message_timezone(&config, agent);
+        tz = message_timezone(&context.registry.users(), job.creator.as_ref(), agent);
         let now = context.clock.now();
         if in_active_hours(job.active_hours.as_ref(), &tz, now) {
             if !run::run(&context, &job, agent, &stop).await {
