@@ -1,4 +1,4 @@
-// The copy buttons of the SSH keys page: a button with `data-copy-from="<id>"` copies the value of
+// The copy buttons of the pages that show text to paste elsewhere: a button with `data-copy-from="<id>"` copies the value of
 // the field with that id. The button is an icon attached to the field; after a copy it shows a
 // check mark and says "Copied" to assistive technology for a moment. Without this script the
 // buttons stay hidden and the page still works: the field is read-only text to select and copy by

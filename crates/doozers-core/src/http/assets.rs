@@ -139,8 +139,8 @@ pub fn copy_script_path() -> &'static str {
     COPY_SCRIPT_PATH.as_str()
 }
 
-/// The copy button's script, at [`copy_script_path`]: it makes the SSH keys page's Copy buttons
-/// copy a public key.
+/// The copy button's script, at [`copy_script_path`]: it makes a page's Copy buttons copy the
+/// field they name, such as a public key or the `/link` message.
 pub fn copy_script() -> Asset {
     Asset {
         path: copy_script_path(),
