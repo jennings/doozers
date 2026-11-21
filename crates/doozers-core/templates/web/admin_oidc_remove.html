@@ -1,0 +1,30 @@
+{% extends "web/app.html" %}
+
+{% block title %}Remove {{ provider.display_name }} - Identity providers - Doozers{% endblock %}
+
+{% block content %}
+<a class="back" href="/admin/identity-providers#provider-{{ provider.id }}">Identity providers</a>
+<section class="card confirm">
+<h1>Remove {{ provider.display_name }}?</h1>
+<dl class="facts">
+<dt>Id</dt>
+<dd><code>{{ provider.id }}</code></dd>
+<dt>Issuer</dt>
+<dd><code>{{ provider.issuer }}</code></dd>
+<dt>Connected accounts</dt>
+<dd>{{ connected }}</dd>
+</dl>
+<ul>
+<li>Disallows users from using this identity provider.</li>
+<li>Any users who don't have another authentication method must use a recovery link to sign back in.</li>
+<li>Login sessions remain valid for up to 30 days.</li>
+</ul>
+<div class="form-actions">
+<form method="post" action="/admin/identity-providers/{{ provider.id }}/remove">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button type="submit" class="button-danger-solid">Remove provider</button>
+</form>
+<a class="button button-quiet" href="/admin/identity-providers#provider-{{ provider.id }}">Cancel</a>
+</div>
+</section>
+{% endblock %}

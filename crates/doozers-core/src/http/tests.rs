@@ -68,6 +68,11 @@ async fn every_response_has_the_security_headers() {
             assets::mcp_server_form_script_path(),
             StatusCode::OK,
         ),
+        (
+            Method::GET,
+            assets::oidc_provider_form_script_path(),
+            StatusCode::OK,
+        ),
         (Method::GET, assets::copy_script_path(), StatusCode::OK),
         (Method::GET, assets::passkey_script_path(), StatusCode::OK),
         (Method::GET, stylesheet, StatusCode::OK),
@@ -178,6 +183,26 @@ fn agent_form_script_path_is_its_content_hash() {
     let hash = &sha256_hex(script.body)[..16];
     assert_eq!(script.path, format!("/static/agent-form-{hash}.js"));
     assert_eq!(script.content_type, "text/javascript; charset=utf-8");
+}
+
+#[test]
+fn oidc_provider_form_script_path_is_its_content_hash() {
+    let script = assets::oidc_provider_form_script();
+    let hash = &sha256_hex(script.body)[..16];
+    assert_eq!(script.path, format!("/static/oidc-provider-form-{hash}.js"));
+    assert_eq!(script.content_type, "text/javascript; charset=utf-8");
+}
+
+/// The script's `valid` is `doozers_store::is_provider_id` as a regular expression; this pins it
+/// to the store's limit so the two can't drift apart unnoticed.
+#[test]
+fn oidc_provider_form_script_checks_the_id_as_the_store_does() {
+    let script = std::str::from_utf8(assets::oidc_provider_form_script().body).unwrap();
+    let limit = doozers_store::MAX_PROVIDER_ID_LEN - 1;
+    assert!(
+        script.contains(&format!("/^[a-z0-9][a-z0-9-]{{0,{limit}}}$/")),
+        "{script}"
+    );
 }
 
 /// The script's `derive` is `agents::agent_id_from_name` in JavaScript. Run by hand over the

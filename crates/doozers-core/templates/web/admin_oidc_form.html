@@ -1,0 +1,72 @@
+{% extends "web/app.html" %}
+
+{% block title %}{{ title }} - Identity providers - Doozers{% endblock %}
+
+{% block head %}
+<script src="{{ crate::http::assets::copy_script_path() }}" defer></script>
+{%- if !editing %}
+<script src="{{ crate::http::assets::oidc_provider_form_script_path() }}" defer></script>
+{%- endif %}
+{% endblock %}
+
+{% block content %}
+<a class="back" href="/admin/identity-providers">Identity providers</a>
+<h1>{{ title }}</h1>
+{%- if let Some(error) = error %}
+<p class="banner banner-error" role="alert">{{ error }}</p>
+{%- endif %}
+{%- if !has_public_url %}
+<p class="banner banner-warn"><span>Doozers doesn't know its own address, so the redirect URI below uses the address it listens on, <code>{{ base }}</code>. Set <code>public_url</code> in <code>[channel.web.config]</code> of doozers.toml to the address your users open, and register the redirect URI it gives.</span></p>
+{%- endif %}
+<form class="card form" method="post" action="{{ action }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="field">
+<label for="id">Id</label>
+{%- if editing %}
+<input id="id" value="{{ form.id }}" class="mono" disabled>
+{%- else %}
+<input id="id" name="id" value="{{ form.id }}" class="mono" required maxlength="32" pattern="[a-z0-9][a-z0-9\-]*" autocapitalize="none" spellcheck="false" placeholder="google">
+{%- endif %}
+<p class="help">Up to 32 lowercase letters, digits, and dashes.</p>
+</div>
+<div class="field">
+<label for="display_name">Name</label>
+<input id="display_name" name="display_name" value="{{ form.display_name }}" required maxlength="64" placeholder="Google">
+<p class="help">What the login page and the setup page call it: "Sign in with <em>name</em>".</p>
+</div>
+<div class="field">
+<label for="issuer">Issuer</label>
+<input id="issuer" name="issuer" value="{{ form.issuer }}" required class="mono" autocapitalize="none" spellcheck="false" placeholder="https://accounts.google.com">
+<p class="help">The provider's issuer URL. Doozers reads its endpoints and keys from <code>&lt;issuer&gt;/.well-known/openid-configuration</code> when you save. It must be <code>https</code>. {%- if editing %} <strong>Changing it disconnects every account</strong>, because an account belongs to its issuer.{% endif %}</p>
+</div>
+<div class="field-row">
+<div class="field">
+<label for="client_id">Client ID</label>
+<input id="client_id" name="client_id" value="{{ form.client_id }}" required class="mono" autocapitalize="none" spellcheck="false">
+</div>
+<div class="field">
+<label for="client_secret">Client secret</label>
+<input type="password" id="client_secret" name="client_secret" autocomplete="off" placeholder="{% if secret_stored %}stored; leave blank to keep it{% else %}none{% endif %}">
+<p class="help">Leave empty if the provider supports PKCE.</p>
+</div>
+</div>
+<div class="field">
+<label for="scopes">Scopes</label>
+<input id="scopes" name="scopes" value="{{ form.scopes }}" class="mono" autocapitalize="none" spellcheck="false" placeholder="openid">
+<p class="help">Separated by spaces. Only <code>openid</code> is required.</p>
+</div>
+<label class="check"><input type="checkbox" name="enabled"{% if form.enabled %} checked{% endif %}> Enabled</label>
+<div class="field">
+<label for="redirect">Redirect URI</label>
+<div class="input-group">
+<input id="redirect" value="{{ redirect_uri }}" class="mono" readonly{% if let Some(template) = redirect_template %} data-template="{{ template }}"{% endif %}>
+<button type="button" class="input-group-button" data-copy-from="redirect" aria-label="Copy redirect URI" title="Copy redirect URI" hidden><svg class="icon-copy" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg><svg class="icon-copied" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></button>
+</div>
+<p class="help">Register this address at the provider as the redirect (callback) URI of the client.</p>
+</div>
+<div class="form-actions">
+<button type="submit" class="button-primary">{{ submit }}</button>
+<a class="button button-quiet" href="/admin/identity-providers">Cancel</a>
+</div>
+</form>
+{% endblock %}

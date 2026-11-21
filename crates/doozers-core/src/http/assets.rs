@@ -108,6 +108,27 @@ pub fn mcp_server_form_script() -> Asset {
     }
 }
 
+const OIDC_PROVIDER_FORM_SCRIPT_BODY: &[u8] = include_bytes!("../../assets/oidc-provider-form.js");
+
+static OIDC_PROVIDER_FORM_SCRIPT_PATH: LazyLock<String> =
+    LazyLock::new(|| hashed_path("oidc-provider-form", OIDC_PROVIDER_FORM_SCRIPT_BODY, "js"));
+
+/// The URL path of the new identity provider form's script:
+/// `/static/oidc-provider-form-<hash>.js`.
+pub fn oidc_provider_form_script_path() -> &'static str {
+    OIDC_PROVIDER_FORM_SCRIPT_PATH.as_str()
+}
+
+/// The new identity provider form's script, at [`oidc_provider_form_script_path`]: it fills the
+/// redirect URI from the id as the admin types.
+pub fn oidc_provider_form_script() -> Asset {
+    Asset {
+        path: oidc_provider_form_script_path(),
+        content_type: JAVASCRIPT,
+        body: OIDC_PROVIDER_FORM_SCRIPT_BODY,
+    }
+}
+
 const COPY_SCRIPT_BODY: &[u8] = include_bytes!("../../assets/copy-button.js");
 
 static COPY_SCRIPT_PATH: LazyLock<String> =
@@ -150,13 +171,14 @@ pub fn passkey_script() -> Asset {
 }
 
 /// Every asset.
-pub fn all() -> [Asset; 7] {
+pub fn all() -> [Asset; 8] {
     [
         HTMX,
         HTMX_SSE,
         stylesheet(),
         agent_form_script(),
         mcp_server_form_script(),
+        oidc_provider_form_script(),
         copy_script(),
         passkey_script(),
     ]
