@@ -74,9 +74,9 @@ One text block (none at all when every part is empty), with these parts separate
    each with a one-line description and its memories one per line as `#12 (core): content` (shared
    ones `#2 (core, shared): ...`, `memory::line`), oldest id first, or `(empty)`:
    - `Shared memory`: the shared core memories, which every session sees. With the usage header
-     (`## Shared memory [4% — 49/1,000]`) when the session's user may write shared memories (the
-     agent owner's direct and job sessions); otherwise without it, and left out entirely when there
-     are none.
+     (`## Shared memory [4% — 49/1,000]`) when the session's user may write shared memories (the an
+     admin's direct and job sessions); otherwise without it, and left out entirely when there are
+     none.
    - The session's own scope, always with the usage header: `User memory` in a direct or job session
      with a user, `Group memory` in a group session. A session with neither (no user, no group) has
      no such section.
@@ -398,9 +398,9 @@ no such tool), the registry no longer serves it under that name and target (a to
 its toolset isn't registered, or it's a core tool with no implementation registered (a spec added
 with `ToolIndex::set_core_tool` alone). A per-user toolset's tools aren't in the index, so for them
 only the registration is checked, and the requester's own connection decides the rest. The session's
-tool list is the agent's allowlist (§6.4); v1 has no roles, so there is no second check by the
-requester's role. With roles, a forbidden call would get `not permitted for <user>` here, before it
-runs.
+tool list is the agent's allowlist (§6.4). The two roles (admin and member) don't narrow it, so
+there is no second check by the requester's role; per-user allowlists are later work, and a call one
+forbids would get `not permitted for <user>` here, before it runs.
 
 Then a call to a tool matching the agent's `ask` globs waits for approval
 (`TurnApprovals::approve_call`, [Approvals](approvals.md)); a denial is its error result. The wait

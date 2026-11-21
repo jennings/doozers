@@ -27,6 +27,7 @@ use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
+use super::admin::may_administer;
 use super::auth::{WebUser, check_csrf};
 use super::hub::{Event, Subscription};
 use super::shell::{Nav, Shell};
@@ -37,7 +38,6 @@ use super::{
 use crate::agent_loop::history;
 use crate::config::{Config, LiveConfig};
 use crate::http::{self, RouterBuilder};
-use crate::identity;
 use crate::runtime::Runtime;
 use crate::scheduler::JobChanges;
 use crate::sessions::{Clock, SystemClock};
@@ -271,10 +271,10 @@ pub(super) struct AgentChoice {
     pub(super) label: String,
 }
 
-/// The agents `user` may start a chat with, by id. v1 has one user, the owner, who may use every
-/// agent; with roles (PLAN section 3.1) this is where a member's `agents` globs apply.
+/// The agents `user` may start a chat with, by id: every agent for an admin, none for anyone else
+/// until per-user scoping (#146) opens the chats to every user.
 pub(super) fn agent_choices(config: &Config, user: &WebUser) -> Vec<AgentChoice> {
-    if user.user != identity::owner() {
+    if !may_administer(user) {
         return Vec::new();
     }
     config
@@ -746,11 +746,11 @@ fn sse_event(channel: &WebChannel, item: Item) -> SseEvent {
     }
 }
 
-/// Whether `user` may see blobs. v1 has one user, the owner, and every blob belongs to the
-/// owner's conversations and jobs, so only the owner may; per-blob checks come with multi-user
-/// support.
+/// Whether `user` may see blobs: admins only. A blob belongs to the conversations and jobs of the
+/// users that sent it, and no per-blob check says whose; per-user scoping (#146) adds it and opens
+/// blobs to the users they belong to.
 fn may_see_blobs(user: &WebUser) -> bool {
-    user.user == identity::owner()
+    may_administer(user)
 }
 
 /// `filename*=` of `Content-Disposition` (RFC 6266, RFC 8187): UTF-8, percent-encoded.

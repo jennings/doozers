@@ -6,7 +6,7 @@
 //! and are sent again on every new [`Channel::events`] stream), per-chat hubs (`hub.rs`) that every
 //! open page of a chat follows, and the one-time login links. [`WebApp`] is the HTTP side: the
 //! pages, the event streams, `/blobs/<sha256>`, the login, the trusted-proxy listener, and the
-//! owner's admin pages over the admin service (`admin.rs`).
+//! admin pages over the admin service (`admin.rs`).
 
 mod admin;
 mod agents;

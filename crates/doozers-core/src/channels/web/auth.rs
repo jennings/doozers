@@ -12,6 +12,7 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
+use doozers_store::Role;
 use doozers_types::{NativeId, UserId};
 use sha2::{Digest, Sha256};
 
@@ -46,6 +47,9 @@ pub(super) enum Login {
 pub struct WebUser {
     /// The user.
     pub user: UserId,
+    /// The user's role when the request arrived. A change of role applies to the next request.
+    /// [`may_administer`](super::admin::may_administer) reads it.
+    pub role: Role,
     /// The native identifier in the `web` namespace: what messages from this user carry as
     /// `InboundMessage::sender`, matched against the users' identities as `web:<sender>`. A login
     /// link's user id for a cookie login; the proxy's header value for a proxy login.
@@ -177,6 +181,7 @@ mod tests {
     fn user() -> WebUser {
         WebUser {
             user: UserId::new("owner").unwrap(),
+            role: Role::Admin,
             sender: NativeId::new("owner").unwrap(),
             csrf: "token".into(),
             login: Login::Test,

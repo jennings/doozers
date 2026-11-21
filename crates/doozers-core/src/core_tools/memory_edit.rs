@@ -135,7 +135,8 @@ pub(super) fn spec() -> ToolSpec {
              over the core character cap; the error lists that scope's core memories so you can \
              shorten, forget, or demote some (core=false keeps a memory, findable with \
              memory_recall, but out of the prompt). Sharing a memory, or changing or un-sharing a \
-             shared one, is only for your owner's turns and scheduled jobs. An id you can't see \
+             shared one, is only for admins' turns, their scheduled jobs, and jobs from \
+             agent.toml. An id you can't see \
              reads as no such memory.\n\n\
              The prompt is a snapshot taken when the conversation started and doesn't change \
              while it runs: the result of this tool shows the memory as it is now."
@@ -163,8 +164,9 @@ pub(super) fn spec() -> ToolSpec {
                 "shared": {
                     "type": "boolean",
                     "description": "Whether the memory is visible in all your conversations, \
-                                    not only this user's or this group's. Only your owner's \
-                                    turns and scheduled jobs can change it for a memory.",
+                                    not only this user's or this group's. Only admins' \
+                                    turns, their scheduled jobs, and jobs from agent.toml can \
+                                    change it for a memory.",
                 },
             },
             "required": ["id"],

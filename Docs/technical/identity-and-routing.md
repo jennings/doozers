@@ -72,10 +72,34 @@ usage rows, per-user files (`users/<id>/USER.md`), and the owner of a user's mem
 
 The user v1 began with, the owner, has the id `identity::OWNER`, `"owner"`, and `identity::owner()`
 returns it as a `UserId`. The import (below) gives that id to the user `[owner]` described, so
-nothing keyed by it is rewritten. The checks that only the owner passes (`may_administer`, shared
-memory writes) still compare the requester to `identity::owner()`; they move to the admin role in
-the multi-user work. A second user can be created through `Users::create`, but nothing in the
-product does yet. Routes have no `user` key.
+nothing keyed by it is rewritten. The id marks data, not privilege: no check compares a user to it
+(config jobs, which run as the user `owner` until runtime jobs replace them, are the one place that
+still keys on it). A second user can be created through `Users::create`, but nothing in the product
+does yet. Routes have no `user` key.
+
+### Roles
+
+A user is an `admin` or a `member`. All admins are equal; members use every agent. One test decides
+privilege, `User::is_admin`: the role is `admin` **and** the state is `active`. It is read from the
+current snapshot (`UserDirectory::is_admin(id)`, `UserList::is_admin(id)`), never cached past a
+request or a call, so a demotion or a disabling applies to the next one. A user the list doesn't
+know is no admin. What it admits:
+
+| Where                                                    | How it asks                                               |
+| -------------------------------------------------------- | --------------------------------------------------------- |
+| Web admin pages and their buttons (`may_administer`)     | `WebUser::role`, set when the request is authenticated    |
+| Admin calls of `SshKeys` (`all_keys`, `any_key`, `delete_any`) | `SshKeys::may_administer`, over the shared `UserList` |
+| Shared-memory writes in a tool call (`memory::viewer`)   | `UserDirectory::is_admin(requester)`                      |
+| Shared-memory writes shown in the prompt (`memory::prompt_viewer`) | the same, for the session's user                |
+| Shared-memory writes, group memories, and the *shared* box on the memory page | `WebUser::role`                      |
+| The web chat's agent picker and `GET /blobs/<sha256>`    | `WebUser::role`, until per-user scoping (#146) opens them |
+
+What is not a role check: a config job runs as the user `owner` and, with no requester, writes
+shared memories; the web jobs page shows config jobs to that user, since they are that user's data;
+approvals go to the turn's requester (the delivery user for a job), and no role changes that.
+
+The last active admin can't be removed, disabled, or demoted; see
+[the last active admin](#stored-users).
 
 ### Stored users
 
@@ -114,15 +138,16 @@ reads:
   every user is gone. While the file still has `[owner]`, startup logs `info` on the importing start
   and `warn` on every later one, saying it is ignored and to remove it.
 - **The first admin.** `login_user(None, now)` is `doozers admin login-link` with no `--user`. With
-  no users it creates the first admin, with the id `owner` (so the owner-only checks above admit
-  them), the username `admin`, and the identity `web:owner`, and returns it. With exactly one user
-  it is that user, so an install that has only its owner keeps working with no arguments. With
-  several it asks for one (`NeedUser`, whose message lists their ids and usernames). The admin
-  service reports the user it chose, and the CLI prints the id and username with the link.
-  `login_user(Some(id), now)` requires an active user, and gives them the identity `web:<id>`,
-  verified as `admin`, if they lack it: a link login sends as `web:<id>`, so without it the router
-  would drop their messages. The admin service calls it before it asks the web channel for the link,
-  and only if the web channel is running, so a daemon that can't make a link makes no user.
+  no users it creates the first admin, with the id `owner` (the user config jobs run as, so a fresh
+  install and an imported one agree until runtime jobs replace them), the username `admin`, and the
+  identity `web:owner`, and returns it. With exactly one user it is that user, so an install that
+  has only its owner keeps working with no arguments. With several it asks for one (`NeedUser`,
+  whose message lists their ids and usernames). The admin service reports the user it chose, and the
+  CLI prints the id and username with the link. `login_user(Some(id), now)` requires an active user,
+  and gives them the identity `web:<id>`, verified as `admin`, if they lack it: a link login sends
+  as `web:<id>`, so without it the router would drop their messages. The admin service calls it
+  before it asks the web channel for the link, and only if the web channel is running, so a daemon
+  that can't make a link makes no user.
 - **Time zone and default identity.** `agent_loop::history::message_timezone(users, user, agent)` is
   the user's time zone, else the agent's, else the system's; a config job has no user and runs as
   `owner`. Jobs and proactive messages go to the user's default identity (`OutboxItem::to_user`); a
@@ -135,12 +160,13 @@ Memory ([Skills and Memory](skills-and-memory.md#memory)) uses identity in three
 
 - **A user's memories belong to the internal user id**, not to a channel identity. They follow the
   user's direct and job sessions with the agent on every channel, as `memory_search`'s scope does.
-- **Shared memories are written by the agent owner only.** `memory::viewer` gives a tool call
-  `can_write_shared` when the turn's requester is `identity::owner()`, and a config job (no
-  requester) too; a runtime job runs as its creator and has that creator's right. Shared memories
-  reach every prompt, including the owner's tool-enabled DMs, so a guest or a group must not be able
-  to plant one. The check is made again in the memory store's write transaction, so a tool can't
-  skip it. Only the owner can write them for now, so the rule matters once there are other users.
+- **Shared memories are written by admins only.** `memory::viewer` gives a tool call
+  `can_write_shared` when the turn's requester is an active admin (`UserDirectory::is_admin`), and a
+  config job (no requester) too; a runtime job runs as its creator and has that creator's right.
+  Shared memories reach every prompt, including the tool-enabled DMs of admins, so a member or a
+  group must not be able to plant one. The store checks the flag again in its write transaction, so
+  a tool can't skip it; it trusts the flag, because the memory database knows no users, and the core
+  decides it from the role at the time of the call.
 - **A group's private scope is keyed by channel instance and conversation**
   (`MemoryOwner::Group { instance, conversation }`), taken from the session, not from whoever
   speaks: every participant shares it, and none of their own memories is in it. The conversation id

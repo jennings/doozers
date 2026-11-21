@@ -426,15 +426,15 @@ timeout, `/stop`, or denial by a new message, PLAN section 6.4). `ApprovalOutcom
 ## Blobs
 
 `GET /blobs/<sha256>` (PLAN section 9, 1.7's contract): the id must be 64 lowercase hex digits; the
-user must be allowed to see blobs (v1: the owner, who owns every blob; per-blob checks come with
-multi-user support); then the blob is streamed from the blob store (hash verified at the end; a
-mismatch aborts the response). Headers: the stored media type (or `application/octet-stream` if it
-isn't a valid header value), `Content-Length`, `Content-Security-Policy: sandbox` (next to the base
-policy), `nosniff` (from the security headers), `Content-Disposition: inline` for raster images
-(PNG, JPEG, GIF, WebP, AVIF, the set the renderer keeps) and `attachment; filename*=UTF-8''<name>`
-for anything else, and `Cache-Control: private, max-age=31536000, immutable` (the URL is the content
-hash). An HTML or SVG blob therefore downloads, and even opened directly it runs in a sandboxed
-opaque origin.
+user must be allowed to see blobs (admins only for now, since no per-blob check says whose a blob
+is; scoping blobs to their users comes with the per-user audit, #146); then the blob is streamed
+from the blob store (hash verified at the end; a mismatch aborts the response). Headers: the stored
+media type (or `application/octet-stream` if it isn't a valid header value), `Content-Length`,
+`Content-Security-Policy: sandbox` (next to the base policy), `nosniff` (from the security headers),
+`Content-Disposition: inline` for raster images (PNG, JPEG, GIF, WebP, AVIF, the set the renderer
+keeps) and `attachment; filename*=UTF-8''<name>` for anything else, and
+`Cache-Control: private, max-age=31536000, immutable` (the URL is the content hash). An HTML or SVG
+blob therefore downloads, and even opened directly it runs in a sandboxed opaque origin.
 
 ## Jobs page
 
@@ -445,10 +445,11 @@ that schedule, edit, disable, re-enable, and delete the user's runtime jobs. Con
 but change only in `agent.toml` ([Scheduler](scheduler.md)).
 
 - **Whose jobs**: the runtime jobs the user created (`Store::jobs(None, Some(user))`, every agent),
-  and for the owner every agent's config jobs, which deliver to the owner. Both become a `JobDef`
-  (`from_config`, `from_runtime`), so the page reads them the way the scheduler does. A stored spec
-  `from_runtime` refuses, and a runtime job of an agent that isn't configured, show a "Doesn't run"
-  note and no next run.
+  and for the user `owner` every agent's config jobs, which run as that user and deliver to them
+  (their data, not a privilege of any admin, until runtime jobs replace them). Both become a
+  `JobDef` (`from_config`, `from_runtime`), so the page reads them the way the scheduler does. A
+  stored spec `from_runtime` refuses, and a runtime job of an agent that isn't configured, show a
+  "Doesn't run" note and no next run.
 - **Times**: in the zone the job runs in (`message_timezone`), formatted like the `schedule` tool's
   `list` (`core_tools::schedule::show_time`; prompts are cut with its `short`). The next run is
   `next_run`: a one-shot job's time (it's in the table until it has run, so it's shown even once it
@@ -490,8 +491,10 @@ out of the service, and these routes are guarded by the web login instead. Tests
 implementation of the trait.
 
 - Who: the routes sit behind the same authentication middleware as the chat pages, so no login is
-  the 401 login page; then the `WebUser` must be the owner (`identity::owner()`), else a 403 page.
-  v1 has only the owner; the `admin` role (PLAN section 3.1) comes with multi-user support.
+  the 401 login page; then the `WebUser` must be an admin (`may_administer`: `WebUser::role` is
+  `admin`), else a 403 page. `authenticate` sets the role from the stored users for each request (a
+  cookie or proxy login), and only an active user is authenticated, so an admin who is demoted has a
+  member's pages on the next request and one who is disabled is signed out. All admins are equal.
 - `GET /admin` calls `Status`: version, start time, the host's sandbox, the configuration error
   (always unset in v1), every configured channel with its runtime and last status (and when it
   arrived), and a table of the plugins (instance, kind, one-word state, and for a toolset the number
@@ -503,7 +506,7 @@ implementation of the trait.
   plugins and toolsets alike, since `serve` merges both hosts into one `PluginControl`. A failed
   toolset's state says only a restart retries it (a failed channel plugin's also names a changed
   binary).
-- `POST /admin/plugins/<kind>/<instance>/restart` checks the owner, then CSRF (`check_csrf`: the
+- `POST /admin/plugins/<kind>/<instance>/restart` checks the role, then CSRF (`check_csrf`: the
   `csrf` field or the `X-CSRF-Token` header), then calls `RestartPlugin` with the kind (`channel`,
   `toolset`, or `provider`; any other is a 404) and the instance, and answers 303 to
   `/admin/plugins`. Each plugin's form names its own kind. Errors show the service's message:
@@ -539,7 +542,7 @@ aren't part of `Status`, and remote URLs can't carry credentials (config validat
 In `agents.rs`: `web.install_agents(builder, Arc<agents::AgentManager>)`, which `serve` calls after
 `install_admin` with a manager over the runtime's registry (so the chat list, reading the same
 `LiveConfig`, offers a new agent at once). Like the admin pages: the same authentication middleware,
-`may_administer` (the owner only; a guest gets 403, no login 401) on every route including the POST
+`may_administer` (admins only; a member gets 403, no login 401) on every route including the POST
 (except the memory page's, see [Memory page](#memory-page)), `no-store` on every answer, and
 `check_csrf` on the POST. Unlike them, they call the core directly (`doozers_core::agents`) rather
 than the admin service: there are no agent RPCs yet (PLAN section 8.7).
@@ -562,8 +565,8 @@ than the admin service: there are no agent RPCs yet (PLAN section 8.7).
   `FileKind` (`Config`, `Soul`, `JobPrompt` from the agent's `prompt_file`s, `Skill`, `Other`)
   that orders and labels it.
 - Who sees which file is one hook, `FileKind::visible_to(viewer)`, applied before a file is read or
-  counted. It allows everything now: v1's only user is the owner, the only one who can open the
-  pages. With several users it is where a user is limited to the files that are their own.
+  counted. It allows everything now: only admins can open the pages. It is where a user would be
+  limited to the files that are their own.
 - The form offers `AgentManager::known_models()` as a `<datalist>`: every registered provider's
   `list_models()`, 5 s each, failures logged at `debug` with secrets scrubbed; any
   `<provider>/<model>` can still be typed. Lists are split at commas and whitespace
@@ -780,16 +783,16 @@ reload stays deferred (D28).
 In `memory.rs`, routed by `install_agents` (its `AgentPages` state, `agents.rs`) under the agent
 pages' middleware (authentication, `no-store`). Unlike the other agent pages it is **not**
 `may_administer`-gated: it shows each signed-in user what they could ask the agent to recall anyway.
-Every web login is the owner in v1 (`WebUser::user`), so the owner is what you meet in practice; the
-handlers don't assume it, and a test signs in as another user.
+Any signed-in user, member or admin, uses it; the handlers read `WebUser::user` and `WebUser::role`,
+and tests sign in as a member and as a second admin.
 
 - **The viewer** is the store's `MemoryViewer`, built by `user_viewer(&WebUser)`:
-  `MemoryViewer::new(MemoryOwner::User(user.user), user.user == identity::owner())`, the same rule
-  as `memory::viewer` for a tool call: own private memories plus shared ones, writing shared ones
-  only for the owner. The store enforces everything (visibility, the shared-write rule, the
-  1,000-character limit, the core cap); the forms only leave out what it would refuse (no *shared*
-  box for a non-owner, no edit or forget buttons on a shared memory they can't write), and a crafted
-  post gets the store's refusal. The cap is the agent's `memory_cap`.
+  `MemoryViewer::new(MemoryOwner::User(user.user), may_administer(user))`, the same rule as
+  `memory::viewer` for a tool call: own private memories plus shared ones, writing shared ones only
+  for admins. The store enforces everything (visibility, the shared-write rule, the 1,000-character
+  limit, the core cap); the forms only leave out what it would refuse (no *shared* box for a member,
+  no edit or forget buttons on a shared memory they can't write), and a crafted post gets the
+  store's refusal. The cap is the agent's `memory_cap`.
 - **The store** comes from `AgentManager::memory_dbs().get(&agent_id)` for each request and is
   dropped with it ([Removing](#removing) needs no handle left open). An agent that isn't configured,
   or whose id isn't a valid name, is a 404 before anything is opened, so such a request creates no
@@ -801,18 +804,18 @@ handlers don't assume it, and a test signs in as another user.
   `memory_recall`: ranked by bm25, words quoted and OR-ed so FTS syntax in the box is text, English
   stemming. Above them the page shows the usage of each core scope (`memory::usage_header` with
   `memory_cap`, from `MemoryStore::core_memories`: the shared scope and the user's own).
-- **Group sections** are for the owner only (`may_administer`). `MemoryStore::group_owners()` lists
-  the groups that own private memories (at most `MAX_GROUPS`, 20, are shown, and the page says if
-  there are more); each gets a section from `list(group viewer, GROUP_FETCH)` filtered to the
-  group's own private memories (the store also returns the shared ones to a group viewer, which the
-  owner's own list already shows), under
-  `MemoryViewer::new(MemoryOwner::Group { instance, conversation }, true)`: the owner's right to
+- **Group sections** are for admins only (`may_administer`). `MemoryStore::group_owners()` lists the
+  groups that own private memories (at most `MAX_GROUPS`, 20, are shown, and the page says if there
+  are more); each gets a section from `list(group viewer, GROUP_FETCH)` filtered to the group's own
+  private memories (the store also returns the shared ones to a group viewer, which the admin's own
+  list already shows), under
+  `MemoryViewer::new(MemoryOwner::Group { instance, conversation }, true)`: an admin's right to
   write shared memories. Every form in a group section carries `group_instance` and
   `group_conversation` hidden fields; `MemoryForm::viewer` builds the group viewer from them only
-  after `may_administer` (a non-owner gets 403 for any group field, existing group or not, so group
-  ids can't be probed) and a well-formed group (400 otherwise, and for a half-named one). Both
-  fields empty means the user's own scope. A memory is therefore reachable only through its own
-  group: through the owner's scope or another group it is `UnknownMemory`, a 404.
+  after `may_administer` (a member gets 403 for any group field, existing group or not, so group ids
+  can't be probed) and a well-formed group (400 otherwise, and for a half-named one). Both fields
+  empty means the user's own scope. A memory is therefore reachable only through its own group:
+  through the user's own scope or another group it is `UnknownMemory`, a 404.
 - **Writes** are three plain `POST` forms (`add`, `edit`, `forget`) with the CSRF token in a hidden
   field (`check_csrf`, header or field, checked first, before the agent is looked up).
   `source_session` is `None` for a memory made here. The text's CRLF becomes LF. An edit always
@@ -1031,8 +1034,8 @@ answer is `no-store`.
 In `ssh_keys.rs`: `web.install_ssh_keys(builder, ssh_keys)`, which `serve` calls with
 `Runtime::ssh_keys`. The pages are a thin layer over the `SshKeys` service
 ([SSH keys](ssh.md#permissions)). **SSH keys** is for every logged-in user, who sees and changes
-only their own keys, and the admin page is for the owner. Every answer is `no-store`, every `POST`
-is `check_csrf`-checked, and every form works without JavaScript.
+only their own keys, and the admin page is for admins. Every answer is `no-store`, every `POST` is
+`check_csrf`-checked, and every form works without JavaScript.
 
 | Route                                | Does                                                              |
 | ------------------------------------ | ----------------------------------------------------------------- |
@@ -1063,17 +1066,17 @@ is `check_csrf`-checked, and every form works without JavaScript.
   keeps the label and type that were typed, never the key text or the passphrase. A key id that
   isn't the user's, doesn't exist, or isn't a number is a 404 "No such SSH key" on every route, so
   an id of someone else's key reveals nothing. A user id that can't name a secret is a 409 page, and
-  anything else is a logged 500. The owner's admin routes answer 403 to anyone else and 404 to an
+  anything else is a logged 500. The admin routes answer 403 to anyone but an admin and 404 to an
   unknown id.
 
 ## Known SSH hosts page
 
 In `ssh_hosts.rs`: `web.install_ssh_hosts(builder, known_hosts)`, which `serve` calls with
 `Workspaces::known_hosts()`. The page is a thin layer over the `KnownHosts` service
-([Known hosts](ssh.md#known-hosts)) and is for the owner only: every route answers 403 to anyone
-else, and the sidebar's **Known SSH hosts** link, under **Admin** after **SSH keys**, is shown to
-the owner only. Every answer is `no-store`, every `POST` is `check_csrf`-checked, and every form
-works without JavaScript.
+([Known hosts](ssh.md#known-hosts)) and is for admins only: every route answers 403 to anyone else,
+and the sidebar's **Known SSH hosts** link, under **Admin** after **SSH keys**, is shown to admins
+only. Every answer is `no-store`, every `POST` is `check_csrf`-checked, and every form works without
+JavaScript.
 
 - **The list.** `KnownHosts::all` is ordered by environment, so the page makes one section for each
   environment that has a key, each with a table of its hosts. A host is written as `ssh` and
@@ -1108,8 +1111,8 @@ and are standalone cards.
 `app.html` reads one field, `shell` (`shell::Shell`), that every page's struct has.
 `Shell::new(user, nav)` builds it from the `WebUser` and the sidebar link the page belongs to
 (`shell::Nav`): the groups of links with that one marked `aria-current="page"`, the Admin group only
-when `may_administer`, the user's id and its initial for the footer (always `owner` in v1), and the
-CSRF token of the logout form for a cookie login.
+when `may_administer`, the user's id and its initial for the footer, and the CSRF token of the
+logout form for a cookie login.
 
 The fragments `message.html`, `tool_call.html`, `approval.html`, `compose.html`, and
 `attachments.html` are rendered by `render.rs`. Nothing is inline: no scripts, styles, or `hx-on`
@@ -1146,17 +1149,17 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   workspace with `chat_deleted`, then 303s to the list it was in; a busy chat (the activity, or an
   unacked post) isn't deleted; every action needs a login and the CSRF token; a chat with nothing
   stored has no buttons and both posts are 404.
-- Jobs page (`tests/jobs.rs`): one list across agents, soonest first, with config jobs for the owner
-  only, a "Doesn't run" note for a job of an unconfigured agent, and no other user's jobs. The form
-  stores the spec the `schedule` tool would and notifies the scheduler; it refuses a blank prompt, a
-  bad cron pattern, a past time, an agent the user may not use, a missing CSRF token, and a job past
-  the cap, keeping what was typed. Edit, disable, enable, and delete change only the user's own jobs
-  (404 for another's), an edit keeps `disabled` and `conversation`, and a passed one-shot can't be
-  enabled. `jobs.rs` unit tests cover the next run inside active hours.
+- Jobs page (`tests/jobs.rs`): one list across agents, soonest first, with config jobs for the user
+  `owner` only, a "Doesn't run" note for a job of an unconfigured agent, and no other user's jobs.
+  The form stores the spec the `schedule` tool would and notifies the scheduler; it refuses a blank
+  prompt, a bad cron pattern, a past time, an agent the user may not use, a missing CSRF token, and
+  a job past the cap, keeping what was typed. Edit, disable, enable, and delete change only the
+  user's own jobs (404 for another's), an edit keeps `disabled` and `conversation`, and a passed
+  one-shot can't be enabled. `jobs.rs` unit tests cover the next run inside active hours.
 - History: the time prefix is cut from user messages and chat titles; a post shows once on reload
   while unacked, queued, started, and stored (`render::waiting` unit tests cover replayed and
   already-stored posts).
-- Blobs: media type, `nosniff`, `sandbox`, inline vs. attachment, 404s, non-owner refused.
+- Blobs: media type, `nosniff`, `sandbox`, inline vs. attachment, 404s, a member refused.
 - End to end: a real `Sessions` with the web channel attached and a fake turn runner that stores the
   messages and replies through `Reply::send`: a post becomes a turn, the reply reaches the open
   page, the events are acked, and a reload shows both from the transcript.
@@ -1174,19 +1177,23 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   needs the exact secret; binding (socket mode 0600, `InUse`, stale socket replaced, non-socket left
   alone). `crates/doozers/tests/serve.rs` runs the daemon with a proxy socket and checks it over
   real connections, and that the socket is gone after exit.
-- Admin pages (`tests/admin.rs`, over a fake admin service): anonymous requests get 401 and a
-  non-owner 403 on every admin route, with nothing restarted; the status page shows the fake state
-  with plugin strings escaped and no reload; a `NeedsAuth` QR channel gets an `<svg>` (a new
-  payload, a new code), the refresh, and never the payload text; pair codes and URLs are escaped,
-  and a `javascript:` URL isn't a link; the plugins page shows details and a restart form only for
-  supervised plugins, including a running and a failed toolset (state, tool count, and error); the
-  status summary has the tool count; restarting needs the CSRF token (field or header), works for a
-  toolset, and shows the service's `NOT_FOUND` escaped; every admin answer, refusals and redirects
-  included, is `no-store`. `qr.rs` checks that the SVG draws exactly the code's dark modules inside
-  the quiet zone, and that an oversized payload is an error. `crates/doozers/tests/serve.rs` checks
-  that the daemon serves `/admin` from its own admin service, behind the login.
+- Admin pages (`tests/admin.rs`, over a fake admin service): anonymous requests get 401 and a member
+  403 on every admin route, with nothing restarted; users made through `Users` (the imported owner,
+  a second admin, a member) log in with real sessions, and the role decides: both admins get every
+  page and the restart, the member none, a demotion or promotion applies to the next request of the
+  same session, a disabled admin is signed out, and the last active admin can't be demoted; the
+  status page shows the fake state with plugin strings escaped and no reload; a `NeedsAuth` QR
+  channel gets an `<svg>` (a new payload, a new code), the refresh, and never the payload text; pair
+  codes and URLs are escaped, and a `javascript:` URL isn't a link; the plugins page shows details
+  and a restart form only for supervised plugins, including a running and a failed toolset (state,
+  tool count, and error); the status summary has the tool count; restarting needs the CSRF token
+  (field or header), works for a toolset, and shows the service's `NOT_FOUND` escaped; every admin
+  answer, refusals and redirects included, is `no-store`. `qr.rs` checks that the SVG draws exactly
+  the code's dark modules inside the quiet zone, and that an oversized payload is an error.
+  `crates/doozers/tests/serve.rs` checks that the daemon serves `/admin` from its own admin service,
+  behind the login.
 - Route pages (`tests/routes.rs`, over the test configuration): anonymous requests get 401 and a
-  non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
+  member 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
   token (a wrong or missing one is 403, the header works as well as the field); the list is in order
   with escaped values, the agent links, no Up on the first route and no Down on the last, warnings
   for a route that never matches or points at a gone instance or agent, and the notice for
@@ -1197,7 +1204,7 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   (not by `GET`), and move change which route wins in the router's list; a move that would hide a
   route is refused; ids that aren't numbers or routes are 404.
 - Known SSH hosts page (`tests/ssh_hosts.rs`, over the test configuration and a real store):
-  anonymous requests get 401 and a non-owner 403 on every route including the POSTs, with nothing
+  anonymous requests get 401 and a member 403 on every route including the POSTs, with nothing
   changed; every POST needs the CSRF token (field or header); the list groups recorded and pinned
   keys by environment with host (`[host]:port` off port 22), type, fingerprint, who recorded or
   pinned the key, and last used; the empty page and the page without environments; the confirmation
@@ -1205,11 +1212,10 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   404; adding pins the key and the list says `pinned by owner`, a line with several hosts pins each,
   every refusal (hashed name, marker, wildcard, certificate key type, garbage, unknown environment)
   is a 400 with the reason, the pasted line, and nothing stored, a known key is a 409, and pasted
-  text is escaped; the sidebar entry is under **Admin**, and the shell leaves it out for a
-  non-owner.
+  text is escaped; the sidebar entry is under **Admin**, and the shell leaves it out for a member.
 - Workspaces page (`tests/workspaces.rs`, over the test configuration and the in-memory fake
   environment connected as `box`, with `far` never connecting): anonymous requests get 401 and a
-  non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
+  member 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
   token; the list shows the workspace with its live state, disk use, free space, description,
   details, whose SSH keys each workspace gets, agent and web-chat links, and the job-run and
   other-channel owners without a chat link; a failing or disconnected environment shows `unknown`
@@ -1222,7 +1228,7 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   with the environment down, answer as described above.
 - Toolset pages (`tests/toolsets.rs`, over the test configuration, a real `ToolsetManager` whose
   remote servers never answer, and the admin tests' fake service): anonymous requests get 401 and a
-  non-owner 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
+  member 403 on every route including the POSTs, with nothing changed; every POST needs the CSRF
   token (field or header); the list shows state, tool count, and error from the service, in order,
   with escaped values, and the stdio toolset of `doozers.toml` without Edit or Remove; the form has
   only the settings of a remote server; creating stores the spec, adds the toolset to the running
@@ -1242,10 +1248,9 @@ plus unit tests in `hub.rs`, `render.rs`, `pages.rs`, `auth.rs`, `config.rs`, `l
   a 404; a glob such as `box*` is a 400 with the manager's reason and the typed name, on the preview
   and on the post, and nothing changes; a stored name, a name of `doozers.toml`, and an invalid name
   come back on the form; the name is escaped; a toolset of `doozers.toml` has no Rename link and is
-  a 409; every rename route is 401 without a login and 403 for a non-owner, and the POST needs the
-  CSRF token. An agent's `agent.toml` made unreadable (skipped when running as root) fails the
-  check: the preview and the post are a 500 on the form with the step, the reason, "Nothing was
-  changed", and the typed name, and the toolset and the agent are as they were. Undoing a failed
-  step can't be provoked from the router, so a unit test in `toolsets.rs` renders the page for a
-  `Failed` error with undo errors: the list to put right by hand, escaped, and no "Nothing was
-  changed".
+  a 409; every rename route is 401 without a login and 403 for a member, and the POST needs the CSRF
+  token. An agent's `agent.toml` made unreadable (skipped when running as root) fails the check: the
+  preview and the post are a 500 on the form with the step, the reason, "Nothing was changed", and
+  the typed name, and the toolset and the agent are as they were. Undoing a failed step can't be
+  provoked from the router, so a unit test in `toolsets.rs` renders the page for a `Failed` error
+  with undo errors: the list to put right by hand, escaped, and no "Nothing was changed".

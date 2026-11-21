@@ -30,7 +30,6 @@ use super::auth::{
 use super::pages::{WebApp, error_page, internal_error, no_store};
 use super::{COMPONENT, WebChannel, links, random_hex};
 use crate::http;
-use crate::users::User;
 
 /// How often expired web sessions are deleted.
 pub const SESSION_EXPIRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -99,6 +98,7 @@ pub(super) async fn authenticate(
         }
         request.extensions_mut().insert(WebUser {
             user: known.id.clone(),
+            role: known.role,
             csrf: proxy_csrf(&channel.proxy_key, &sender),
             sender,
             login: Login::Proxy,
@@ -135,13 +135,14 @@ impl WebChannel {
     /// `web:<user>` is no longer one of their identities (then the session no longer logs anyone
     /// in).
     fn cookie_user(&self, user: &UserId, token: &str) -> Option<WebUser> {
-        if !self.users().get().user(user).is_some_and(User::is_active)
-            || !self.is_web_identity(user)
-        {
+        let directory = self.users().get();
+        let known = directory.user(user).filter(|known| known.is_active())?;
+        if !self.is_web_identity(user) {
             return None;
         }
         Some(WebUser {
             user: user.clone(),
+            role: known.role,
             sender: NativeId::new(user.as_str()).ok()?,
             csrf: cookie_csrf(token),
             login: Login::Cookie(token.to_owned()),

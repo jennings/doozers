@@ -132,7 +132,7 @@ The buttons send [the same replies](commands.md) you could type, and typing them
 ## Scheduled jobs
 
 **Scheduled jobs** in the sidebar shows your jobs with every agent in one table. It lists the jobs
-you scheduled here and the ones an agent scheduled when you asked it. The owner also sees the
+you scheduled here and the ones an agent scheduled when you asked it. The user `owner` also sees the
 [`[[jobs]]`](configuration.md#jobs) of every agent, marked `agent.toml`.
 
 Each row shows the agent, the job, its schedule, and its next and last run, soonest next run first.
@@ -172,7 +172,10 @@ The `[[jobs]]` from `agent.toml` can't be changed here. Edit `agent.toml` to cha
 
 ## Admin pages
 
-The **Admin** group in the sidebar opens the admin pages. Only the owner sees it and can open them.
+The **Admin** group in the sidebar opens the admin pages. Only admins see it and can open them. A
+user is an admin or a member. All admins are equal. The user imported from
+[`[owner]`](configuration.md#owner) and the first user `doozers admin login-link` creates are
+admins.
 
 `/admin` shows what [`doozers status`](cli.md) shows, including each channel's last status.
 
@@ -296,13 +299,13 @@ Doozers refuses to remove an agent in two cases:
 [How memory works](skills-and-memory.md#memory) is explained on its own page.
 
 You see your own private memories and the shared ones, newest change first. Other users' private
-memories are never shown, not even to the owner. The page lists the newest 200, and search finds the
+memories are never shown, not even to an admin. The page lists the newest 200, and search finds the
 rest. Search works like the agent's `memory_recall` tool.
 
 - **Add** a memory with its text. Tick **Core** to load it into every prompt that can see it. Other
   memories are only found by search.
-- **Shared** makes a memory visible to every user and group of the agent. Only the owner sees this
-  box, and only the owner can change or forget a shared memory.
+- **Shared** makes a memory visible to every user and group of the agent. Only an admin sees this
+  box, and only an admin can change or forget a shared memory.
 - **Edit** changes a memory's text and flags.
 - **Forget** deletes a memory, without asking first.
 
@@ -316,7 +319,7 @@ refused. The page shows what you typed and what the memory says now, so you can 
 A change to a core memory reaches a running chat after it compacts, or in a new chat or job run.
 `memory_recall` finds the change at once.
 
-Below your own memories, the owner sees a section for each group conversation that has private
+Below your own memories, an admin sees a section for each group conversation that has private
 memories. Nobody else can see or change a group's memories.
 
 ## Routes
@@ -472,7 +475,7 @@ You can't rename a server that you configure in `doozers.toml` here. Stop Doozer
 ## SSH keys
 
 **SSH keys** in the sidebar lists your own SSH keys, with the forms to generate or upload one, a
-button to copy each public key, and **Rename** and **Delete**. The owner also has **SSH keys** under
+button to copy each public key, and **Rename** and **Delete**. An admin also has **SSH keys** under
 **Admin**, which lists every user's keys. [SSH keys](ssh.md) covers the page and how to add a public
 key to GitHub.
 
@@ -482,12 +485,12 @@ key to GitHub.
 each environment, with each key's type and fingerprint, when and by whom it was first recorded, and
 when it was last used. **Delete** forgets a key after a confirmation, and **Add** trusts a key you
 paste before any workspace connects. [SSH keys](ssh.md#known-ssh-hosts) covers what a host's first
-connection does and when to delete or add a key. Only the owner can open the page.
+connection does and when to delete or add a key. Only an admin can open the page.
 
 ## Workspaces
 
 **Workspaces** in the sidebar lists the [workspaces](environments.md) your agents have, so you can
-see what they use and stop or delete one. Only the owner can open it.
+see what they use and stop or delete one. Only an admin can open it.
 
 Each workspace shows:
 

@@ -179,7 +179,12 @@ impl Runtime {
         );
         let routes = Arc::new(Routes::open(store.clone(), registry.live_config().clone()).await?);
         let secrets: Arc<dyn SecretProvider> = Arc::new(secrets);
-        let ssh_keys = SshKeys::new(store.clone(), secrets.clone(), clock.clone());
+        let ssh_keys = SshKeys::new(
+            store.clone(),
+            secrets.clone(),
+            clock.clone(),
+            registry.users(),
+        );
         let workspaces = Workspaces::new(
             store.clone(),
             registry.clone(),

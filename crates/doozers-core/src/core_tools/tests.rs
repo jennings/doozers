@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use doozers_store::{
     JournalMode, MemoryEdit, MemoryId, MemoryOwner, MemoryStore, MemoryViewer, Session, SessionId,
-    SessionKey, SessionKind, Store,
+    SessionKey, SessionKind, Store, UserState,
 };
 use doozers_types::{
     AgentId, Block, CallContext, ChannelConversation, ConversationId, ConversationKind,
@@ -24,7 +24,7 @@ use crate::identity::owner;
 use crate::memory_dbs::MemoryDbs;
 use crate::paths::DataRoot;
 use crate::scheduler::JobChanges;
-use crate::users::UserList;
+use crate::users::{User, UserList};
 
 const AGENT: &str = "jeeves";
 const CAP: usize = 60;
@@ -87,10 +87,15 @@ impl Setup {
         )
         .unwrap_or_else(|e| panic!("{e}"));
         let store = Store::open(root.database_file()).await.unwrap();
+        let users = UserList::owner(&["fake:owner"], Some("Europe/London"));
+        let mut everyone = users.get().users().to_vec();
+        everyone.push(User::admin("root", &[]));
+        everyone.push(User::member("ann", &[]));
+        users.set(everyone);
         Self {
             _dir: dir,
             config: LiveConfig::new(Arc::new(config)),
-            users: UserList::owner(&["fake:owner"], Some("Europe/London")),
+            users,
             store,
             memory_dbs: MemoryDbs::new(root, JournalMode::Wal),
             clock: Arc::default(),
@@ -273,6 +278,14 @@ impl Actor {
         Self {
             requester: Some(owner()),
             session: dm(),
+        }
+    }
+
+    /// The second admin `root` in their DM.
+    fn root() -> Self {
+        Self {
+            requester: Some(user("root")),
+            session: session(SessionKind::Direct, Some(user("root"))),
         }
     }
 
@@ -718,13 +731,52 @@ async fn private_memories_are_visible_only_in_their_owners_sessions() {
 }
 
 #[tokio::test]
-async fn shared_memories_are_written_only_in_owner_turns_and_config_jobs() {
+async fn a_second_admin_writes_shared_memories_until_demoted_or_disabled() {
+    let s = Setup::new().await;
+    let root = Actor::root();
+    let rule = s.remember(&root, "Shoes off", false, true).await;
+    let edited = s
+        .edit(json!({"id": rule, "content": "Shoes off, please"}), &root)
+        .await;
+    ok(&edited);
+    // The owner, another admin, sees and may change it.
+    ok(&s
+        .edit(json!({"id": rule, "core": true}), &Actor::owner())
+        .await);
+
+    // The next call after a demotion or a disabling is refused, as the users stand then.
+    for (id, change) in [
+        ("demoted", doozers_store::Role::Member),
+        ("disabled", doozers_store::Role::Admin),
+    ] {
+        let mut changed = User::admin("root", &[]);
+        changed.role = change;
+        if id == "disabled" {
+            changed.state = UserState::Disabled;
+        }
+        let mut everyone = s.users.get().users().to_vec();
+        everyone.retain(|u| u.id != user("root"));
+        everyone.push(changed);
+        s.users.set(everyone);
+        let output = s.forget(json!({"id": rule}), &root).await;
+        assert!(
+            err(&output)
+                .contains("only in admins' turns, their scheduled jobs, and jobs from agent.toml"),
+            "{id}: {}",
+            text(&output)
+        );
+    }
+}
+
+#[tokio::test]
+async fn shared_memories_are_written_only_in_admin_turns_and_config_jobs() {
     let s = Setup::new().await;
     let me = Actor::owner();
     let ann = Actor::ann();
     let forbidden = |output: &ToolOutput| {
         assert!(
-            err(output).contains("only in the owner's turns and in config jobs"),
+            err(output)
+                .contains("only in admins' turns, their scheduled jobs, and jobs from agent.toml"),
             "{}",
             text(output)
         );

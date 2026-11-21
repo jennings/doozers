@@ -118,8 +118,9 @@ pub enum MemoryScope {
 pub struct MemoryViewer {
     /// The session's owner scope: the private memories it sees and writes.
     pub owner: MemoryOwner,
-    /// Whether the session's requester may write shared memories: true for the agent owner's
-    /// turns and for config jobs.
+    /// Whether the session's requester may write shared memories: true for admins' turns and for
+    /// config jobs. The store trusts the flag and checks it inside every write transaction that
+    /// needs it; the core decides it from the requester's current role.
     pub can_write_shared: bool,
 }
 

@@ -1,7 +1,7 @@
 //! The workspaces page: every tracked environment workspace with what its plugin says now, and
 //! the buttons that stop and delete a workspace. Next to the admin pages (`admin.rs`), the agent
 //! pages (`agents.rs`), the route pages (`routes.rs`), and the toolset pages (`toolsets.rs`), and
-//! like them: behind the login, the owner only, every answer `no-store`, every change a
+//! like them: behind the login, admins only, every answer `no-store`, every change a
 //! CSRF-checked form post.
 //!
 //! The data comes from [`Workspaces::overview`], which asks each plugin at the same time. What a
