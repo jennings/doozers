@@ -3,8 +3,15 @@
 //!
 //! The store keeps the rows as given and checks only what the schema can: ids, usernames, and
 //! identities are unique, and a default identity is one of the user's identities. What a username
-//! may look like, which time zones exist, and who may do what is the core's business. A user's id
-//! never changes and is never reused for another user.
+//! may look like, which time zones exist, and who may do what is the core's business. One rule
+//! about roles is the store's, because it must hold when changes race: the last active admin can't
+//! be disabled, demoted, or deleted ([`Error::LastAdmin`], checked in the transaction of the
+//! change).
+//!
+//! A user's id never changes. The store takes the id the caller gives and forgets it when
+//! [`Store::user_delete`] deletes the user, so it can't tell a reused id from a new one: the
+//! caller (the core) must never give a deleted user's id to another user, which random ids
+//! guarantee, and must delete everything keyed by the id when it deletes a user.
 //!
 //! An identity is stored and compared in its [canonical form](canonical_identity), so one sender
 //! can't belong to two users by differing in the case of an email domain.
@@ -337,6 +344,32 @@ fn insert_user(
     Ok(())
 }
 
+/// Fails with [`Error::LastAdmin`] if `id` is an active admin and no other user is: the change
+/// the caller is about to make (removing, disabling, or demoting `id`) would leave none. Called
+/// inside the write transaction of that change, so another change can't slip between the check
+/// and the write.
+fn keep_an_admin(conn: &Connection, id: &UserId) -> Result<()> {
+    let active_admin = "role = 'admin' AND state = 'active'";
+    let is_one: bool = conn
+        .prepare_cached(&format!(
+            "SELECT EXISTS (SELECT 1 FROM users WHERE id = ?1 AND {active_admin})"
+        ))?
+        .query_row([id.as_str()], |row| row.get(0))?;
+    if !is_one {
+        return Ok(());
+    }
+    let others: bool = conn
+        .prepare_cached(&format!(
+            "SELECT EXISTS (SELECT 1 FROM users WHERE id <> ?1 AND {active_admin})"
+        ))?
+        .query_row([id.as_str()], |row| row.get(0))?;
+    if others {
+        Ok(())
+    } else {
+        Err(Error::LastAdmin)
+    }
+}
+
 fn touch(conn: &Connection, user: &UserId, now: Timestamp) -> Result<()> {
     conn.prepare_cached("UPDATE users SET updated_at = ?2 WHERE id = ?1")?
         .execute(params![user.as_str(), to_millis(now)])?;
@@ -378,7 +411,8 @@ impl Store {
     ///
     /// # Errors
     ///
-    /// [`Error::NoSuchUser`].
+    /// [`Error::NoSuchUser`]; [`Error::LastAdmin`] if the user is the last active admin and
+    /// `state` is [`Disabled`](UserState::Disabled).
     pub async fn user_set_state(
         &self,
         id: &UserId,
@@ -387,6 +421,9 @@ impl Store {
     ) -> Result<StoredUser> {
         let id = id.clone();
         self.write(move |conn| {
+            if state == UserState::Disabled {
+                keep_an_admin(conn, &id)?;
+            }
             let changed = conn
                 .prepare_cached("UPDATE users SET state = ?2, updated_at = ?3 WHERE id = ?1")?
                 .execute(params![id.as_str(), state.as_str(), to_millis(now)])?;
@@ -394,6 +431,53 @@ impl Store {
                 return Err(Error::NoSuchUser);
             }
             find(conn, &id)?.ok_or_else(|| Error::corrupt("the user just updated is missing"))
+        })
+        .await
+    }
+
+    /// Sets the role of user `id` and returns the user.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoSuchUser`]; [`Error::LastAdmin`] if the user is the last active admin and
+    /// `role` is [`Member`](Role::Member).
+    pub async fn user_set_role(
+        &self,
+        id: &UserId,
+        role: Role,
+        now: Timestamp,
+    ) -> Result<StoredUser> {
+        let id = id.clone();
+        self.write(move |conn| {
+            if role == Role::Member {
+                keep_an_admin(conn, &id)?;
+            }
+            let changed = conn
+                .prepare_cached("UPDATE users SET role = ?2, updated_at = ?3 WHERE id = ?1")?
+                .execute(params![id.as_str(), role.as_str(), to_millis(now)])?;
+            if changed == 0 {
+                return Err(Error::NoSuchUser);
+            }
+            find(conn, &id)?.ok_or_else(|| Error::corrupt("the user just updated is missing"))
+        })
+        .await
+    }
+
+    /// Deletes the account of user `id` and its identities, and returns the user as it was. It
+    /// deletes nothing else: what the user owns (sessions, memories, secrets) is the caller's to
+    /// delete.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoSuchUser`]; [`Error::LastAdmin`] if the user is the last active admin.
+    pub async fn user_delete(&self, id: &UserId) -> Result<StoredUser> {
+        let id = id.clone();
+        self.write(move |conn| {
+            let user = find(conn, &id)?.ok_or(Error::NoSuchUser)?;
+            keep_an_admin(conn, &id)?;
+            conn.prepare_cached("DELETE FROM users WHERE id = ?1")?
+                .execute([id.as_str()])?;
+            Ok(user)
         })
         .await
     }
@@ -697,6 +781,82 @@ mod tests {
         let missing = store
             .user_set_state(&id("nobody"), UserState::Disabled, at(7))
             .await;
+        assert!(matches!(missing, Err(Error::NoSuchUser)), "{missing:?}");
+    }
+
+    #[tokio::test]
+    async fn the_last_active_admin_can_be_neither_removed_nor_disabled_nor_demoted() {
+        let (_dir, store) = store().await;
+        store
+            .user_create(
+                user("a1", "ann", Role::Admin),
+                vec![identity("web", "a1")],
+                at(0),
+            )
+            .await
+            .unwrap();
+        store
+            .user_create(user("m1", "mia", Role::Member), vec![], at(0))
+            .await
+            .unwrap();
+        let refused = |result: Result<StoredUser>| {
+            assert!(matches!(result, Err(Error::LastAdmin)), "{result:?}");
+        };
+        refused(
+            store
+                .user_set_state(&id("a1"), UserState::Disabled, at(1))
+                .await,
+        );
+        refused(store.user_set_role(&id("a1"), Role::Member, at(1)).await);
+        refused(store.user_delete(&id("a1")).await);
+        let ann = store.user(&id("a1")).await.unwrap().unwrap();
+        assert_eq!(
+            (ann.role, ann.state, ann.updated_at, ann.identities.len()),
+            (Role::Admin, UserState::Active, at(0), 1),
+            "a refused change leaves the user as it was"
+        );
+
+        // A member is no admin to keep, and making one gives the first a way out.
+        let mia = store
+            .user_set_role(&id("m1"), Role::Admin, at(2))
+            .await
+            .unwrap();
+        assert_eq!((mia.role, mia.updated_at), (Role::Admin, at(2)));
+        let ann = store
+            .user_set_role(&id("a1"), Role::Member, at(3))
+            .await
+            .unwrap();
+        assert_eq!(ann.role, Role::Member);
+        // Now mia is the last one.
+        refused(store.user_set_role(&id("m1"), Role::Member, at(4)).await);
+        refused(store.user_delete(&id("m1")).await);
+        // A disabled admin isn't an active one: ann, promoted again but disabled, doesn't count.
+        store
+            .user_set_role(&id("a1"), Role::Admin, at(5))
+            .await
+            .unwrap();
+        store
+            .user_set_state(&id("a1"), UserState::Disabled, at(6))
+            .await
+            .unwrap();
+        refused(
+            store
+                .user_set_state(&id("m1"), UserState::Disabled, at(7))
+                .await,
+        );
+        refused(store.user_delete(&id("m1")).await);
+        // Re-enabling is never refused; then either admin can go while the other stays.
+        store
+            .user_set_state(&id("a1"), UserState::Active, at(8))
+            .await
+            .unwrap();
+        let removed = store.user_delete(&id("a1")).await.unwrap();
+        assert_eq!(removed.identities.len(), 1);
+        assert_eq!(store.users().await.unwrap().len(), 1);
+        // Gone is gone.
+        let missing = store.user_delete(&id("a1")).await;
+        assert!(matches!(missing, Err(Error::NoSuchUser)), "{missing:?}");
+        let missing = store.user_set_role(&id("a1"), Role::Admin, at(9)).await;
         assert!(matches!(missing, Err(Error::NoSuchUser)), "{missing:?}");
     }
 

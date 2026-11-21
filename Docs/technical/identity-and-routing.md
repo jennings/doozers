@@ -89,10 +89,16 @@ reads:
   spans read, validate, write, and replace, so concurrent changes serialize and the snapshot always
   equals what is stored. Only this process changes the tables.
 - **Operations.** `create(user, identities, now)`, `set_state(id, state, now)`,
+  `set_role(id, role, now)`, `remove(id)`,
   `add_identity(id, namespace, native_id, verification, now)`, `remove_identity(id, identity, now)`,
   and `login_user(requested, now)`. A username is 1 to 64 letters, digits, `.`, `_`, and `-`; the
-  store compares it ignoring ASCII case. An identity belongs to one user (`IdentityTaken`), and
-  `set_state` refuses to disable the last active admin (`LastAdmin`).
+  store compares it ignoring ASCII case. An identity belongs to one user (`IdentityTaken`).
+- **The last active admin.** `set_state` to `disabled`, `set_role` to `member`, and `remove` refuse
+  (`LastAdmin`) when the user is the only active admin; a disabled admin doesn't count as one to
+  keep. The store makes the check inside the write transaction of the change (`user_set_state`,
+  `user_set_role`, `user_delete`), so the check and the change can't be split by another one, and
+  the users lock above serializes the callers besides. `remove` deletes the account and its
+  identities and nothing else; the operation that forgets a user's data is built on it.
 - **Import.** `doozers.toml`'s `[owner]` stays in `Config::legacy_owner`, as written. `Users::open`
   runs at `Runtime::start`: if the database hasn't recorded the import (`users_imported`), it
   validates `[owner]` as `doozers.toml` always did (at least one identity, no identity written
