@@ -9,7 +9,12 @@ use doozers_store::{ConversationAccess, InboxState, NewInboxEvent};
 
 use super::admin::{session_of, stored_users};
 use super::chat_actions::Chats;
+use super::jobs::create as create_job;
+use super::memory::{MEMORY, owner_viewer};
+use super::ssh_keys::Ssh;
+use super::toolsets::spec as toolset_spec;
 use super::*;
+use crate::ssh::KeyType;
 
 /// What a user's browser sends.
 struct Browser {
@@ -558,4 +563,311 @@ async fn a_blob_is_served_only_to_users_who_own_a_message_that_refers_to_it() {
     for who in [&owner_browser, &root, &mia] {
         assert_eq!(get(who, &nobodys).await, missing);
     }
+}
+
+#[tokio::test]
+async fn another_users_jobs_are_not_found_on_every_job_route() {
+    let env = env().await;
+    stored_users(&env).await;
+    let owner_browser = Browser::log_in(&env, "owner").await;
+    let mia = Browser::log_in(&env, "mia").await;
+    let theirs = create_job(
+        &env,
+        "bunter",
+        "owner",
+        "0 9 * * *",
+        "Owner's tax reminder.",
+    )
+    .await;
+    let spec_of = async || env.store.job(theirs).await.unwrap().map(|job| job.spec);
+    let before = spec_of().await.unwrap();
+
+    // Mia names the owner's job on every route that takes a job id.
+    let change = "agent=bunter&repeat=cron&cron=0+1+*+*+*&prompt=Mia+now.&session=dm";
+    for (method, action, fields) in [
+        (Method::GET, "edit", ""),
+        (Method::POST, "edit", change),
+        (Method::POST, "disable", ""),
+        (Method::POST, "enable", ""),
+        (Method::POST, "delete", ""),
+    ] {
+        let path = format!("/jobs/{theirs}/{action}");
+        let response = mia
+            .send(env.main_app(), method.clone(), &path, fields)
+            .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        assert!(!body_text(response).await.contains("tax reminder"));
+    }
+    assert_eq!(spec_of().await, Some(before));
+
+    // Her page has neither the owner's job nor the owner's config jobs.
+    let page = body_text(mia.send(env.main_app(), Method::GET, "/jobs", "").await).await;
+    assert!(!page.contains("tax reminder"), "{page}");
+    assert!(!page.contains("morning"), "{page}");
+
+    // She schedules her own, for any agent, and the owner can't touch that one either.
+    let response = mia
+        .send(
+            env.main_app(),
+            Method::POST,
+            "/jobs",
+            "agent=jeeves&repeat=cron&cron=0+9+*+*+*&prompt=Water+the+plants.&session=dm",
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let hers = env
+        .store
+        .jobs(None, Some(mia_user()))
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("her job")
+        .id;
+    let page = body_text(mia.send(env.main_app(), Method::GET, "/jobs", "").await).await;
+    assert!(page.contains("Water the plants."), "{page}");
+    let page = body_text(
+        owner_browser
+            .send(env.main_app(), Method::GET, "/jobs", "")
+            .await,
+    )
+    .await;
+    assert!(!page.contains("Water the plants."), "{page}");
+    for action in ["disable", "delete"] {
+        let response = owner_browser
+            .send(
+                env.main_app(),
+                Method::POST,
+                &format!("/jobs/{hers}/{action}"),
+                "",
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{action}");
+    }
+    assert!(env.store.job(hers).await.unwrap().is_some());
+}
+
+#[tokio::test]
+async fn another_users_ssh_key_is_not_found_on_every_ssh_key_route() {
+    let ssh = Ssh::new().await;
+    let env = &ssh.env;
+    stored_users(env).await;
+    let owner_browser = Browser::log_in(env, "owner").await;
+    let mia = Browser::log_in(env, "mia").await;
+    let key = ssh
+        .keys
+        .generate(&identity::owner(), KeyType::Ed25519, Some("owner-laptop"))
+        .await
+        .unwrap();
+
+    for (method, path, fields) in [
+        (Method::GET, format!("/ssh-keys/{}/rename", key.id), ""),
+        (
+            Method::POST,
+            format!("/ssh-keys/{}/rename", key.id),
+            "label=mine",
+        ),
+        (Method::GET, format!("/ssh-keys/{}/delete", key.id), ""),
+        (Method::POST, format!("/ssh-keys/{}/delete", key.id), ""),
+    ] {
+        let response = mia
+            .send(ssh.router(None), method.clone(), &path, fields)
+            .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        assert!(!body_text(response).await.contains("owner-laptop"));
+    }
+    // The admin page and its delete are for admins, whoever's the key.
+    for (method, path) in [
+        (Method::GET, "/admin/ssh-keys".to_owned()),
+        (Method::GET, format!("/admin/ssh-keys/{}/delete", key.id)),
+        (Method::POST, format!("/admin/ssh-keys/{}/delete", key.id)),
+    ] {
+        let response = mia.send(ssh.router(None), method.clone(), &path, "").await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {path}");
+    }
+    let page = body_text(
+        mia.send(ssh.router(None), Method::GET, "/ssh-keys", "")
+            .await,
+    )
+    .await;
+    assert!(!page.contains("owner-laptop"), "{page}");
+    assert_eq!(ssh.keys.list(&identity::owner()).await.unwrap(), [key]);
+    assert!(ssh.keys.list(&mia_user()).await.unwrap().is_empty());
+    let page = body_text(
+        owner_browser
+            .send(ssh.router(None), Method::GET, "/ssh-keys", "")
+            .await,
+    )
+    .await;
+    assert!(page.contains("owner-laptop"), "{page}");
+}
+
+#[tokio::test]
+async fn another_users_memory_is_not_found_on_the_memory_page() {
+    let env = env().await;
+    stored_users(&env).await;
+    let manager = env.manager().await;
+    let mia = Browser::log_in(&env, "mia").await;
+    let private = env
+        .seed(
+            &owner_viewer(),
+            "The owner's private memory.",
+            false,
+            false,
+            "2026-03-01T00:00:00Z",
+        )
+        .await;
+    let shared = env
+        .seed(
+            &owner_viewer(),
+            "House rule.",
+            false,
+            true,
+            "2026-03-01T00:00:00Z",
+        )
+        .await;
+    let updated = private.updated_at.as_millisecond();
+
+    let page = body_text(
+        mia.send(env.agents_router(&manager, None), Method::GET, MEMORY, "")
+            .await,
+    )
+    .await;
+    assert!(!page.contains("private memory"), "{page}");
+    assert!(page.contains("House rule."), "{page}");
+
+    for (action, fields) in [
+        (
+            "edit",
+            format!("id={}&content=mine&updated={updated}", private.id),
+        ),
+        ("forget", format!("id={}", private.id)),
+    ] {
+        let response = mia
+            .send(
+                env.agents_router(&manager, None),
+                Method::POST,
+                &format!("{MEMORY}/{action}"),
+                &fields,
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{action}");
+        assert!(!body_text(response).await.contains("private memory"));
+    }
+    // A member can't write the shared ones either.
+    let updated = shared.updated_at.as_millisecond();
+    for (action, fields) in [
+        (
+            "edit",
+            format!("id={}&content=mine&updated={updated}", shared.id),
+        ),
+        ("forget", format!("id={}", shared.id)),
+    ] {
+        let response = mia
+            .send(
+                env.agents_router(&manager, None),
+                Method::POST,
+                &format!("{MEMORY}/{action}"),
+                &fields,
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{action}");
+    }
+    let store = env.memory_store().await;
+    for memory in [&private, &shared] {
+        let now = store.get(&owner_viewer(), memory.id).await.unwrap();
+        assert_eq!(now.content, memory.content);
+    }
+}
+
+#[tokio::test]
+async fn signing_out_of_a_connection_leaves_another_users_tokens() {
+    let env = env().await;
+    stored_users(&env).await;
+    let t = env.toolsets("").await;
+    t.manager
+        .add(
+            "notes",
+            &toolset_spec(
+                r#"{ "url": "http://127.0.0.1:9/mcp", "auth": { "oauth": { "client_id": "doozers" } } }"#,
+            ),
+        )
+        .await
+        .unwrap();
+    let owner_browser = Browser::log_in(&env, "owner").await;
+    let mia = Browser::log_in(&env, "mia").await;
+    let token = crate::secrets::SecretPath::new("users/owner/toolsets/notes/oauth-token").unwrap();
+    t.secrets
+        .put(&token, &crate::config::Secret::new("{}"), None)
+        .await
+        .unwrap();
+
+    // Only the owner's page says they're signed in.
+    let signed_in = r#"<span class="pill pill-ok m-aside">Signed in</span>"#;
+    let page = body_text(
+        owner_browser
+            .send(t.router(None), Method::GET, "/connections", "")
+            .await,
+    )
+    .await;
+    assert!(page.contains(signed_in), "{page}");
+    let page = body_text(
+        mia.send(t.router(None), Method::GET, "/connections", "")
+            .await,
+    )
+    .await;
+    assert!(!page.contains(signed_in), "{page}");
+
+    // Mia signing out changes nothing of the owner's. That another user can't finish the owner's
+    // sign-in, by its state, is tested against a real authorization server in
+    // `tests/toolset_oauth.rs`.
+    let response = mia
+        .send(
+            t.router(None),
+            Method::POST,
+            "/connections/notes/sign-out",
+            "",
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(t.secrets.get(&token).await.unwrap().is_some());
+}
+
+#[tokio::test]
+async fn a_member_starts_a_chat_with_any_agent_and_posts_as_themselves() {
+    let env = env().await;
+    stored_users(&env).await;
+    let mia = Browser::log_in(&env, "mia").await;
+
+    let list = body_text(mia.send(env.main_app(), Method::GET, "/", "").await).await;
+    for agent in ["jeeves", "bunter"] {
+        assert!(
+            list.contains(&format!(r#"<option value="{agent}">"#)),
+            "{list}"
+        );
+    }
+    let response = mia
+        .send(env.main_app(), Method::GET, "/chats/new?agent=bunter", "")
+        .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let chat = response.headers()[LOCATION].to_str().unwrap().to_owned();
+    let id = chat.strip_prefix("/chats/").unwrap();
+    assert!(id.starts_with("bunter."), "{chat}");
+
+    let response = mia
+        .send(
+            env.main_app(),
+            Method::POST,
+            &format!("{chat}/messages"),
+            "text=hello+bunter",
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let events = env.pending().await;
+    let [_, ChannelEvent::Message { message, .. }] = &events[..] else {
+        panic!("{events:?}");
+    };
+    assert_eq!(message.sender.as_str(), "mia");
+    assert_eq!(message.conversation.id.as_str(), id);
+    assert_eq!(message.text, "hello bunter");
 }

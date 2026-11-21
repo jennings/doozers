@@ -99,14 +99,14 @@ know is no admin. What it admits:
 | Shared-memory writes in a tool call (`memory::viewer`)   | `UserDirectory::is_admin(requester)`                      |
 | Shared-memory writes shown in the prompt (`memory::prompt_viewer`) | the same, for the session's user                |
 | Shared-memory writes, group memories, and the *shared* box on the memory page | `WebUser::role`                      |
-| The web chat's agent picker                              | `WebUser::role`, until per-user scoping (#146) opens it |
 
-What is not a role check: `GET /blobs/<sha256>` follows who owns a message that refers to the blob
-(an admin has no wider access), and every other per-user page and operation belongs to the user who
-owns the object, whatever their role ([Whose data is whose](web-channel.md#whose-data-is-whose)). A
-config job runs as the user `owner` and, with no requester, writes shared memories; the web jobs
-page shows config jobs to that user, since they are that user's data; approvals go to the turn's
-requester (the delivery user for a job), and no role changes that.
+What is not a role check: the web chat's agent picker lists every agent for every user,
+`GET /blobs/<sha256>` follows who owns a message that refers to the blob (an admin has no wider
+access), and every other per-user page and operation belongs to the user who owns the object,
+whatever their role ([Whose data is whose](web-channel.md#whose-data-is-whose)). A config job runs
+as the user `owner` and, with no requester, writes shared memories; the web jobs page shows config
+jobs to that user, since they are that user's data; approvals go to the turn's requester (the
+delivery user for a job), and no role changes that.
 
 The last active admin can't be removed, disabled, or demoted; see
 [the last active admin](#stored-users).

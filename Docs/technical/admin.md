@@ -64,6 +64,24 @@ token (after the socket answers, so it's the running core's). A missing socket, 
 
 Store failures are logged and answered with `INTERNAL`.
 
+### Users and the operator
+
+The admin socket is the operator's (mode 0600, behind the token), not a user's, so no RPC is scoped
+to a user: whoever holds the token administers every user's data, as they can read the data root.
+The multi-user audit ([Whose data is whose](web-channel.md#whose-data-is-whose)) went through each:
+
+- `ListSessions` and `ResetSession` list and end any user's sessions, by session id. The listing
+  doesn't say whose a session is yet.
+- `CreateLoginLink` makes a link that signs in as any user, and says which user in its request; an
+  empty `user` picks the only user and is refused when there are several.
+- `UsageReport` sums usage over every user: its rows have a user, and no RPC groups by it.
+- `Backup` copies every user's data.
+- The remaining RPCs (`Status`, the plugin and toolset RPCs) are about the instance, and have no
+  per-user data. Toolsets and their client secrets are global; only a user's tokens are theirs.
+
+The web admin pages call the same service for an admin only
+([Admin pages](web-channel.md#admin-pages)), so a member never reaches it.
+
 ### Toolset RPCs
 
 The five toolset RPCs call `ToolsetManager` ([Toolsets](toolsets.md#stored-toolsets)) through the

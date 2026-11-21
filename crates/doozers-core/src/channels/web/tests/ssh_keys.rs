@@ -22,9 +22,9 @@ fn fixture(name: &str) -> Vec<u8> {
     .unwrap()
 }
 
-struct Ssh {
-    env: Env,
-    keys: SshKeys,
+pub(super) struct Ssh {
+    pub(super) env: Env,
+    pub(super) keys: SshKeys,
     secrets: Arc<LocalSecrets>,
 }
 
@@ -36,7 +36,7 @@ struct Answer {
 }
 
 impl Ssh {
-    async fn new() -> Self {
+    pub(super) async fn new() -> Self {
         let env = env().await;
         let root =
             crate::paths::DataRoot::new(env._dir.path(), &env._dir.path().join("tmp")).unwrap();
@@ -59,7 +59,7 @@ impl Ssh {
         Self { env, keys, secrets }
     }
 
-    fn router(&self, user: Option<WebUser>) -> axum::Router {
+    pub(super) fn router(&self, user: Option<WebUser>) -> axum::Router {
         let app = self
             .env
             .app

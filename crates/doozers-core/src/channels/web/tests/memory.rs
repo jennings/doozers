@@ -13,7 +13,7 @@ use crate::agents::AgentManager;
 
 const XSS: &str = "<script>alert(1)</script>";
 const XSS_ESCAPED: &str = "&#60;script&#62;alert(1)&#60;/script&#62;";
-const MEMORY: &str = "/admin/agents/jeeves/memory";
+pub(super) const MEMORY: &str = "/admin/agents/jeeves/memory";
 const CAP: usize = 2200;
 
 fn jeeves() -> AgentId {
@@ -24,7 +24,7 @@ fn ts(text: &str) -> Timestamp {
     text.parse().unwrap()
 }
 
-fn owner_viewer() -> MemoryViewer {
+pub(super) fn owner_viewer() -> MemoryViewer {
     MemoryViewer::new(MemoryOwner::User(identity::owner()), true)
 }
 
@@ -127,12 +127,12 @@ fn item(html: &str, id: MemoryId) -> &str {
 }
 
 impl Env {
-    async fn memory_store(&self) -> MemoryStore {
+    pub(super) async fn memory_store(&self) -> MemoryStore {
         self.memory_dbs.get(&jeeves()).await.unwrap()
     }
 
     /// Adds a memory to the database as `viewer` at `at`.
-    async fn seed(
+    pub(super) async fn seed(
         &self,
         viewer: &MemoryViewer,
         content: &str,
