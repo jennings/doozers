@@ -10,10 +10,11 @@ use doozers_types::{AgentId, ConversationKind, ConversationRef, EventId, Inbound
 
 use crate::channels::chat_ids;
 use crate::commands::{self, CoreCommand, PendingApprovals};
-use crate::config::{InstanceName, OwnerConfig};
-use crate::identity::{self, NamespaceError, OwnerIdentities};
+use crate::config::InstanceName;
+use crate::identity::{self, NamespaceError};
 use crate::routes::RouteList;
 use crate::sessions::AgentPolicies;
+use crate::users::UserList;
 
 /// The channel instance an event came from.
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +32,7 @@ pub struct ChannelSource<'a> {
 pub struct Routed {
     /// The session key: the routed agent, the channel instance, and the conversation.
     pub session: SessionKey,
-    /// The sender, who becomes the turn's requester: always [`identity::OWNER`] in v1.
+    /// The sender, who becomes the turn's requester: the user who has the sender's identity.
     pub user: UserId,
 }
 
@@ -86,10 +87,10 @@ impl fmt::Display for DropReason {
     }
 }
 
-/// The owner's identities, the ordered routes, and the agents that exist now.
+/// The users and their identities, the ordered routes, and the agents that exist now.
 #[derive(Clone)]
 pub struct Router {
-    owner: OwnerIdentities,
+    users: UserList,
     routes: RouteList,
     agents: Arc<dyn AgentPolicies>,
 }
@@ -97,20 +98,20 @@ pub struct Router {
 impl fmt::Debug for Router {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Router")
-            .field("owner", &self.owner)
+            .field("users", &self.users)
             .field("routes", &self.routes)
             .finish_non_exhaustive()
     }
 }
 
 impl Router {
-    /// A router for `[owner]` (`Config::owner`) and `routes`, which it reads for every message, so
-    /// a change to the list applies to the next one. `agents` says which agents exist now, for web
-    /// chats started with a chosen agent (in the daemon, the running configuration, so an agent
-    /// created in the web UI is reachable at once).
-    pub fn new(owner: &OwnerConfig, routes: RouteList, agents: Arc<dyn AgentPolicies>) -> Self {
+    /// A router for `users` and `routes`, which it reads for every message, so a change to either
+    /// list applies to the next one. `agents` says which agents exist now, for web chats started
+    /// with a chosen agent (in the daemon, the running configuration, so an agent created in the
+    /// web UI is reachable at once).
+    pub fn new(users: UserList, routes: RouteList, agents: Arc<dyn AgentPolicies>) -> Self {
         Self {
-            owner: OwnerIdentities::new(owner),
+            users,
             routes,
             agents,
         }
@@ -131,7 +132,7 @@ impl Router {
     }
 
     /// Decides what to do with `message`, event `event` from `source`. Checks, in order: the
-    /// channel's identity namespace, the conversation kind, sender authentication, the owner's
+    /// channel's identity namespace, the conversation kind, sender authentication, the users'
     /// identities, then the agent: a web chat started with a chosen agent
     /// ([`chat_ids::chat_agent`]) goes to that agent if it exists, ahead of every route; any
     /// other conversation goes to its [route](Self::route). A routed message is then a core
@@ -178,9 +179,10 @@ impl Router {
         if !message.sender_authenticated {
             return Err(DropReason::Unauthenticated);
         }
-        if !self.owner.is_owner(source.identity_namespace, message) {
+        let directory = self.users.get();
+        let Some(user) = directory.resolve_sender(source.identity_namespace, message) else {
             return Err(DropReason::UnknownSender);
-        }
+        };
         let chosen = (source.component == chat_ids::COMPONENT)
             .then(|| chat_ids::chat_agent(message.conversation.id.as_str()))
             .flatten();
@@ -197,7 +199,7 @@ impl Router {
                 channel: source.instance.to_string(),
                 conversation: message.conversation.id.clone(),
             },
-            user: identity::owner(),
+            user: user.id.clone(),
         })
     }
 }
@@ -252,9 +254,9 @@ mod tests {
 
     use super::*;
     use crate::commands::{Answer, ApprovalReply, NoPendingApprovals};
-    use crate::config::Identity;
     use crate::routes::Route;
     use crate::sessions::AgentPolicy;
+    use crate::users::User;
 
     /// No agents: the routes alone decide.
     fn no_agents() -> Arc<dyn AgentPolicies> {
@@ -265,16 +267,8 @@ mod tests {
         InstanceName::new(name).unwrap()
     }
 
-    fn owner_config(identities: &[&str]) -> OwnerConfig {
-        let identities: Vec<Identity> = identities
-            .iter()
-            .map(|i| Identity::new(*i).unwrap())
-            .collect();
-        OwnerConfig {
-            default: identities[0].clone(),
-            identities,
-            timezone: None,
-        }
+    fn owner_config(identities: &[&str]) -> UserList {
+        UserList::owner(identities, None)
     }
 
     fn route(
@@ -292,12 +286,8 @@ mod tests {
     }
 
     /// A router over the fixed `routes`.
-    fn with_routes(
-        owner: &OwnerConfig,
-        routes: &[Route],
-        agents: Arc<dyn AgentPolicies>,
-    ) -> Router {
-        Router::new(owner, RouteList::new(routes.to_vec()), agents)
+    fn with_routes(users: UserList, routes: &[Route], agents: Arc<dyn AgentPolicies>) -> Router {
+        Router::new(users, RouteList::new(routes.to_vec()), agents)
     }
 
     fn message(sender: &str, text: &str) -> InboundMessage {
@@ -322,7 +312,7 @@ mod tests {
     /// The owner on WhatsApp and IRC, one route for `#giles` on IRC, and a catch-all.
     fn router() -> Router {
         with_routes(
-            &owner_config(&["whatsapp:+15551234567", "irc:libera.chat:account:stephen"]),
+            owner_config(&["whatsapp:+15551234567", "irc:libera.chat:account:stephen"]),
             &[
                 route(Some("irc-libera"), None, Some("#giles"), "butler"),
                 route(None, None, None, "jeeves"),
@@ -378,6 +368,65 @@ mod tests {
     }
 
     #[test]
+    fn each_message_is_routed_as_the_user_who_has_the_senders_identity() {
+        let router = with_routes(
+            UserList::new(vec![
+                User::member("owner", &["whatsapp:+15551234567"]),
+                User::member(
+                    "ann",
+                    &["whatsapp:+15557654321", "irc:libera.chat:account:ann"],
+                ),
+            ]),
+            &[route(None, None, None, "jeeves")],
+            no_agents(),
+        );
+        let ann = |conversation: &str| Routed {
+            user: UserId::new("ann").unwrap(),
+            ..routed("jeeves", "whatsapp", conversation)
+        };
+        assert_eq!(
+            classify(
+                &router,
+                WHATSAPP,
+                &message("+15557654321", "hi"),
+                &NoPendingApprovals
+            ),
+            Inbound::Message(ann("+15557654321"))
+        );
+        assert_eq!(
+            classify(
+                &router,
+                WHATSAPP,
+                &message(OWNER_PHONE, "hi"),
+                &NoPendingApprovals
+            ),
+            Inbound::Message(routed("jeeves", "whatsapp", OWNER_PHONE))
+        );
+        // A command is addressed to the user who sent it, too.
+        assert_eq!(
+            classify(
+                &router,
+                WHATSAPP,
+                &message("+15557654321", "/new"),
+                &NoPendingApprovals
+            ),
+            Inbound::Command {
+                to: ann("+15557654321"),
+                command: CoreCommand::New
+            }
+        );
+        let irc = ("irc-libera", "irc", "irc:libera.chat");
+        let m = message("account:ann", "hi");
+        assert_eq!(
+            classify(&router, irc, &m, &NoPendingApprovals),
+            Inbound::Message(Routed {
+                user: UserId::new("ann").unwrap(),
+                ..routed("jeeves", "irc-libera", "account:ann")
+            })
+        );
+    }
+
+    #[test]
     fn drop_rules_and_their_order() {
         let base = message(OWNER_PHONE, "/new");
         let unauthenticated = |m: &mut InboundMessage| m.sender_authenticated = false;
@@ -423,7 +472,7 @@ mod tests {
     #[test]
     fn unrouted_conversations_are_dropped_even_for_commands() {
         let router = with_routes(
-            &owner_config(&["whatsapp:+15551234567"]),
+            owner_config(&["whatsapp:+15551234567"]),
             &[route(Some("irc-libera"), None, None, "jeeves")],
             no_agents(),
         );
@@ -441,7 +490,7 @@ mod tests {
     #[test]
     fn aliases_identify_the_owner() {
         let router = with_routes(
-            &owner_config(&["whatsapp:123456789@lid"]),
+            owner_config(&["whatsapp:123456789@lid"]),
             &[route(None, None, None, "jeeves")],
             no_agents(),
         );
@@ -479,7 +528,7 @@ mod tests {
     #[test]
     fn route_precedence() {
         let router = with_routes(
-            &owner_config(&["web:owner"]),
+            owner_config(&["web:owner"]),
             &[
                 route(Some("web"), None, Some("chat-1"), "first"),
                 route(Some("web"), Some(ConversationKind::Group), None, "groups"),
@@ -530,7 +579,7 @@ mod tests {
                 "{inst} {conversation:?}"
             );
         }
-        let none = with_routes(&owner_config(&["web:owner"]), &[], no_agents());
+        let none = with_routes(owner_config(&["web:owner"]), &[], no_agents());
         assert_eq!(none.route(&web, &conv("chat-1", direct)), None);
     }
 
@@ -538,7 +587,7 @@ mod tests {
     fn a_web_chat_started_with_an_agent_goes_to_it_ahead_of_routes() {
         let agents = HashMap::from([(AgentId::new("bunter").unwrap(), AgentPolicy::default())]);
         let router = with_routes(
-            &owner_config(&["web:owner", "whatsapp:+15551234567"]),
+            owner_config(&["web:owner", "whatsapp:+15551234567"]),
             &[route(None, None, None, "jeeves")],
             Arc::new(agents),
         );

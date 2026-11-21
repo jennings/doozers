@@ -31,7 +31,6 @@ use tower::ServiceExt;
 use super::pages::MAX_MESSAGE_BYTES;
 use super::*;
 use crate::commands::NoPendingApprovals;
-use crate::config::{Identity, OwnerConfig};
 use crate::http::RouterBuilder;
 use crate::router::Router as MessageRouter;
 use crate::routes::{Route, RouteList};
@@ -39,6 +38,7 @@ use crate::sessions::{
     AgentPolicies, AgentPolicy, ChannelLookup, Sessions, SessionsOptions, SystemClock, Turn,
     TurnOutcome, TurnRunner,
 };
+use crate::users::UserList;
 
 mod admin;
 mod agent_edit;
@@ -83,16 +83,8 @@ async fn env() -> Env {
 }
 
 /// The owner, with `identities`.
-fn owner_config(identities: &[&str]) -> OwnerConfig {
-    let identities: Vec<Identity> = identities
-        .iter()
-        .map(|id| Identity::new(*id).unwrap())
-        .collect();
-    OwnerConfig {
-        default: identities[0].clone(),
-        identities,
-        timezone: None,
-    }
+fn owner_config(identities: &[&str]) -> UserList {
+    UserList::owner(identities, None)
 }
 
 /// The agents every test configuration has: `jeeves` (named "Jeeves", with a job whose prompt is
@@ -161,7 +153,7 @@ async fn env_with_toml(config: WebConfig, identities: &[&str], extra: &str) -> E
     let channel = Arc::new(WebChannel::new(
         InstanceName::new(INSTANCE).unwrap(),
         config,
-        &owner_config(identities),
+        owner_config(identities),
         "0.0.0.0:8080".parse().unwrap(),
     ));
     let shutdown = CancellationToken::new();
@@ -1148,17 +1140,12 @@ impl TurnRunner for EchoRunner {
 #[tokio::test]
 async fn a_posted_message_reaches_the_agent_and_the_reply_reaches_the_page() {
     let env = env().await;
-    let owner_identity = Identity::new("web:owner").unwrap();
     let agents: Arc<dyn AgentPolicies> = Arc::new(HashMap::from([(
         AgentId::new("jeeves").unwrap(),
         AgentPolicy::default(),
     )]));
     let router = MessageRouter::new(
-        &OwnerConfig {
-            identities: vec![owner_identity.clone()],
-            default: owner_identity,
-            timezone: None,
-        },
+        owner_config(&["web:owner"]),
         RouteList::new(vec![Route {
             channel: None,
             kind: None,

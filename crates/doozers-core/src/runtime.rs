@@ -221,7 +221,7 @@ impl Runtime {
         let agents = Arc::new(self.registry.live_config().clone());
         let options = SessionsOptions {
             store: self.store.clone(),
-            router: Router::new(&config.owner, self.routes.list(), agents.clone()),
+            router: Router::new(self.registry.users(), self.routes.list(), agents.clone()),
             agents,
             channels: self.registry.clone(),
             runner,
@@ -268,7 +268,7 @@ impl Runtime {
 
     /// Starts the scheduler (PLAN section 6.11): config and runtime jobs, running their turns on
     /// `runner` through `sessions` and sending their replies and approval prompts through the
-    /// outbox to the owner's default identity. Start it after the outbox and the session
+    /// outbox to the user's default identity. Start it after the outbox and the session
     /// manager; it stops when `shutdown` is cancelled ([`Scheduler::closed`] waits for it).
     pub fn start_scheduler(
         &self,
@@ -284,7 +284,7 @@ impl Runtime {
                 runner,
                 delivery: Arc::new(OutboxDelivery::new(
                     self.outbox.clone(),
-                    self.registry.config().owner.clone(),
+                    self.registry.users(),
                 )),
                 changes: self.jobs.clone(),
                 workspaces: self.workspaces.clone(),

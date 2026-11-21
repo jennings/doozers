@@ -2,13 +2,14 @@
 
 Every message a channel receives passes one pure decision before anything is stored: drop it, handle
 it as a core command, or hand it to an agent's session ([Plan](../PLAN.md) §1.1, §3.2, §3.3,
-§6.1–§6.4). Three modules of `doozers-core` implement it; the inbox and sessions code calls
+§6.1–§6.4). Four modules of `doozers-core` implement it; the inbox and sessions code calls
 `Router::classify` for every `ChannelEvent::Message`. The user-facing side is in
 [Configuration](../user/configuration.md) and [Chat commands](../user/commands.md).
 
 | Module     | Contents                                                                    |
 | ---------- | --------------------------------------------------------------------------- |
-| `identity` | `OWNER`, `owner()`, `validate_namespace`, `NamespaceError`, `OwnerIdentities` |
+| `identity` | `OWNER`, `owner()`, `validate_namespace`, `NamespaceError`                  |
+| `users`    | `User`, `UserIdentity`, `UserList`, `UserDirectory`                         |
 | `commands` | `CoreCommand`, `ApprovalReply`, `Answer`, `parse`, `PendingApprovals`, `NoPendingApprovals` |
 | `router`   | `Router`, `ChannelSource`, `Routed`, `Inbound`, `DropReason`                |
 | `routes`   | `Route`, `RouteList`                                                        |
@@ -16,7 +17,7 @@ it as a core command, or hand it to an agent's session ([Plan](../PLAN.md) §1.1
 ## The decision
 
 ```rust
-let router = Router::new(&config.owner, RouteList::new(config.routes.clone()), agents);
+let router = Router::new(registry.users(), RouteList::new(routes), agents);
 let source = ChannelSource { instance, component, identity_namespace };
 match router.classify(&source, &event_id, &message, &pending_approvals) {
     Inbound::Drop(reason) => { /* already logged; ack the event and forget it */ }
@@ -101,11 +102,11 @@ decision is complete on its own.
 
 ## Matching identities
 
-An identity is `<namespace>:<native id>` (§3.2). `OwnerIdentities::contains(namespace, id)` compares
-that string to each `[owner]` identity without building it: the configured identity must start with
-the namespace and `:`, and the remainder must equal the native id. Because a namespace may contain
-`:`, this is exactly a comparison of the joined strings; it never splits a configured identity on
-its own.
+An identity is `<namespace>:<native id>` (§3.2). `UserDirectory::resolve(namespace, id)` joins the
+two and looks the string up in an index of every user's identities, built when the directory is
+made. Because a namespace may contain `:`, this is exactly a comparison of the joined strings; it
+never splits an identity on its own. `resolve_sender` tries the message's `sender` and then each
+alias in order, and the first that is anyone's identity names the user.
 
 Comparison is exact and case-sensitive, with one exception: in the `email` namespace (first segment
 `email`), the domain after the last `@` is compared ASCII case-insensitively, as DNS names are. The
@@ -115,8 +116,10 @@ Other namespaces rely on the channel to report a stable form (the IRC services a
 WhatsApp number in E.164); the operator writes the identity the way the channel reports it, which
 the `info` log of an unknown sender shows.
 
-The owner list is tiny, so a linear scan over it, for the sender and then each alias, is cheaper
-than building and hashing the joined strings.
+The index holds each identity in its canonical form, `doozers_store::canonical_identity`: the joined
+identity with the domain of an `email` identity lowercased. The store keeps identities in that form
+too, and a lookup builds the same key, so the comparison above is one hash lookup per sender or
+alias.
 
 ## Routing
 

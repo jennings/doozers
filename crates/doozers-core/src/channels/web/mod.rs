@@ -51,8 +51,9 @@ use futures::channel::mpsc;
 use futures::stream::BoxStream;
 use tokio::time::Instant;
 
-use crate::config::{ChannelInstance, Config, InstanceName, OwnerConfig};
-use crate::identity::{self, OwnerIdentities};
+use crate::config::{ChannelInstance, Config, InstanceName};
+use crate::identity;
+use crate::users::UserList;
 
 pub use admin::ADMIN_REFRESH_SECS;
 pub use auth::{
@@ -163,7 +164,7 @@ pub struct WebChannel {
     instance: InstanceName,
     info: ChannelInfo,
     config: WebConfig,
-    owner: OwnerIdentities,
+    users: UserList,
     /// Where login links point: the public URL, else the HTTP listener (its bound address once
     /// [`WebChannel::set_listen_addr`] has been called).
     link_base: Mutex<String>,
@@ -222,13 +223,13 @@ fn listener_url(addr: SocketAddr) -> String {
 }
 
 impl WebChannel {
-    /// The channel for instance `instance` with `config`, for `owner`, whose HTTP server listens
-    /// on `http_listen` (the login links' address unless `config.public_url` is set). Its first
-    /// event is a `Connected` status.
+    /// The channel for instance `instance` with `config`, for the `users` who may log in, whose
+    /// HTTP server listens on `http_listen` (the login links' address unless `config.public_url`
+    /// is set). Its first event is a `Connected` status.
     pub fn new(
         instance: InstanceName,
         config: WebConfig,
-        owner: &OwnerConfig,
+        users: UserList,
         http_listen: SocketAddr,
     ) -> Self {
         let status = ChannelEvent::Status {
@@ -251,7 +252,7 @@ impl WebChannel {
                     .unwrap_or_else(|| listener_url(http_listen)),
             ),
             config,
-            owner: OwnerIdentities::new(owner),
+            users,
             proxy_key,
             inbound: Mutex::new(Inbound {
                 pending: VecDeque::from([status]),
@@ -270,15 +271,11 @@ impl WebChannel {
     pub fn from_instance(
         instance: &ChannelInstance,
         config: &Config,
+        users: UserList,
     ) -> Result<Self, (&'static str, String)> {
         let web = WebConfig::from_json(&instance.config.to_json())
             .map_err(|reason| ("config", instance.config.scrub(&reason)))?;
-        let channel = Self::new(
-            instance.name.clone(),
-            web,
-            &config.owner,
-            config.core.http_listen,
-        );
+        let channel = Self::new(instance.name.clone(), web, users, config.core.http_listen);
         identity::validate_namespace(&instance.component, &channel.info.identity_namespace)
             .map_err(|e| ("component", e.to_string()))?;
         Ok(channel)
@@ -336,9 +333,19 @@ impl WebChannel {
         lock(&self.link_base).clone()
     }
 
-    /// Whether `web:<user>` is one of the owner's identities: a cookie login's sender.
+    /// Whether `web:<user>` is an identity of `user`: a cookie login's sender.
     fn is_web_identity(&self, user: &UserId) -> bool {
-        NativeId::new(user.as_str()).is_ok_and(|id| self.owner.contains(COMPONENT, &id))
+        NativeId::new(user.as_str()).is_ok_and(|id| {
+            self.users
+                .get()
+                .resolve(COMPONENT, &id)
+                .is_some_and(|owner| owner.id == *user)
+        })
+    }
+
+    /// The users who may log in.
+    pub(crate) fn users(&self) -> &UserList {
+        &self.users
     }
 
     /// Queues `event` for the core and hands it to the open stream, if any.

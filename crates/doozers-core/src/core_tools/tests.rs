@@ -24,6 +24,7 @@ use crate::identity::owner;
 use crate::memory_dbs::MemoryDbs;
 use crate::paths::DataRoot;
 use crate::scheduler::JobChanges;
+use crate::users::UserList;
 
 const AGENT: &str = "jeeves";
 const CAP: usize = 60;
@@ -31,6 +32,8 @@ const CAP: usize = 60;
 struct Setup {
     _dir: TempDir,
     config: LiveConfig,
+    /// The owner, in Europe/London.
+    users: UserList,
     store: Store,
     memory_dbs: MemoryDbs,
     clock: Arc<TickClock>,
@@ -87,6 +90,7 @@ impl Setup {
         Self {
             _dir: dir,
             config: LiveConfig::new(Arc::new(config)),
+            users: UserList::owner(&["fake:owner"], Some("Europe/London")),
             store,
             memory_dbs: MemoryDbs::new(root, JournalMode::Wal),
             clock: Arc::default(),
@@ -94,7 +98,7 @@ impl Setup {
     }
 
     fn search(&self) -> MemorySearchTool {
-        MemorySearchTool::new(self.store.clone(), self.config.clone())
+        MemorySearchTool::new(self.store.clone(), self.config.clone(), self.users.clone())
     }
 
     /// `jeeves`'s memory database.
@@ -109,6 +113,7 @@ impl Setup {
         let tool = MemoryAddTool::new(
             self.memory_dbs.clone(),
             self.config.clone(),
+            self.users.clone(),
             self.clock.clone(),
         );
         call(&tool, input, who.requester.clone(), who.session.clone()).await
@@ -118,6 +123,7 @@ impl Setup {
         let tool = MemoryEditTool::new(
             self.memory_dbs.clone(),
             self.config.clone(),
+            self.users.clone(),
             self.clock.clone(),
         );
         call(&tool, input, who.requester.clone(), who.session.clone()).await
@@ -127,6 +133,7 @@ impl Setup {
         let tool = MemoryForgetTool::new(
             self.memory_dbs.clone(),
             self.config.clone(),
+            self.users.clone(),
             self.clock.clone(),
         );
         call(&tool, input, who.requester.clone(), who.session.clone()).await
@@ -136,6 +143,7 @@ impl Setup {
         let tool = MemoryRecallTool::new(
             self.memory_dbs.clone(),
             self.config.clone(),
+            self.users.clone(),
             self.clock.clone(),
         );
         call(&tool, input, who.requester.clone(), who.session.clone()).await
@@ -1542,6 +1550,7 @@ async fn schedule_creates_lists_and_cancels_only_the_requesters_jobs() {
     let tool = ScheduleTool::new(
         s.store.clone(),
         s.config.clone(),
+        s.users.clone(),
         changes.clone(),
         Arc::new(FixedClock),
     );
@@ -1668,6 +1677,7 @@ async fn schedule_refuses_jobs_from_job_runs_and_past_the_cap() {
     let tool = ScheduleTool::new(
         s.store.clone(),
         s.config.clone(),
+        s.users.clone(),
         JobChanges::default(),
         Arc::new(FixedClock),
     );

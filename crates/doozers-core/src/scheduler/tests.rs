@@ -299,7 +299,7 @@ impl Harness {
             SessionsOptions {
                 store: store.clone(),
                 router: Router::new(
-                    &config.owner,
+                    registry.users(),
                     RouteList::default(),
                     Arc::new(registry.live_config().clone()),
                 ),

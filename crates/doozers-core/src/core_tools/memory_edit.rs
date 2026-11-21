@@ -18,6 +18,7 @@ use crate::agent_loop::ToolOutput;
 use crate::config::LiveConfig;
 use crate::memory_dbs::MemoryDbs;
 use crate::sessions::Clock;
+use crate::users::UserList;
 
 /// The tool's name.
 pub const MEMORY_EDIT: &str = "memory_edit";
@@ -29,11 +30,11 @@ pub struct MemoryEditTool {
 }
 
 impl MemoryEditTool {
-    /// Edits the memory databases in `dbs`, with each agent's `memory_cap` from `config`, at the
-    /// time `clock` gives.
-    pub fn new(dbs: MemoryDbs, config: LiveConfig, clock: Arc<dyn Clock>) -> Self {
+    /// Edits the memory databases in `dbs`, with each agent's `memory_cap` from `config` and
+    /// times shown in the requester's zone in `users`, at the time `clock` gives.
+    pub fn new(dbs: MemoryDbs, config: LiveConfig, users: UserList, clock: Arc<dyn Clock>) -> Self {
         Self {
-            env: MemoryEnv::new(dbs, config, clock),
+            env: MemoryEnv::new(dbs, config, users, clock),
         }
     }
 }

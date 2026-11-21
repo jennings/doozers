@@ -28,8 +28,10 @@ use super::*;
 use crate::approvals::ApprovalBoard;
 use crate::config::test_toolsets::add_toolsets;
 use crate::config::{BusyMode, Config, InstanceName, LoadOptions};
+use crate::identity;
 use crate::paths::DataRoot;
 use crate::sessions::{Reply, Steering};
+use crate::users::UserList;
 
 const AGENT: &str = "jeeves";
 const SECRET: &str = "sk-very-secret-value";
@@ -1076,15 +1078,26 @@ async fn the_owner_timezone_falls_back_to_the_agent_timezone() {
             .await;
     let config = h.registry.config();
     let agent = &config.agents[&AgentId::new(AGENT).unwrap()];
-    // The owner's zone wins.
+    let owner = identity::owner();
+    // The user's zone wins, for a config job (no user) as the owner.
+    let users = h.registry.users();
     assert_eq!(
-        history::message_timezone(&config, agent).iana_name(),
+        history::message_timezone(&users, Some(&owner), agent).iana_name(),
         Some("America/Los_Angeles")
     );
-    let mut without_owner = (*config).clone();
-    without_owner.owner.timezone = None;
     assert_eq!(
-        history::message_timezone(&without_owner, agent).iana_name(),
+        history::message_timezone(&users, None, agent).iana_name(),
+        Some("America/Los_Angeles")
+    );
+    // Without one, the agent's applies, and so it does for a user who isn't known.
+    let without_owner = UserList::owner(&["web:owner"], None);
+    assert_eq!(
+        history::message_timezone(&without_owner, Some(&owner), agent).iana_name(),
+        Some("Asia/Tokyo")
+    );
+    let stranger = UserId::new("stranger").unwrap();
+    assert_eq!(
+        history::message_timezone(&users, Some(&stranger), agent).iana_name(),
         Some("Asia/Tokyo")
     );
 

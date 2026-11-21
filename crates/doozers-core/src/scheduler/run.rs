@@ -149,7 +149,7 @@ pub(super) async fn run(
     }
     let now = context.clock.now();
     // The wait may have run past the end of the job's hours.
-    let tz = message_timezone(&context.registry.config(), agent);
+    let tz = message_timezone(&context.registry.users(), Some(&user), agent);
     if !in_active_hours(job.active_hours.as_ref(), &tz, now) {
         debug!(job = %label, "the DM went quiet after the job's active hours; skipped");
         return true;
@@ -269,19 +269,24 @@ async fn home(
 
 /// The user's DM with `agent` on their default identity: the direct session with the newest
 /// activity on a channel instance that owns the identity, open or ended. `None` if they have
-/// none yet, or no identity (v1 has only the owner's).
+/// none yet, or no default identity.
 async fn latest_dm(
     context: &Context,
     agent: &doozers_types::AgentId,
     user: &UserId,
 ) -> Result<Option<Session>, doozers_store::Error> {
-    if *user != identity::owner() {
+    let Some(identity) = context
+        .registry
+        .users()
+        .get()
+        .user(user)
+        .and_then(|user| user.default_identity.clone())
+    else {
         return Ok(None);
-    }
+    };
     let config = context.registry.config();
-    let identity = config.owner.default.as_str();
     let instances = owning_instances(
-        identity,
+        identity.as_str(),
         config.channels.iter().map(|(name, channel)| {
             let info = context
                 .registry
@@ -350,8 +355,11 @@ impl Run<'_> {
         }
         text.push_str("\n\n");
         text.push_str(self.prompt.trim());
-        let config = self.context.registry.config();
-        let tz = message_timezone(&config, self.agent);
+        let tz = message_timezone(
+            &self.context.registry.users(),
+            self.job.creator.as_ref(),
+            self.agent,
+        );
         job_message(
             &text,
             self.context.clock.now(),

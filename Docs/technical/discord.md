@@ -236,7 +236,7 @@ and it is checked only against documentation, so the plugin guards it cheaply:
 - **The plugin deals in native ids, the core in identities.** `InboundMessage.sender` is the bare
   user id (`82198898841029460`), as the WhatsApp plugin sends `+15551234567` and not
   `whatsapp:+15551234567`. The core joins it to the namespace `Configure` returned (`discord`) to
-  get the identity it matches against `[owner] identities` (`OwnerIdentities::contains`), and strips
+  get the identity it matches against `[owner] identities` (`UserDirectory::resolve`), and strips
   the namespace from an identity before it hands a proactive send's `recipient` to `Send`
   (`outbox::route`). A plugin that put `discord:` in the sender would arrive as
   `discord:discord:<id>` and be dropped as not the owner (issue #22). The same holds in the other

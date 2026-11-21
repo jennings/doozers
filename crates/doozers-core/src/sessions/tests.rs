@@ -24,9 +24,9 @@ use tokio::time::Instant;
 use super::inbound::Backoff;
 use super::*;
 use crate::commands::{Answer, ApprovalReply};
-use crate::config::{Identity, OwnerConfig};
 use crate::identity;
 use crate::routes::{Route, RouteList};
+use crate::users::UserList;
 
 const INSTANCE: &str = "fake";
 const OWNER: &str = "owner";
@@ -336,14 +336,9 @@ impl Setup {
     /// Starts the session manager and attaches the channel.
     async fn start(self) -> Harness {
         let (turns_tx, turns) = mpsc::unbounded_channel();
-        let identities = vec![Identity::new(format!("{INSTANCE}:{OWNER}")).unwrap()];
         let agents: Arc<dyn AgentPolicies> = Arc::new(HashMap::from([(agent(), self.policy)]));
         let router = Router::new(
-            &OwnerConfig {
-                default: identities[0].clone(),
-                identities,
-                timezone: None,
-            },
+            UserList::owner(&[&format!("{INSTANCE}:{OWNER}")], None),
             RouteList::new(vec![Route {
                 channel: None,
                 kind: None,

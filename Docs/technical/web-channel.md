@@ -208,9 +208,9 @@ there.
   `http::serve` and removes the socket file afterwards. `serve` runs both servers in one task that
   ends at the first failure.
 - With the mark, a request carrying the identity header is that identity: if
-  `OwnerIdentities::contains("web", value)`, a `WebUser` for the owner with that `sender`; otherwise
-  a 403 page (the value is logged so the operator can add it). Without the header, the cookie
-  applies as usual.
+  `UserDirectory::resolve("web", value)` finds a user, a `WebUser` for that user with that `sender`;
+  otherwise a 403 page (the value is logged so the operator can add it). Without the header, the
+  cookie applies as usual.
 - `X-Forwarded-Proto: https` marks the cookie `Secure` only with the mark.
 
 ### Rate limits
