@@ -243,18 +243,33 @@ async fn home(
         {
             let key = conversation.key(&job.agent);
             let session = context.store.find_open_session(key.clone()).await?;
-            return Ok(Some(Home {
-                key,
-                session,
-                conversation: Some(conversation.clone()),
-            }));
+            // Another user may hold a conversation whose id can change hands (an IRC nickname's).
+            // Its transcript, and a reply or approval prompt queued into it, are not this job's:
+            // the job uses the user's own DM, as if the conversation were gone.
+            let held_by_another = session
+                .as_ref()
+                .is_some_and(|open| open.user.as_ref() != Some(user));
+            if !held_by_another {
+                return Ok(Some(Home {
+                    key,
+                    session,
+                    conversation: Some(conversation.clone()),
+                }));
+            }
+            warn!(
+                job = %job.label(),
+                channel = conversation.channel,
+                "the job's conversation is held by another user; it uses the user's default \
+                 identity",
+            );
+        } else {
+            warn!(
+                job = %job.label(),
+                channel = conversation.channel,
+                "the job's conversation is on a channel instance that is no longer configured; \
+                 it delivers to the user's default identity",
+            );
         }
-        warn!(
-            job = %job.label(),
-            channel = conversation.channel,
-            "the job's conversation is on a channel instance that is no longer configured; \
-             it delivers to the user's default identity",
-        );
     }
     Ok(latest_dm(context, &job.agent, user)
         .await?
@@ -506,8 +521,18 @@ impl Run<'_> {
             .await
         {
             Ok(session) => session,
+            // Another user holds the conversation, which `home` checked a moment ago: never run
+            // or append in their session, with their transcript, workspace, and SSH keys.
+            Err(doozers_store::Error::Conflict(reason)) if until_stopped => {
+                info!(job = %self.label(), %reason, "another user holds the conversation; the run is skipped");
+                return None;
+            }
+            Err(doozers_store::Error::Conflict(reason)) => {
+                info!(job = %self.label(), %reason, "another user holds the conversation; the reply was delivered but not appended to it");
+                return None;
+            }
             Err(error) => {
-                error!(job = %self.label(), %error, "cannot open the user's DM session");
+                error!(job = %self.label(), %error, "cannot open the user's DM session; skipped");
                 return None;
             }
         };

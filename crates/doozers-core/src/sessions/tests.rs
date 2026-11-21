@@ -261,6 +261,8 @@ impl Approvals for FakeApprovals {
 struct FakeEnvResets {
     outcome: Mutex<EnvReset>,
     asked: Mutex<Vec<SessionKey>>,
+    /// The users who asked, in the same order.
+    askers: Mutex<Vec<UserId>>,
 }
 
 impl Default for FakeEnvResets {
@@ -268,14 +270,16 @@ impl Default for FakeEnvResets {
         Self {
             outcome: Mutex::new(EnvReset::Done),
             asked: Mutex::default(),
+            askers: Mutex::default(),
         }
     }
 }
 
 #[async_trait]
 impl EnvResets for FakeEnvResets {
-    async fn reset(&self, key: &SessionKey) -> EnvReset {
+    async fn reset(&self, key: &SessionKey, user: &UserId) -> EnvReset {
         self.asked.lock().unwrap().push(key.clone());
+        self.askers.lock().unwrap().push(user.clone());
         self.outcome.lock().unwrap().clone()
     }
 }
@@ -771,6 +775,11 @@ async fn env_reset_resets_the_workspace_tells_the_user_and_acts_once() {
         reply.markdown
     );
     assert_eq!(*h.setup.env_resets.asked.lock().unwrap(), [key()]);
+    // The reset is for the user who sent it.
+    assert_eq!(
+        *h.setup.env_resets.askers.lock().unwrap(),
+        [identity::owner()]
+    );
     // A command is no message: no session, no turn, and the event is a dedupe key.
     h.assert_no_turn().await;
     assert!(h.store().find_open_session(key()).await.unwrap().is_none());
@@ -1110,6 +1119,44 @@ async fn open_direct_opens_the_dm_like_an_inbound_message() {
     assert_ne!(fresh.id, opened.id);
     let old = h.store().session(opened.id).await.unwrap().unwrap();
     assert!(old.ended_at.is_some());
+}
+
+#[tokio::test(start_paused = true)]
+async fn open_direct_never_hands_a_user_another_users_open_session() {
+    let (h, _events) = Harness::new(AgentPolicy::default()).await;
+    let alice = UserId::new("alice").unwrap();
+    let owners = h
+        .sessions
+        .open_direct(key(), identity::owner())
+        .await
+        .unwrap();
+
+    // Alice, say a job of hers, names the owner's conversation id: refused, and nothing changes.
+    let err = h
+        .sessions
+        .open_direct(key(), alice.clone())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, doozers_store::Error::Conflict(_)), "{err}");
+    let open = h.store().find_open_session(key()).await.unwrap().unwrap();
+    assert_eq!(open.id, owners.id);
+    assert_eq!(open.user, Some(identity::owner()));
+    assert_eq!(h.store().open_sessions().await.unwrap().len(), 1);
+
+    // Once the owner's session has ended, the conversation is anyone's: Alice gets one of her own.
+    h.store()
+        .end_session(owners.id, h.setup.now())
+        .await
+        .unwrap();
+    let hers = h.sessions.open_direct(key(), alice.clone()).await.unwrap();
+    assert_ne!(hers.id, owners.id);
+    assert_eq!(hers.user, Some(alice));
+    let err = h
+        .sessions
+        .open_direct(key(), identity::owner())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, doozers_store::Error::Conflict(_)), "{err}");
 }
 
 /// The state a restart leaves behind: a turn on the fake channel was running (two started rows

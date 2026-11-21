@@ -127,19 +127,20 @@ pub enum EnvReset {
 /// [`Workspaces`]; [`NoEnvResets`] has no workspaces.
 #[async_trait]
 pub trait EnvResets: Send + Sync {
-    /// Deletes the workspace of the conversation `key` (the user asked) and creates it again with
-    /// the same environment and options. Called only after the command's event is recorded and
-    /// acked, once per event.
-    async fn reset(&self, key: &SessionKey) -> EnvReset;
+    /// Deletes the workspace of the conversation `key` that belongs to `user` (who asked) and
+    /// creates it again with the same environment and options. Called only after the command's
+    /// event is recorded and acked, once per event.
+    async fn reset(&self, key: &SessionKey, user: &UserId) -> EnvReset;
 }
 
 #[async_trait]
 impl EnvResets for Workspaces {
-    async fn reset(&self, key: &SessionKey) -> EnvReset {
+    async fn reset(&self, key: &SessionKey, user: &UserId) -> EnvReset {
         let owner = WorkspaceOwner::Conversation {
             agent: key.agent.clone(),
             channel: key.channel.clone(),
             conversation: key.conversation.clone(),
+            user: Some(user.clone()),
         };
         match self.recreate(&owner, DeleteReason::UserReset).await {
             Ok(None) => EnvReset::NoWorkspace,
@@ -162,7 +163,7 @@ pub struct NoEnvResets;
 
 #[async_trait]
 impl EnvResets for NoEnvResets {
-    async fn reset(&self, _: &SessionKey) -> EnvReset {
+    async fn reset(&self, _: &SessionKey, _: &UserId) -> EnvReset {
         EnvReset::NoWorkspace
     }
 }
@@ -437,9 +438,15 @@ impl Sessions {
     /// agent's `idle_reset` has expired. Where a job finds the DM it runs in or appends its
     /// reply to (PLAN section 6.11).
     ///
+    /// A session is never handed to a user it doesn't belong to: if another user holds the
+    /// conversation (an IRC nickname's, say), the caller gets an error rather than a turn in the
+    /// holder's transcript, workspace, and SSH keys, as the inbound pipeline drops a message that
+    /// names it.
+    ///
     /// # Errors
     ///
-    /// A database error.
+    /// [`doozers_store::Error::Conflict`] if the open session belongs to another user (or to
+    /// none); a database error.
     pub async fn open_direct(
         &self,
         key: SessionKey,
@@ -447,11 +454,18 @@ impl Sessions {
     ) -> Result<Session, doozers_store::Error> {
         let to = Routed { session: key, user };
         let id = inbound::session_for(&self.inner, &to, self.inner.clock.now()).await?;
-        self.inner
+        let session = self
+            .inner
             .store
             .session(id)
             .await?
-            .ok_or_else(|| doozers_store::Error::NotFound(format!("session {id}")))
+            .ok_or_else(|| doozers_store::Error::NotFound(format!("session {id}")))?;
+        if session.user.as_ref() != Some(&to.user) {
+            return Err(doozers_store::Error::Conflict(format!(
+                "the open session {id} of this conversation belongs to another user"
+            )));
+        }
+        Ok(session)
     }
 
     /// Waits until every task of the session manager has stopped: channel pumps, drivers, turns,

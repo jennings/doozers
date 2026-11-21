@@ -356,7 +356,7 @@ async fn env_reset(inner: Arc<Inner>, to: Routed) {
     let outcome = tokio::select! {
         biased;
         () = inner.shutdown.cancelled() => return,
-        outcome = inner.env_resets.reset(&to.session) => outcome,
+        outcome = inner.env_resets.reset(&to.session, &to.user) => outcome,
     };
     info!(%agent, channel, ?outcome, "workspace reset by /env reset");
     let text = match &outcome {

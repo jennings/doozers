@@ -190,6 +190,8 @@ async fn delete(
             agent,
             channel: channel.to_owned(),
             conversation: chat.clone(),
+            // A chat belongs to the user who started it, and so does its workspace.
+            user: Some(user.user.clone()),
         };
         if let Err(err) = deletion
             .workspaces
