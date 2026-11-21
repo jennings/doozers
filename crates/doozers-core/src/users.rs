@@ -1,19 +1,43 @@
-//! Users and their channel identities (PLAN sections 1.1 and 3.2): [`User`], and [`UserList`], the
-//! snapshot of every user the [router](crate::router::Router) and the web login read for each
-//! message. Design: `Docs/technical/identity-and-routing.md`.
+//! Users and their channel identities (PLAN sections 1.1, 3.2, 11.2, 11.4): [`User`], [`UserList`],
+//! the snapshot of every user that the [router](crate::router::Router) and the web login read for
+//! each message, and [`Users`], which keeps the users in the database and replaces that snapshot
+//! after every change. Design: `Docs/technical/identity-and-routing.md`.
 //!
-//! The list is replaced as a whole whenever a user changes (the [`RouteList`](crate::routes::RouteList)
-//! pattern), so a message is resolved against one consistent set of users, and resolving it never
-//! touches the database.
+//! # Storage and liveness
+//!
+//! Users and identities live in the `users` and `user_identities` tables. [`Users`] also keeps them
+//! as a [`UserList`] snapshot that the router shares, and replaces it after every successful
+//! change (the [`RouteList`](crate::routes::RouteList) pattern), so the next inbound message is
+//! resolved against the new users and nothing restarts. A snapshot, rather than a database read
+//! per message, keeps [`Router::classify`](crate::router::Router::classify) synchronous and off
+//! the database for every message, including the ones it drops. Changes are serialized by one lock
+//! that spans reading the snapshot, validating the change, writing it, and replacing the snapshot,
+//! so the snapshot always equals what is stored. Only this process changes the tables.
+//!
+//! # Import
+//!
+//! `doozers.toml`'s `[owner]` is imported once, by [`Users::open`], when the import has never run
+//! (the database records that it did). The owner becomes an `admin` user with the id
+//! [`identity::OWNER`], so sessions, memories, SSH key secrets, and `users/owner/` need no
+//! rewrite. After that `[owner]` is never read again; `open` warns while `doozers.toml` still
+//! has it. A fresh install has no `[owner]`: it starts with no users, and
+//! [`Users::login_user`] (`doozers admin login-link`) creates the first admin.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::path::Path;
 use std::sync::{Arc, PoisonError, RwLock};
 
-use doozers_store::{Role, UserState, Verification, canonical_identity};
+use doozers_store::{
+    ImportedUser, NewIdentity, NewUser, Role, Store, StoredUser, UserState, Verification,
+    canonical_identity,
+};
 use doozers_types::{InboundMessage, NativeId, Timestamp, UserId};
 use jiff::tz::TimeZone;
+use serde::Deserialize;
+use tokio::sync::Mutex;
+use tracing::{info, warn};
 
-use crate::config::{Identity, OwnerConfig};
+use crate::config::{Config, Identity, parse_timezone};
 use crate::identity;
 
 /// A user: a person who talks to the agents.
@@ -29,7 +53,7 @@ pub struct User {
     pub display_name: String,
     /// What the user may do.
     pub role: Role,
-    /// Whether the user can use Doozers now.
+    /// Whether the user can use Doozers now. A disabled user's messages are dropped.
     pub state: UserState,
     /// The user's time zone, for message time prefixes and job schedules. `None`: the agent's
     /// `timezone`, else the system time zone.
@@ -106,6 +130,11 @@ impl UserDirectory {
         self.by_identity.get(&key).map(|&index| &self.users[index])
     }
 
+    /// Whether anyone has the identity `<namespace>:<native id>`, given joined.
+    pub fn has_identity(&self, joined: &str) -> bool {
+        self.by_identity.contains_key(&identity_key(joined))
+    }
+
     /// The user the message's sender is: the one who has the sender's identity or, if none does,
     /// the first alias that is anyone's.
     pub fn resolve_sender(&self, namespace: &str, message: &InboundMessage) -> Option<&User> {
@@ -156,29 +185,619 @@ impl UserList {
     pub fn timezone(&self, id: &UserId) -> Option<TimeZone> {
         self.get().user(id)?.timezone.clone()
     }
+}
 
-    /// The list of the one user `[owner]` of `doozers.toml` describes.
-    pub fn from_owner(owner: &OwnerConfig, now: Timestamp) -> Self {
-        let identities = owner
-            .identities
-            .iter()
-            .map(|identity| UserIdentity {
-                identity: identity.clone(),
-                verified_at: now,
-                verification: Verification::Imported,
-            })
-            .collect();
-        Self::new(vec![User {
+/// The longest username, in characters.
+pub const MAX_USERNAME_CHARS: usize = 64;
+
+/// The longest display name, in characters.
+pub const MAX_DISPLAY_NAME_CHARS: usize = 100;
+
+/// The username and display name of the first admin `doozers admin login-link` creates.
+const FIRST_ADMIN: (&str, &str) = ("admin", "Admin");
+
+/// Startup failed to import `[owner]` or load the users.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum UsersError {
+    /// `[owner]` in `doozers.toml` is invalid, so it can't be imported. Fix it or remove it.
+    #[error("{file}: {key}: {reason}")]
+    Import {
+        /// The configuration file.
+        file: String,
+        /// The key at fault, such as `owner.identities[1]`.
+        key: String,
+        /// What is wrong.
+        reason: String,
+    },
+    /// The database failed.
+    #[error("cannot load the users: {0}")]
+    Store(#[from] doozers_store::Error),
+    /// A stored user is malformed.
+    #[error("the stored users are damaged: {0}")]
+    Corrupt(String),
+}
+
+/// A change to the users was refused or failed.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum UserError {
+    /// The change names something that isn't valid.
+    #[error("{0}")]
+    Invalid(String),
+    /// A user has this id already.
+    #[error("a user with that id already exists")]
+    IdTaken,
+    /// A user has this username already, in any case.
+    #[error("a user with that username already exists")]
+    UsernameTaken,
+    /// The identity belongs to a user already.
+    #[error("the identity {0} belongs to a user already")]
+    IdentityTaken(String),
+    /// There is no such user.
+    #[error("there is no user `{0}`")]
+    NoSuchUser(UserId),
+    /// The change would leave no active admin.
+    #[error("the last active admin can't be disabled")]
+    LastAdmin,
+    /// The database failed.
+    #[error("database error: {0}")]
+    Store(doozers_store::Error),
+    /// A stored user is malformed.
+    #[error("the stored users are damaged: {0}")]
+    Corrupt(String),
+}
+
+impl UserError {
+    fn from_store(error: doozers_store::Error, user: &UserId) -> Self {
+        use doozers_store::Error;
+        match error {
+            Error::UserIdTaken => Self::IdTaken,
+            Error::UsernameTaken => Self::UsernameTaken,
+            Error::IdentityTaken { identity } => Self::IdentityTaken(identity),
+            Error::NoSuchUser => Self::NoSuchUser(user.clone()),
+            Error::InvalidRequest(reason) => Self::Invalid(reason),
+            other => Self::Store(other),
+        }
+    }
+
+    /// Whether the change was refused for what it asked, not because something broke.
+    pub fn is_invalid_input(&self) -> bool {
+        !matches!(self, Self::Store(_) | Self::Corrupt(_))
+    }
+}
+
+impl From<UsersError> for UserError {
+    fn from(error: UsersError) -> Self {
+        match error {
+            UsersError::Store(error) => Self::Store(error),
+            UsersError::Corrupt(reason) | UsersError::Import { reason, .. } => {
+                Self::Corrupt(reason)
+            }
+        }
+    }
+}
+
+/// Why [`Users::login_user`] found no user to log in.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum LoginUserError {
+    /// There are several users and none was named. Carries the message, which lists them.
+    #[error("{0}")]
+    NeedUser(String),
+    /// There is no such user.
+    #[error("there is no user `{0}`")]
+    NoSuchUser(UserId),
+    /// The user is disabled.
+    #[error("user `{0}` is disabled")]
+    Disabled(UserId),
+    /// The `web:<id>` identity a login link signs in as belongs to another user.
+    #[error(
+        "`web:{user}` is an identity of user `{owner}`, so `{user}` can't log in to the web chat"
+    )]
+    WebIdentityTaken {
+        /// The user to log in.
+        user: UserId,
+        /// The user who has `web:<user>`.
+        owner: UserId,
+    },
+    /// The users couldn't be changed.
+    #[error(transparent)]
+    Users(UserError),
+}
+
+/// What `[owner]` of `doozers.toml` says. Unknown keys are reported and ignored.
+#[derive(Debug, Deserialize)]
+struct LegacyOwner {
+    identities: Vec<String>,
+    default: Option<String>,
+    timezone: Option<String>,
+}
+
+/// Validates `[owner]` of the configuration file `file` and turns it into the user to import. It
+/// checks what `doozers.toml` always did, except that identities differing only in the case of an
+/// email domain, which it didn't tell apart, are one: the first spelling stays.
+fn import_owner(value: &toml::Value, file: &str) -> Result<ImportedUser, UsersError> {
+    let err = |key: &str, reason: String| UsersError::Import {
+        file: file.to_owned(),
+        key: key.to_owned(),
+        reason,
+    };
+    let mut unknown = Vec::new();
+    let raw: LegacyOwner = serde_ignored::deserialize(value.clone(), |path| {
+        unknown.push(path.to_string());
+    })
+    .map_err(|e: toml::de::Error| err("owner", e.message().to_owned()))?;
+    for key in unknown {
+        warn!("{file}: unknown key `owner.{key}` (ignored)");
+    }
+    if raw.identities.is_empty() {
+        return Err(err(
+            "owner.identities",
+            "must list at least one identity".into(),
+        ));
+    }
+    let mut identities = Vec::with_capacity(raw.identities.len());
+    let mut seen = BTreeSet::new();
+    let mut spelled = BTreeSet::new();
+    for (i, text) in raw.identities.iter().enumerate() {
+        let key = format!("owner.identities[{i}]");
+        let identity = Identity::new(text.as_str()).map_err(|r| err(&key, r))?;
+        if !spelled.insert(identity.clone()) {
+            return Err(err(&key, format!("{identity} is listed twice")));
+        }
+        let canonical = canonical_identity(identity.as_str());
+        if !seen.insert(canonical.clone()) {
+            warn!(
+                "{file}: {key}: {identity} is the same identity as an earlier one, since an email \
+                 domain ignores case; keeping the earlier spelling"
+            );
+            continue;
+        }
+        identities.push(canonical);
+    }
+    let default = match &raw.default {
+        Some(text) => {
+            let identity = Identity::new(text.as_str()).map_err(|r| err("owner.default", r))?;
+            let canonical = canonical_identity(identity.as_str());
+            if !seen.contains(&canonical) {
+                return Err(err(
+                    "owner.default",
+                    format!("{identity} is not one of `identities`"),
+                ));
+            }
+            canonical
+        }
+        None if identities.len() == 1 => identities[0].clone(),
+        None => {
+            return Err(err(
+                "owner.default",
+                "missing: with several identities, name the one jobs and proactive messages go to"
+                    .into(),
+            ));
+        }
+    };
+    if let Some(name) = &raw.timezone {
+        parse_timezone(name).map_err(|r| err("owner.timezone", r))?;
+    }
+    Ok(ImportedUser {
+        user: NewUser {
             id: identity::owner(),
             username: identity::OWNER.to_owned(),
             display_name: "Owner".to_owned(),
             role: Role::Admin,
-            state: UserState::Active,
-            timezone: owner.timezone.clone(),
-            default_identity: Some(owner.default.clone()),
-            identities,
-        }])
+            timezone: raw.timezone,
+            default_identity: Some(default),
+        },
+        identities,
+    })
+}
+
+/// A stored user as the snapshot holds it.
+fn to_user(stored: StoredUser) -> Result<User, UsersError> {
+    let corrupt = |what: String| UsersError::Corrupt(format!("user {}: {what}", stored.id));
+    let identity = |text: &str| Identity::new(text).map_err(corrupt);
+    let timezone = stored
+        .timezone
+        .as_deref()
+        .map(|name| parse_timezone(name).map_err(corrupt))
+        .transpose()?;
+    let default_identity = stored
+        .default_identity
+        .as_deref()
+        .map(identity)
+        .transpose()?;
+    let identities = stored
+        .identities
+        .iter()
+        .map(|i| {
+            Ok(UserIdentity {
+                identity: identity(&i.text())?,
+                verified_at: i.verified_at,
+                verification: i.verification,
+            })
+        })
+        .collect::<Result<_, UsersError>>()?;
+    Ok(User {
+        id: stored.id,
+        username: stored.username,
+        display_name: stored.display_name,
+        role: stored.role,
+        state: stored.state,
+        timezone,
+        default_identity,
+        identities,
+    })
+}
+
+/// Checks a username: 1 to [`MAX_USERNAME_CHARS`] letters, digits, `.`, `_`, and `-`.
+fn check_username(username: &str) -> Result<(), UserError> {
+    let ok = !username.is_empty()
+        && username.chars().count() <= MAX_USERNAME_CHARS
+        && username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(UserError::Invalid(format!(
+            "a username is 1 to {MAX_USERNAME_CHARS} letters, digits, `.`, `_`, or `-`"
+        )))
     }
+}
+
+/// Checks a display name: 1 to [`MAX_DISPLAY_NAME_CHARS`] characters, none of them control
+/// characters.
+fn check_display_name(name: &str) -> Result<(), UserError> {
+    let ok = !name.trim().is_empty()
+        && name.chars().count() <= MAX_DISPLAY_NAME_CHARS
+        && !name.chars().any(char::is_control);
+    if ok {
+        Ok(())
+    } else {
+        Err(UserError::Invalid(format!(
+            "a display name is 1 to {MAX_DISPLAY_NAME_CHARS} characters, without control characters"
+        )))
+    }
+}
+
+/// Checks an identity's parts: together they are a valid [`Identity`].
+fn check_identity(namespace: &str, native_id: &str) -> Result<Identity, UserError> {
+    Identity::new(format!("{namespace}:{native_id}")).map_err(UserError::Invalid)
+}
+
+/// The users, in the database, and the [`UserList`] the router reads. See the module
+/// documentation. Share it in an `Arc`.
+#[derive(Debug)]
+pub struct Users {
+    store: Store,
+    list: UserList,
+    /// Held across read, validate, write, and replacing the snapshot.
+    changing: Mutex<()>,
+}
+
+impl Users {
+    /// Opens the users of `store`: imports `[owner]` of `config`, read from the file `file`, if
+    /// the import has never run, loads the stored users into `list`, and logs that `[owner]` is
+    /// ignored while the file still has it. `list` is the one the router and the web login hold.
+    ///
+    /// # Errors
+    ///
+    /// [`UsersError::Import`] if the import is due and `[owner]` is invalid (nothing is
+    /// imported), or a database error.
+    pub async fn open(
+        store: Store,
+        list: UserList,
+        config: &Config,
+        file: &Path,
+    ) -> Result<Self, UsersError> {
+        let legacy = config.legacy_owner.as_ref();
+        let mut import = None;
+        if !store.users_imported().await? {
+            let file = file.display().to_string();
+            let owner = legacy.map(|owner| import_owner(owner, &file)).transpose()?;
+            import = store.users_import(owner, jiff::Timestamp::now()).await?;
+        }
+        if legacy.is_some() {
+            match import {
+                Some(true) => info!(
+                    "imported the [owner] of doozers.toml as the admin `{}`: it was imported once \
+                     and is not read again; remove it from doozers.toml",
+                    identity::OWNER
+                ),
+                Some(false) => warn!(
+                    "doozers.toml has [owner], which is ignored: users already existed when it \
+                     would have been imported, and users are managed by Doozers; remove it from \
+                     doozers.toml"
+                ),
+                None => warn!(
+                    "doozers.toml has [owner], which is ignored: users and their identities are \
+                     stored by Doozers, and [owner] was imported when they were first stored; \
+                     remove it from doozers.toml"
+                ),
+            }
+        }
+        let users = Self {
+            store,
+            list,
+            changing: Mutex::new(()),
+        };
+        users.load().await?;
+        Ok(users)
+    }
+
+    /// The list the router reads. It follows every change made through this object.
+    pub fn list(&self) -> UserList {
+        self.list.clone()
+    }
+
+    /// Reads the stored users and makes them the list the router uses.
+    async fn load(&self) -> Result<(), UsersError> {
+        let users = self
+            .store
+            .users()
+            .await?
+            .into_iter()
+            .map(to_user)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.list.set(users);
+        Ok(())
+    }
+
+    /// Replaces the snapshot after a write, as a change did.
+    async fn publish(&self) -> Result<(), UserError> {
+        Ok(self.load().await?)
+    }
+
+    /// Creates an active user with `identities`, each verified at `now`.
+    ///
+    /// # Errors
+    ///
+    /// [`UserError`]: the id, username, or an identity is taken, something isn't valid, or the
+    /// database failed. Nothing changes.
+    pub async fn create(
+        &self,
+        user: NewUser,
+        identities: Vec<NewIdentity>,
+        now: Timestamp,
+    ) -> Result<User, UserError> {
+        check_username(&user.username)?;
+        check_display_name(&user.display_name)?;
+        if let Some(name) = &user.timezone {
+            parse_timezone(name).map_err(UserError::Invalid)?;
+        }
+        for identity in &identities {
+            check_identity(&identity.namespace, &identity.native_id)?;
+        }
+        let _changing = self.changing.lock().await;
+        let directory = self.list.get();
+        for identity in &identities {
+            let joined = format!("{}:{}", identity.namespace, identity.native_id);
+            if directory.has_identity(&joined) {
+                return Err(UserError::IdentityTaken(joined));
+            }
+        }
+        let id = user.id.clone();
+        let stored = self
+            .store
+            .user_create(user, identities, now)
+            .await
+            .map_err(|e| UserError::from_store(e, &id))?;
+        self.publish().await?;
+        Ok(to_user(stored)?)
+    }
+
+    /// Sets the state of user `id`.
+    ///
+    /// # Errors
+    ///
+    /// [`UserError::NoSuchUser`], or [`UserError::LastAdmin`] if the user is the last active
+    /// admin and the state is `disabled`.
+    pub async fn set_state(
+        &self,
+        id: &UserId,
+        state: UserState,
+        now: Timestamp,
+    ) -> Result<User, UserError> {
+        let _changing = self.changing.lock().await;
+        let directory = self.list.get();
+        let user = directory
+            .user(id)
+            .ok_or_else(|| UserError::NoSuchUser(id.clone()))?;
+        if state == UserState::Disabled
+            && user.role == Role::Admin
+            && user.is_active()
+            && !directory
+                .users()
+                .iter()
+                .any(|other| other.id != *id && other.role == Role::Admin && other.is_active())
+        {
+            return Err(UserError::LastAdmin);
+        }
+        let stored = self
+            .store
+            .user_set_state(id, state, now)
+            .await
+            .map_err(|e| UserError::from_store(e, id))?;
+        self.publish().await?;
+        Ok(to_user(stored)?)
+    }
+
+    /// Adds the identity `<namespace>:<native_id>` to user `id`, verified at `now`.
+    ///
+    /// # Errors
+    ///
+    /// [`UserError::NoSuchUser`], [`UserError::IdentityTaken`] if any user has it, or
+    /// [`UserError::Invalid`] if it isn't a valid identity.
+    pub async fn add_identity(
+        &self,
+        id: &UserId,
+        namespace: &str,
+        native_id: &str,
+        verification: Verification,
+        now: Timestamp,
+    ) -> Result<User, UserError> {
+        check_identity(namespace, native_id)?;
+        let _changing = self.changing.lock().await;
+        self.add_identity_locked(id, namespace, native_id, verification, now)
+            .await
+    }
+
+    async fn add_identity_locked(
+        &self,
+        id: &UserId,
+        namespace: &str,
+        native_id: &str,
+        verification: Verification,
+        now: Timestamp,
+    ) -> Result<User, UserError> {
+        let joined = format!("{namespace}:{native_id}");
+        if self.list.get().has_identity(&joined) {
+            return Err(UserError::IdentityTaken(joined));
+        }
+        let stored = self
+            .store
+            .user_identity_add(
+                id,
+                NewIdentity {
+                    namespace: namespace.to_owned(),
+                    native_id: native_id.to_owned(),
+                    verification,
+                },
+                now,
+            )
+            .await
+            .map_err(|e| UserError::from_store(e, id))?;
+        self.publish().await?;
+        Ok(to_user(stored)?)
+    }
+
+    /// Removes `identity` from user `id`.
+    ///
+    /// # Errors
+    ///
+    /// [`UserError::NoSuchUser`], or [`UserError::Invalid`] if the user doesn't have it.
+    pub async fn remove_identity(
+        &self,
+        id: &UserId,
+        identity: &Identity,
+        now: Timestamp,
+    ) -> Result<User, UserError> {
+        let _changing = self.changing.lock().await;
+        let stored = self
+            .store
+            .user_identity_remove(id, identity.as_str(), now)
+            .await
+            .map_err(|e| match e {
+                doozers_store::Error::NotFound(_) => {
+                    UserError::Invalid(format!("user {id} doesn't have the identity {identity}"))
+                }
+                other => UserError::from_store(other, id),
+            })?;
+        self.publish().await?;
+        Ok(to_user(stored)?)
+    }
+
+    /// The user a web login link is for, and the first admin if there are no users yet: this is
+    /// `doozers admin login-link`.
+    ///
+    /// - With no `requested` user and no users at all, it creates the first admin, the id
+    ///   [`identity::OWNER`] (the id an imported owner has, which the owner-only pages compare
+    ///   against), and returns it.
+    /// - With no `requested` user and exactly one user, it is that user, as before there were
+    ///   several.
+    /// - With no `requested` user and several users, it asks for one
+    ///   ([`LoginUserError::NeedUser`]).
+    /// - With a `requested` user, who must exist and be active, it makes sure `web:<id>`, the
+    ///   identity a login link signs in as, is one of their identities, and returns the user.
+    ///
+    /// # Errors
+    ///
+    /// [`LoginUserError`], with a message for the operator.
+    pub async fn login_user(
+        &self,
+        requested: Option<&UserId>,
+        now: Timestamp,
+    ) -> Result<UserId, LoginUserError> {
+        let _changing = self.changing.lock().await;
+        let directory = self.list.get();
+        let id = match (requested, directory.users()) {
+            (Some(id), _) => id,
+            (None, [only]) => &only.id,
+            (None, []) => {
+                return self.create_first_admin(now).await;
+            }
+            (None, several) => {
+                let list = several
+                    .iter()
+                    .map(|user| format!("{} ({})", user.id, user.username))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(LoginUserError::NeedUser(format!(
+                    "there are {} users, so say whose link you want with --user <id>: {list}",
+                    several.len()
+                )));
+            }
+        };
+        let user = directory
+            .user(id)
+            .ok_or_else(|| LoginUserError::NoSuchUser(id.clone()))?;
+        if !user.is_active() {
+            return Err(LoginUserError::Disabled(id.clone()));
+        }
+        let web = NativeId::new(id.as_str())
+            .map_err(|e| LoginUserError::Users(UserError::Invalid(format!("user id {id}: {e}"))))?;
+        match directory.resolve(web_namespace(), &web) {
+            Some(owner) if owner.id == *id => {}
+            Some(owner) => {
+                return Err(LoginUserError::WebIdentityTaken {
+                    user: id.clone(),
+                    owner: owner.id.clone(),
+                });
+            }
+            None => {
+                self.add_identity_locked(
+                    id,
+                    web_namespace(),
+                    id.as_str(),
+                    Verification::Admin,
+                    now,
+                )
+                .await
+                .map_err(LoginUserError::Users)?;
+            }
+        }
+        Ok(id.clone())
+    }
+
+    /// Creates the first admin, with the changes lock held.
+    async fn create_first_admin(&self, now: Timestamp) -> Result<UserId, LoginUserError> {
+        let user = NewUser {
+            id: identity::owner(),
+            username: FIRST_ADMIN.0.to_owned(),
+            display_name: FIRST_ADMIN.1.to_owned(),
+            role: Role::Admin,
+            timezone: None,
+            default_identity: Some(format!("{}:{}", web_namespace(), identity::OWNER)),
+        };
+        let web = NewIdentity {
+            namespace: web_namespace().to_owned(),
+            native_id: identity::OWNER.to_owned(),
+            verification: Verification::Admin,
+        };
+        self.store
+            .user_create(user, vec![web], now)
+            .await
+            .map_err(|e| LoginUserError::Users(UserError::from_store(e, &identity::owner())))?;
+        self.publish().await.map_err(LoginUserError::Users)?;
+        info!("created the first admin `{}`", identity::OWNER);
+        Ok(identity::owner())
+    }
+}
+
+/// The identity namespace of the web channel.
+fn web_namespace() -> &'static str {
+    crate::channels::chat_ids::COMPONENT
 }
 
 #[cfg(test)]
@@ -205,22 +824,53 @@ impl User {
     }
 }
 
+/// The users of the `[owner]` of `config`, as importing it would make them, for tests that build
+/// a registry without opening the users.
+#[cfg(test)]
+pub(crate) fn legacy_owner_users(config: &Config) -> Vec<User> {
+    let imported = import_owner(config.legacy_owner.as_ref().unwrap(), "doozers.toml").unwrap();
+    let identities = imported
+        .identities
+        .iter()
+        .map(|text| {
+            let (namespace, native_id) = text.split_once(':').unwrap();
+            doozers_store::StoredIdentity {
+                namespace: namespace.to_owned(),
+                native_id: native_id.to_owned(),
+                verified_at: Timestamp::UNIX_EPOCH,
+                verification: Verification::Imported,
+            }
+        })
+        .collect();
+    let user = imported.user;
+    vec![
+        to_user(StoredUser {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name,
+            role: user.role,
+            state: UserState::Active,
+            timezone: user.timezone,
+            default_identity: user.default_identity,
+            created_at: Timestamp::UNIX_EPOCH,
+            updated_at: Timestamp::UNIX_EPOCH,
+            identities,
+        })
+        .unwrap(),
+    ]
+}
+
 #[cfg(test)]
 impl UserList {
-    /// The owner with `identities`, the first of them the default, and `timezone` if set.
+    /// The owner, an admin with `identities`, the first of them the default, and `timezone` if
+    /// set.
     pub(crate) fn owner(identities: &[&str], timezone: Option<&str>) -> Self {
-        let identities: Vec<Identity> = identities
-            .iter()
-            .map(|identity| Identity::new(*identity).unwrap())
-            .collect();
-        Self::from_owner(
-            &OwnerConfig {
-                default: identities[0].clone(),
-                identities,
-                timezone: timezone.map(|name| TimeZone::get(name).unwrap()),
-            },
-            Timestamp::UNIX_EPOCH,
-        )
+        let mut owner = User::member(identity::OWNER, identities);
+        owner.role = Role::Admin;
+        owner.display_name = "Owner".to_owned();
+        owner.default_identity = Some(Identity::new(identities[0]).unwrap());
+        owner.timezone = timezone.map(|name| TimeZone::get(name).unwrap());
+        Self::new(vec![owner])
     }
 }
 
@@ -399,6 +1049,548 @@ mod tests {
         assert_eq!(
             list.timezone(&identity::owner()).unwrap().iana_name(),
             Some("America/Los_Angeles")
+        );
+    }
+
+    // The stored users.
+
+    use crate::config::LoadOptions;
+    use crate::paths::DataRoot;
+
+    /// A data root and database for `doozers.toml` with `toml`.
+    struct Home {
+        dir: tempfile::TempDir,
+        store: Store,
+    }
+
+    impl Home {
+        async fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Store::open(dir.path().join("doozers.db")).await.unwrap();
+            Self { dir, store }
+        }
+
+        fn config(&self, toml: &str) -> Config {
+            let root = DataRoot::new(self.dir.path(), &self.dir.path().join("tmp")).unwrap();
+            std::fs::write(root.config_file(), toml).unwrap();
+            Config::load_with(
+                &root,
+                &LoadOptions {
+                    env: &|_| None,
+                    doozers_exe: None,
+                    ..LoadOptions::default()
+                },
+            )
+            .unwrap_or_else(|e| panic!("{e}"))
+        }
+
+        /// Starts the users as `serve` does, with `toml` as `doozers.toml`.
+        async fn open(&self, toml: &str) -> Result<(Users, UserList), UsersError> {
+            let list = UserList::default();
+            let config = self.config(toml);
+            let file = self.dir.path().join("doozers.toml");
+            let users = Users::open(self.store.clone(), list.clone(), &config, &file).await?;
+            Ok((users, list))
+        }
+    }
+
+    fn id(text: &str) -> UserId {
+        UserId::new(text).unwrap()
+    }
+
+    fn at(secs: i64) -> Timestamp {
+        Timestamp::from_second(1_800_000_000 + secs).unwrap()
+    }
+
+    fn member(id: &str) -> NewUser {
+        NewUser {
+            id: UserId::new(id).unwrap(),
+            username: id.to_owned(),
+            display_name: id.to_owned(),
+            role: Role::Member,
+            timezone: None,
+            default_identity: None,
+        }
+    }
+
+    const OWNER: &str = "[owner]\nidentities = [\"whatsapp:+15551234567\", \
+        \"irc:libera.chat:account:stephen\", \"email:Me@Example.com\"]\n\
+        default = \"irc:libera.chat:account:stephen\"\ntimezone = \"America/Los_Angeles\"\n";
+
+    #[tokio::test]
+    async fn the_owner_is_imported_as_the_admin_owner_with_everything_it_declared() {
+        let home = Home::new().await;
+        let (_users, list) = home.open(OWNER).await.unwrap();
+        let directory = list.get();
+        let [owner] = directory.users() else {
+            panic!("{:?}", directory.users());
+        };
+        assert_eq!(owner.id, identity::owner());
+        assert_eq!(owner.username, "owner");
+        assert_eq!(owner.role, Role::Admin);
+        assert!(owner.is_active());
+        assert_eq!(
+            owner.timezone.as_ref().unwrap().iana_name(),
+            Some("America/Los_Angeles")
+        );
+        assert_eq!(
+            owner.default_identity.as_ref().map(Identity::as_str),
+            Some("irc:libera.chat:account:stephen")
+        );
+        let identities: Vec<_> = owner
+            .identities
+            .iter()
+            .map(|i| (i.identity.as_str(), i.verification))
+            .collect();
+        assert_eq!(
+            identities,
+            [
+                ("whatsapp:+15551234567", Verification::Imported),
+                ("irc:libera.chat:account:stephen", Verification::Imported),
+                ("email:Me@example.com", Verification::Imported),
+            ]
+        );
+        // The list resolves the owner's identities as the router will, whatever the split.
+        assert!(
+            directory
+                .resolve("irc:libera.chat", &native("account:stephen"))
+                .is_some()
+        );
+        assert!(
+            directory
+                .resolve("email", &native("Me@EXAMPLE.com"))
+                .is_some()
+        );
+        assert!(home.store.users_imported().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_single_identity_is_the_default_and_the_time_zone_is_optional() {
+        let home = Home::new().await;
+        let (_users, list) = home
+            .open("[owner]\nidentities = [\"web:owner\"]\n")
+            .await
+            .unwrap();
+        let owner = list.get().user(&identity::owner()).unwrap().clone();
+        assert_eq!(owner.default_identity.unwrap().as_str(), "web:owner");
+        assert!(owner.timezone.is_none());
+    }
+
+    #[tokio::test]
+    async fn the_import_runs_once_and_what_changes_later_is_ignored() {
+        let home = Home::new().await;
+        home.open(OWNER).await.unwrap();
+        // A changed `[owner]`, and then none at all, change nothing: the database is the truth.
+        let (_users, list) = home
+            .open("[owner]\nidentities = [\"web:other\"]\n")
+            .await
+            .unwrap();
+        let directory = list.get();
+        assert_eq!(directory.users().len(), 1);
+        assert!(
+            directory
+                .resolve("whatsapp", &native("+15551234567"))
+                .is_some()
+        );
+        assert!(directory.resolve("web", &native("other")).is_none());
+        let (_users, list) = home.open("").await.unwrap();
+        assert!(
+            list.get()
+                .resolve("whatsapp", &native("+15551234567"))
+                .is_some()
+        );
+        // Not even an invalid `[owner]` stops a start after the import.
+        let (_users, list) = home.open("[owner]\nidentities = []\n").await.unwrap();
+        assert_eq!(list.get().users().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_fresh_install_has_no_users_and_a_later_owner_is_not_imported() {
+        let home = Home::new().await;
+        let (_users, list) = home.open("").await.unwrap();
+        assert!(list.get().users().is_empty());
+        assert!(home.store.users_imported().await.unwrap());
+        let (_users, list) = home.open(OWNER).await.unwrap();
+        assert!(list.get().users().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_invalid_owner_is_refused_with_its_key_and_imports_nothing() {
+        let cases = [
+            ("[owner]\nnmae = 1", "owner", "missing field"),
+            (
+                "[owner]\nidentities = \"web:owner\"",
+                "owner",
+                "invalid type",
+            ),
+            (
+                "[owner]\nidentities = []",
+                "owner.identities",
+                "at least one",
+            ),
+            (
+                "[owner]\nidentities = [\"whatsapp\"]",
+                "owner.identities[0]",
+                "<namespace>:<native id>",
+            ),
+            (
+                "[owner]\nidentities = [\"a:b\", \"a:b\"]",
+                "owner.identities[1]",
+                "listed twice",
+            ),
+            (
+                "[owner]\nidentities = [\"a:b\", \"c:d\"]",
+                "owner.default",
+                "missing",
+            ),
+            (
+                "[owner]\nidentities = [\"a:b\", \"c:d\"]\ndefault = \"e:f\"",
+                "owner.default",
+                "not one of",
+            ),
+            (
+                "[owner]\nidentities = [\"a:b\"]\ndefault = \"nodefault\"",
+                "owner.default",
+                "<namespace>:<native id>",
+            ),
+            (
+                "[owner]\nidentities = [\"a:b\"]\ntimezone = \"PST\"",
+                "owner.timezone",
+                "unknown time zone",
+            ),
+        ];
+        for (toml, key, reason) in cases {
+            let home = Home::new().await;
+            let err = home.open(toml).await.map(|_| ()).unwrap_err();
+            let UsersError::Import {
+                file,
+                key: got,
+                reason: why,
+            } = &err
+            else {
+                panic!("{toml}: {err}");
+            };
+            assert_eq!(got, key, "{toml}");
+            assert!(why.contains(reason), "{toml}: {why}");
+            assert!(file.ends_with("doozers.toml"), "{file}");
+            assert!(
+                err.to_string().starts_with(&format!("{file}: owner")),
+                "{err}"
+            );
+            assert!(!home.store.users_imported().await.unwrap(), "{toml}");
+            assert!(home.store.users().await.unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn owner_identities_differing_in_an_email_domain_are_one_and_the_first_spelling_stays() {
+        let home = Home::new().await;
+        let (_users, list) = home
+            .open(
+                "[owner]\nidentities = [\"email:a@Example.com\", \"web:owner\", \"email:a@example.COM\"]\n\
+                 default = \"email:a@EXAMPLE.com\"\n",
+            )
+            .await
+            .unwrap();
+        let directory = list.get();
+        let owner = directory.user(&identity::owner()).unwrap();
+        let identities: Vec<_> = owner
+            .identities
+            .iter()
+            .map(|i| i.identity.as_str())
+            .collect();
+        assert_eq!(identities, ["email:a@example.com", "web:owner"]);
+        assert_eq!(
+            owner.default_identity.as_ref().unwrap().as_str(),
+            "email:a@example.com"
+        );
+        // The same text twice is still a mistake.
+        let other = Home::new().await;
+        let err = other
+            .open("[owner]\nidentities = [\"email:a@x.com\", \"email:a@x.com\"]\n")
+            .await
+            .map(|_| ())
+            .unwrap_err();
+        assert!(err.to_string().contains("listed twice"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn every_change_replaces_the_snapshot() {
+        let home = Home::new().await;
+        let (users, list) = home.open("").await.unwrap();
+        let before = list.get();
+        let ann = users
+            .create(
+                member("ann"),
+                vec![NewIdentity {
+                    namespace: "whatsapp".into(),
+                    native_id: "+15557654321".into(),
+                    verification: Verification::Link,
+                }],
+                at(0),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ann.default_identity, None);
+        assert!(resolves(&list, "whatsapp", "+15557654321"));
+        // A snapshot taken earlier is unchanged.
+        assert!(before.users().is_empty());
+
+        users
+            .add_identity(
+                &id("ann"),
+                "irc:libera.chat",
+                "account:ann",
+                Verification::Admin,
+                at(1),
+            )
+            .await
+            .unwrap();
+        assert!(resolves(&list, "irc:libera.chat", "account:ann"));
+        let ann = list.get().user(&id("ann")).unwrap().clone();
+        assert_eq!(ann.identities.len(), 2);
+        users
+            .remove_identity(
+                &id("ann"),
+                &Identity::new("whatsapp:+15557654321").unwrap(),
+                at(2),
+            )
+            .await
+            .unwrap();
+        assert!(!resolves(&list, "whatsapp", "+15557654321"));
+        assert!(resolves(&list, "irc:libera.chat", "account:ann"));
+
+        users
+            .set_state(&id("ann"), UserState::Disabled, at(3))
+            .await
+            .unwrap();
+        assert!(!list.get().user(&id("ann")).unwrap().is_active());
+        users
+            .set_state(&id("ann"), UserState::Active, at(4))
+            .await
+            .unwrap();
+        assert!(list.get().user(&id("ann")).unwrap().is_active());
+        // A fresh start sees the same users.
+        let (_again, reloaded) = home.open("").await.unwrap();
+        assert_eq!(reloaded.get().users(), list.get().users());
+    }
+
+    #[tokio::test]
+    async fn changes_are_checked_before_they_are_made() {
+        let home = Home::new().await;
+        let (users, list) = home.open("").await.unwrap();
+        users.create(member("ann"), vec![], at(0)).await.unwrap();
+        let web = |id: &str| (id.to_owned(), Verification::Admin);
+        users
+            .add_identity(&id("ann"), "email", "Ann@Example.com", web("").1, at(1))
+            .await
+            .unwrap();
+
+        let bad_names = ["", "a b", "ann!", &"x".repeat(MAX_USERNAME_CHARS + 1)];
+        for name in bad_names {
+            let new = NewUser {
+                username: name.to_owned(),
+                ..member("bob")
+            };
+            let err = users.create(new, vec![], at(2)).await.unwrap_err();
+            assert!(matches!(err, UserError::Invalid(_)), "{name:?}: {err}");
+        }
+        let blank = NewUser {
+            display_name: "  ".into(),
+            ..member("bob")
+        };
+        assert!(matches!(
+            users.create(blank, vec![], at(2)).await,
+            Err(UserError::Invalid(_))
+        ));
+        let zone = NewUser {
+            timezone: Some("Mars/Olympus".into()),
+            ..member("bob")
+        };
+        assert!(matches!(
+            users.create(zone, vec![], at(2)).await,
+            Err(UserError::Invalid(_))
+        ));
+        let taken = |namespace: &str, native: &str| NewIdentity {
+            namespace: namespace.to_owned(),
+            native_id: native.to_owned(),
+            verification: Verification::Link,
+        };
+        // Another user can't have the same identity, whatever the case of an email domain.
+        for native in ["Ann@Example.com", "Ann@EXAMPLE.COM"] {
+            let err = users
+                .create(member("bob"), vec![taken("email", native)], at(2))
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, UserError::IdentityTaken(_)),
+                "{native}: {err}"
+            );
+        }
+        let err = users
+            .create(member("ANN"), vec![], at(2))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::UsernameTaken), "{err}");
+        let same_id = NewUser {
+            username: "other".into(),
+            ..member("ann")
+        };
+        let err = users.create(same_id, vec![], at(2)).await.unwrap_err();
+        assert!(matches!(err, UserError::IdTaken), "{err}");
+        let err = users
+            .add_identity(&id("nobody"), "web", "x", Verification::Admin, at(2))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::NoSuchUser(_)), "{err}");
+        let err = users
+            .add_identity(&id("ann"), "web", "a b", Verification::Admin, at(2))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::Invalid(_)), "{err}");
+        let err = users
+            .remove_identity(&id("ann"), &Identity::new("web:none").unwrap(), at(2))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::Invalid(_)), "{err}");
+        // Nothing of that was stored.
+        assert_eq!(list.get().users().len(), 1);
+        assert_eq!(home.store.users().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_last_active_admin_stays_active() {
+        let home = Home::new().await;
+        let (users, list) = home
+            .open("[owner]\nidentities = [\"web:owner\"]\n")
+            .await
+            .unwrap();
+        users.create(member("ann"), vec![], at(0)).await.unwrap();
+        let err = users
+            .set_state(&identity::owner(), UserState::Disabled, at(1))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::LastAdmin), "{err}");
+        // A member can be disabled, and the sole admin stays.
+        users
+            .set_state(&id("ann"), UserState::Disabled, at(2))
+            .await
+            .unwrap();
+        assert!(list.get().user(&identity::owner()).unwrap().is_active());
+        let admin = NewUser {
+            role: Role::Admin,
+            ..member("bob")
+        };
+        users.create(admin, vec![], at(3)).await.unwrap();
+        users
+            .set_state(&identity::owner(), UserState::Disabled, at(4))
+            .await
+            .unwrap();
+        let err = users
+            .set_state(&id("bob"), UserState::Disabled, at(5))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::LastAdmin), "{err}");
+        let err = users
+            .set_state(&id("nobody"), UserState::Disabled, at(5))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UserError::NoSuchUser(_)), "{err}");
+    }
+
+    #[tokio::test]
+    async fn login_with_no_users_creates_the_first_admin_once() {
+        let home = Home::new().await;
+        let (users, list) = home.open("").await.unwrap();
+        let first = users.login_user(None, at(0)).await.unwrap();
+        assert_eq!(first, identity::owner());
+        let directory = list.get();
+        let admin = directory.user(&first).unwrap();
+        assert_eq!(admin.role, Role::Admin);
+        assert!(admin.is_active());
+        assert_eq!(admin.username, "admin");
+        assert_eq!(
+            admin.default_identity.as_ref().unwrap().as_str(),
+            "web:owner"
+        );
+        // The web login resolves to them, as messages from it will.
+        assert_eq!(
+            directory.resolve("web", &native("owner")).unwrap().id,
+            first
+        );
+        // It's stored.
+        assert_eq!(home.store.users().await.unwrap().len(), 1);
+        // With one user, no name is needed, and naming them changes nothing.
+        assert_eq!(users.login_user(None, at(1)).await.unwrap(), first);
+        assert_eq!(users.login_user(Some(&first), at(2)).await.unwrap(), first);
+        assert_eq!(list.get().user(&first).unwrap().identities.len(), 1);
+        assert_eq!(home.store.users().await.unwrap().len(), 1);
+        // With several, one must be named, and the message lists them.
+        users.create(member("ann"), vec![], at(3)).await.unwrap();
+        let err = users.login_user(None, at(4)).await.unwrap_err();
+        let LoginUserError::NeedUser(message) = &err else {
+            panic!("{err}");
+        };
+        assert!(
+            message.contains("owner (admin)")
+                && message.contains("ann (ann)")
+                && message.contains("--user"),
+            "{message}"
+        );
+        assert_eq!(list.get().user(&id("ann")).unwrap().identities.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn login_for_a_named_user_gives_them_the_web_identity_a_link_signs_in_as() {
+        let home = Home::new().await;
+        let (users, list) = home
+            .open("[owner]\nidentities = [\"whatsapp:+15551234567\"]\n")
+            .await
+            .unwrap();
+        // The imported owner has no `web:` identity yet.
+        assert!(!resolves(&list, "web", "owner"));
+        assert_eq!(
+            users
+                .login_user(Some(&identity::owner()), at(0))
+                .await
+                .unwrap(),
+            identity::owner()
+        );
+        let directory = list.get();
+        let owner = directory.user(&identity::owner()).unwrap();
+        assert_eq!(
+            directory.resolve("web", &native("owner")).unwrap().id,
+            owner.id
+        );
+        assert_eq!(owner.identities[1].verification, Verification::Admin);
+        // The default identity stays where jobs go.
+        assert_eq!(
+            owner.default_identity.as_ref().unwrap().as_str(),
+            "whatsapp:+15551234567"
+        );
+
+        let err = users
+            .login_user(Some(&id("nobody")), at(1))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, LoginUserError::NoSuchUser(_)), "{err}");
+        users.create(member("ann"), vec![], at(2)).await.unwrap();
+        users
+            .set_state(&id("ann"), UserState::Disabled, at(3))
+            .await
+            .unwrap();
+        let err = users.login_user(Some(&id("ann")), at(4)).await.unwrap_err();
+        assert!(matches!(err, LoginUserError::Disabled(_)), "{err}");
+        // `web:bob` belongs to ann, so bob can't be logged in as `bob`.
+        users
+            .add_identity(&id("ann"), "web", "bob", Verification::Admin, at(5))
+            .await
+            .unwrap();
+        users.create(member("bob"), vec![], at(6)).await.unwrap();
+        let err = users.login_user(Some(&id("bob")), at(7)).await.unwrap_err();
+        assert!(
+            matches!(&err, LoginUserError::WebIdentityTaken { owner, .. } if owner == &id("ann")),
+            "{err}"
         );
     }
 }

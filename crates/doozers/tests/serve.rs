@@ -333,7 +333,7 @@ fn missing_config_creates_the_layout_then_fails() {
 }
 
 #[test]
-fn invalid_config_fails_with_the_file_and_key() {
+fn an_invalid_owner_fails_the_first_start_with_the_file_and_key() {
     // A typo next to the wrong-typed key doesn't change the error.
     let env = Env::new();
     let home = env.path("home");
@@ -344,8 +344,9 @@ fn invalid_config_fails_with_the_file_and_key() {
     let output = output_within_timeout(env.command(&["serve", "--home", home.to_str().unwrap()]));
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
+    // `[owner]` is checked by its one-time import.
     let expected = format!(
-        "{}:2:14: owner.identities: invalid type",
+        "{}: owner: invalid type",
         home.join("doozers.toml").display()
     );
     assert!(stderr.contains(&expected), "{stderr}");
@@ -737,7 +738,7 @@ fn admin_login_link_prints_a_url_that_logs_in_once() {
     let again = http_post_form(addr, "/login", &form);
     assert!(!again.starts_with("HTTP/1.1 303 "), "{again}");
 
-    // v1 has one user.
+    // Only users that exist get links.
     let (ok, stdout, stderr) = run_cli(
         &env,
         &[
@@ -754,6 +755,85 @@ fn admin_login_link_prints_a_url_that_logs_in_once() {
 
     let (status, log) = daemon.stop("TERM");
     assert!(status.success(), "{status}\n{log}");
+}
+
+/// The value of the `Set-Cookie` header of `response`, without its attributes.
+#[cfg(feature = "channel-web")]
+fn cookie_of(response: &str) -> String {
+    response
+        .lines()
+        .find(|line| line.to_ascii_lowercase().starts_with("set-cookie: "))
+        .and_then(|line| line["set-cookie: ".len()..].split(';').next())
+        .unwrap_or_else(|| panic!("no cookie in {response}"))
+        .to_owned()
+}
+
+#[cfg(feature = "channel-web")]
+#[test]
+fn a_fresh_install_without_an_owner_gets_its_first_admin_from_login_link() {
+    let env = Env::new();
+    let home = env.path("home");
+    let home_arg = home.to_str().unwrap();
+    // No `[owner]`: nothing identifies anyone yet.
+    write_config(
+        &home,
+        "[core]\nhttp_listen = \"127.0.0.1:0\"\n\n[channel.web]\n",
+    );
+    let daemon = Daemon::start(env.command(&["serve", "--home", home_arg]));
+    let addr = http_addr(&daemon.log);
+
+    // The login page works for nobody until there's a link.
+    let response = http_request(TcpStream::connect(addr).unwrap(), "/", "");
+    assert!(response.starts_with("HTTP/1.1 401 "), "{response}");
+
+    let (ok, stdout, stderr_of_first) = run_cli(&env, &["admin", "login-link", "--home", home_arg]);
+    assert!(ok, "{stderr_of_first}");
+    let url = stdout.trim().to_owned();
+    let token = url
+        .strip_prefix(&format!("http://{addr}/login/"))
+        .unwrap_or_else(|| panic!("{url}"))
+        .to_owned();
+    let login = http_post_form(addr, "/login", &format!("token={token}"));
+    assert!(login.starts_with("HTTP/1.1 303 "), "{login}");
+    // The first admin is a working user: the cookie opens the chat list, and the admin pages.
+    let cookie = format!("cookie: {}\r\n", cookie_of(&login));
+    let chats = http_request(TcpStream::connect(addr).unwrap(), "/", &cookie);
+    assert!(chats.starts_with("HTTP/1.1 200 OK\r\n"), "{chats}");
+    let admin = http_request(TcpStream::connect(addr).unwrap(), "/admin", &cookie);
+    assert!(admin.starts_with("HTTP/1.1 200 OK\r\n"), "{admin}");
+
+    assert!(
+        stderr_of_first.contains("logs in admin (id owner)"),
+        "{stderr_of_first}"
+    );
+
+    // With one user, a link needs no name, and `--user` names the same user.
+    let (ok, stdout, stderr) = run_cli(&env, &["admin", "login-link", "--home", home_arg]);
+    assert!(ok && stdout.starts_with("http://"), "{stdout}{stderr}");
+    let (ok, _, stderr) = run_cli(
+        &env,
+        &["admin", "login-link", "--home", home_arg, "--user", "owner"],
+    );
+    assert!(ok, "{stderr}");
+
+    let (status, log) = daemon.stop("TERM");
+    assert!(status.success(), "{status}\n{log}");
+
+    // The user is stored: a restart keeps it, and a `[owner]` added now is ignored with a warning.
+    write_config(
+        &home,
+        "[core]\nhttp_listen = \"127.0.0.1:0\"\n\n[owner]\nidentities = [\"web:other\"]\n\n\
+         [channel.web]\n",
+    );
+    let daemon = Daemon::start(env.command(&["serve", "--home", home_arg]));
+    let (ok, stdout, stderr) = run_cli(&env, &["admin", "login-link", "--home", home_arg]);
+    assert!(ok && stderr.contains("id owner"), "{stdout}{stderr}");
+    let (status, log) = daemon.stop("TERM");
+    assert!(status.success(), "{status}\n{log}");
+    assert!(
+        log.contains("doozers.toml has [owner], which is ignored"),
+        "{log}"
+    );
 }
 
 #[test]

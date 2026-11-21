@@ -10,9 +10,6 @@ Give Doozers a mailbox of its own. It reads every new message in the folder it w
 [Install the plugin](configuration.md#instances) and add an instance:
 
 ```toml
-[owner]
-identities = ["email:me@example.com"]
-
 [channel.mail]
 component = "email"
 
@@ -33,8 +30,10 @@ password = { secret = "mail" }
 ```
 
 Email senders are identities of the form `email:<address>`. Every email instance shares this
-namespace, so `email:me@example.com` in `[owner] identities` covers all of them. The domain of an
-address ignores case, but the part before the `@` doesn't.
+namespace, so your identity `email:me@example.com` covers all of them. The domain of an address
+ignores case, but the part before the `@` doesn't. Doozers learns your identities from
+[`[owner]`](configuration.md#owner) when it first starts, and an install that has started can't add
+one yet.
 
 ## Settings
 

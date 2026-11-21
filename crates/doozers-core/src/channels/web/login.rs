@@ -2,10 +2,10 @@
 //! logout, and deleting expired sessions.
 //!
 //! - A request through the trusted-proxy listener (marked [`TrustedProxy`]) that carries the
-//!   proxy's identity header is the user that header names, if it's one of the owner's `web`
-//!   identities. Nothing else ever reads that header.
-//! - Otherwise the session cookie, if it names a live `web_sessions` row, is the user. A stale
-//!   cookie is deleted in the response.
+//!   proxy's identity header is the active user who has that `web` identity. Nothing else ever
+//!   reads that header.
+//! - Otherwise the session cookie, if it names a live `web_sessions` row of an active user who
+//!   still has their `web` identity, is the user. A stale cookie is deleted in the response.
 //! - Otherwise the request has no [`WebUser`] and the pages answer with the login page.
 
 use std::time::Duration;
@@ -30,7 +30,7 @@ use super::auth::{
 use super::pages::{WebApp, error_page, internal_error, no_store};
 use super::{COMPONENT, WebChannel, links, random_hex};
 use crate::http;
-use crate::identity;
+use crate::users::User;
 
 /// How often expired web sessions are deleted.
 pub const SESSION_EXPIRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -80,16 +80,23 @@ pub(super) async fn authenticate(
         let (Some(sender), Some(known)) = (sender, known) else {
             warn!(
                 identity = ?value,
-                "the trusted proxy named someone who isn't one of the owner's web identities",
+                "the trusted proxy named someone who isn't the web identity of any user",
             );
             return error_page(
                 StatusCode::FORBIDDEN,
                 "Not allowed",
-                "The proxy in front of Doozers logged you in as someone Doozers doesn't know. The \
-                 operator can add your identity to `[owner] identities` as `web:<id>`; the log \
-                 shows the id.",
+                "The proxy in front of Doozers logged you in as someone Doozers doesn't know. An \
+                 admin can set your identity as `web:<id>`; the log shows the id.",
             );
         };
+        if !known.is_active() {
+            warn!(user = %known.id, "the trusted proxy named a disabled user");
+            return error_page(
+                StatusCode::FORBIDDEN,
+                "Not allowed",
+                "Your account is disabled. Ask an admin.",
+            );
+        }
         request.extensions_mut().insert(WebUser {
             user: known.id.clone(),
             csrf: proxy_csrf(&channel.proxy_key, &sender),
@@ -124,10 +131,13 @@ pub(super) async fn authenticate(
 }
 
 impl WebChannel {
-    /// The user of a live cookie session for `user`, unless `web:<user>` is no longer one of the
-    /// owner's identities (then the session no longer logs anyone in).
+    /// The user of a live cookie session for `user`, unless the user is gone or disabled, or
+    /// `web:<user>` is no longer one of their identities (then the session no longer logs anyone
+    /// in).
     fn cookie_user(&self, user: &UserId, token: &str) -> Option<WebUser> {
-        if *user != identity::owner() || !self.is_web_identity(user) {
+        if !self.users().get().user(user).is_some_and(User::is_active)
+            || !self.is_web_identity(user)
+        {
             return None;
         }
         Some(WebUser {
@@ -146,7 +156,7 @@ fn dead_link() -> Response {
         StatusCode::GONE,
         "Login link expired",
         "This login link has expired or was already used. Ask the operator for a new one \
-         (`doozers admin login-link --user owner`); each works once, for 10 minutes.",
+         (`doozers admin login-link`); each works once, for 10 minutes.",
     ))
 }
 

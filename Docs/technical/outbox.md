@@ -2,10 +2,9 @@
 
 `doozers_core::outbox` delivers proactive sends: messages the core starts rather than replies to a
 turn ([Plan](../PLAN.md) §6.11, §8.5). Most are addressed to an identity, such as the owner's
-default identity (`[owner] default`, §1.1). A runtime job's reply is addressed to the conversation
-the job was scheduled in. They wait in the `outbox` table ([Storage](storage.md)) until the channel
-accepts them or they expire. So the reply of a job that fires before WhatsApp has reconnected isn't
-lost.
+default identity (§1.1). A runtime job's reply is addressed to the conversation the job was
+scheduled in. They wait in the `outbox` table ([Storage](storage.md)) until the channel accepts them
+or they expire. So the reply of a job that fires before WhatsApp has reconnected isn't lost.
 
 | Item                    | What it is                                                              |
 | ----------------------- | ----------------------------------------------------------------------- |

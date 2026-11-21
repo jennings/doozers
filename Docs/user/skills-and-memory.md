@@ -23,7 +23,8 @@ This stays the same for the whole conversation. Edits to `SOUL.md` or `USER.md`,
 show up in the next conversation, which starts after `/new`, an idle reset, or a restart of Doozers.
 Compaction also refreshes the memories.
 
-Each of your messages reaches the agent with the time you sent it, in your `owner.timezone`.
+Each of your messages reaches the agent with the time you sent it, in your time zone, else the
+agent's.
 
 ## Skills
 

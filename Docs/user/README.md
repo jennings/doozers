@@ -3,8 +3,8 @@
 This part of the book is for the person running Doozers. It covers installing and configuring
 Doozers, and talking to its agents.
 
-Doozers serves one person, the owner. You list your identities on each channel in
-[`doozers.toml`](configuration.md#owner). Doozers drops messages from anyone else.
+Doozers serves one person, the owner. It knows the owner's identity on each channel and drops
+messages from anyone else. See [`[owner]`](configuration.md#owner) for how Doozers learns them.
 
 Each agent has its own:
 

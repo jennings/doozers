@@ -9,7 +9,7 @@ it as a core command, or hand it to an agent's session ([Plan](../PLAN.md) §1.1
 | Module     | Contents                                                                    |
 | ---------- | --------------------------------------------------------------------------- |
 | `identity` | `OWNER`, `owner()`, `validate_namespace`, `NamespaceError`                  |
-| `users`    | `User`, `UserIdentity`, `UserList`, `UserDirectory`                         |
+| `users`    | `User`, `UserIdentity`, `UserList`, `UserDirectory`, `Users`, `UsersError`, `UserError`, `LoginUserError` |
 | `commands` | `CoreCommand`, `ApprovalReply`, `Answer`, `parse`, `PendingApprovals`, `NoPendingApprovals` |
 | `router`   | `Router`, `ChannelSource`, `Routed`, `Inbound`, `DropReason`                |
 | `routes`   | `Route`, `RouteList`                                                        |
@@ -35,13 +35,16 @@ match router.classify(&source, &event_id, &message, &pending_approvals) {
    at `debug`, not `warn`.
 3. `Unauthenticated`: `sender_authenticated` is false. This runs before any identity lookup, so a
    forged sender learns nothing (§3.3).
-4. `UnknownSender`: neither `sender` nor any `sender_aliases` entry is an `[owner]` identity.
-5. `UnknownAgent`: a web chat started with a chosen agent names one that isn't configured (see
+4. `UnknownSender`: neither `sender` nor any `sender_aliases` entry is the identity of a user.
+5. `DisabledUser`: the user the sender resolves to is `disabled`. Their messages, commands included,
+   are dropped until an admin enables them again.
+6. `UnknownAgent`: a web chat started with a chosen agent names one that isn't configured (see
    [Routing](#routing)).
-6. `NoRoute`: no route matches.
+7. `NoRoute`: no route matches.
 
-A message that passes is `Routed { session: SessionKey { agent, channel, conversation }, user }`. If
-it has no attachments and `commands::parse` recognizes its text, it's `Inbound::Command`; otherwise
+A message that passes is `Routed { session: SessionKey { agent, channel, conversation }, user }`,
+where `user` is the id of the user the sender resolved to: the turn's requester. If it has no
+attachments and `commands::parse` recognizes its text, it's `Inbound::Command`; otherwise
 `Inbound::Message`.
 
 Core commands are recognized after routing, not before it: `/new`, `/stop`, `/env reset`, and
@@ -54,17 +57,70 @@ message.
 `classify` logs every drop with the instance, the event id, and the reason, never the text. Levels:
 `warn` for an invalid namespace and for unauthenticated senders (a misbehaving channel or a forgery
 attempt), `info` for unknown senders (with `<namespace>:<sender>` and the alias count, so the
-operator can add a missing identity) and for unrouted conversations and chats with an unknown agent
-(with the conversation id), and `debug` for group conversations, which an IRC channel can produce on
-every line.
+operator can see the identity the channel reported), for disabled users, and for unrouted
+conversations and chats with an unknown agent (with the conversation id), and `debug` for group
+conversations, which an IRC channel can produce on every line.
 
-## The owner
+## Users
 
-v1 has one implicit user, the owner (§1.1). `identity::OWNER` is its user id, `"owner"`, and
-`identity::owner()` returns it as a `UserId`. Everything keyed by user uses it: `Routed::user` (the
-turn's requester), session rows, inbox and usage rows, per-user files (`users/owner/USER.md`), and
-the owner of a user's memories (below). With no roles in v1, routes have no `user` key: every routed
-message is from the owner.
+A user is a row of the `users` table with their identities in `user_identities`
+(`Docs/technical/storage.md`): an opaque id, a username, a display name, a role (`admin` or
+`member`), a state (`active` or `disabled`), a time zone, a default identity, and the identities
+that act as the user, each with when and how it was verified. `users::User` is that row in memory.
+Everything keyed by user uses the id: `Routed::user` (the turn's requester), session rows, inbox and
+usage rows, per-user files (`users/<id>/USER.md`), and the owner of a user's memories (below).
+
+The user v1 began with, the owner, has the id `identity::OWNER`, `"owner"`, and `identity::owner()`
+returns it as a `UserId`. The import (below) gives that id to the user `[owner]` described, so
+nothing keyed by it is rewritten. The checks that only the owner passes (`may_administer`, shared
+memory writes) still compare the requester to `identity::owner()`; they move to the admin role in
+the multi-user work. A second user can be created through `Users::create`, but nothing in the
+product does yet. Routes have no `user` key.
+
+### Stored users
+
+`users::Users` (one per core, `Runtime::users`) owns the users and keeps the snapshot the router
+reads:
+
+- **Liveness.** `Registry::users()` is the `UserList` the router, the web login, and the lookups
+  below share, in the `RouteList` pattern: a snapshot (`UserDirectory`) that every successful change
+  replaces as a whole, so the next message is resolved against the new users and nothing restarts.
+  `classify` stays synchronous and off the database, including for messages it drops. One async lock
+  spans read, validate, write, and replace, so concurrent changes serialize and the snapshot always
+  equals what is stored. Only this process changes the tables.
+- **Operations.** `create(user, identities, now)`, `set_state(id, state, now)`,
+  `add_identity(id, namespace, native_id, verification, now)`, `remove_identity(id, identity, now)`,
+  and `login_user(requested, now)`. A username is 1 to 64 letters, digits, `.`, `_`, and `-`; the
+  store compares it ignoring ASCII case. An identity belongs to one user (`IdentityTaken`), and
+  `set_state` refuses to disable the last active admin (`LastAdmin`).
+- **Import.** `doozers.toml`'s `[owner]` stays in `Config::legacy_owner`, as written. `Users::open`
+  runs at `Runtime::start`: if the database hasn't recorded the import (`users_imported`), it
+  validates `[owner]` as `doozers.toml` always did (at least one identity, no identity written
+  twice, a `default` that is one of them and required when there are several, a known `timezone`),
+  except that identities differing only in the case of an email domain, which the old exact
+  comparison accepted as two, are one: the first is kept and a `warn` names the others. It creates
+  the user `owner` (username `owner`, display name `Owner`, role `admin`) with its identities stored
+  as `imported`, its default identity and its time zone, and records the import, all or nothing. An
+  invalid `[owner]` fails startup with `<path to doozers.toml>: owner.<key>: <reason>`. A config
+  with no `[owner]` still records the import, so a fresh install's first admin, made by
+  `login_user`, is never followed by an import. So does an import that finds users stored already.
+  After that `[owner]` is never read: not when it changes, not when it has become invalid, not when
+  every user is gone. While the file still has `[owner]`, startup logs `info` on the importing start
+  and `warn` on every later one, saying it is ignored and to remove it.
+- **The first admin.** `login_user(None, now)` is `doozers admin login-link` with no `--user`. With
+  no users it creates the first admin, with the id `owner` (so the owner-only checks above admit
+  them), the username `admin`, and the identity `web:owner`, and returns it. With exactly one user
+  it is that user, so an install that has only its owner keeps working with no arguments. With
+  several it asks for one (`NeedUser`, whose message lists their ids and usernames). The admin
+  service reports the user it chose, and the CLI prints the id and username with the link.
+  `login_user(Some(id), now)` requires an active user, and gives them the identity `web:<id>`,
+  verified as `admin`, if they lack it: a link login sends as `web:<id>`, so without it the router
+  would drop their messages. The admin service calls it before it asks the web channel for the link,
+  and only if the web channel is running, so a daemon that can't make a link makes no user.
+- **Time zone and default identity.** `agent_loop::history::message_timezone(users, user, agent)` is
+  the user's time zone, else the agent's, else the system's; a config job has no user and runs as
+  `owner`. Jobs and proactive messages go to the user's default identity (`OutboxItem::to_user`); a
+  user without one gets none.
 
 ### Identity in memory
 
@@ -72,14 +128,13 @@ Memory ([Skills and Memory](skills-and-memory.md#memory)) uses identity in three
 `doozers_core::memory`:
 
 - **A user's memories belong to the internal user id**, not to a channel identity. They follow the
-  user's direct and job sessions with the agent on every channel (v1: `owner`), as `memory_search`'s
-  scope does.
+  user's direct and job sessions with the agent on every channel, as `memory_search`'s scope does.
 - **Shared memories are written by the agent owner only.** `memory::viewer` gives a tool call
   `can_write_shared` when the turn's requester is `identity::owner()`, and a config job (no
   requester) too; a runtime job runs as its creator and has that creator's right. Shared memories
   reach every prompt, including the owner's tool-enabled DMs, so a guest or a group must not be able
   to plant one. The check is made again in the memory store's write transaction, so a tool can't
-  skip it. In v1 every requester is the owner, so the rule matters once there are guests.
+  skip it. Only the owner can write them for now, so the rule matters once there are other users.
 - **A group's private scope is keyed by channel instance and conversation**
   (`MemoryOwner::Group { instance, conversation }`), taken from the session, not from whoever
   speaks: every participant shares it, and none of their own memories is in it. The conversation id
@@ -111,15 +166,18 @@ alias in order, and the first that is anyone's identity names the user.
 Comparison is exact and case-sensitive, with one exception: in the `email` namespace (first segment
 `email`), the domain after the last `@` is compared ASCII case-insensitively, as DNS names are. The
 local part stays case-sensitive: RFC 5321 lets a mail server treat it so, and folding it could match
-a different mailbox. This fails closed: an owner whose mail arrives as `Me@…` lists that spelling.
-Other namespaces rely on the channel to report a stable form (the IRC services account name, the
-WhatsApp number in E.164); the operator writes the identity the way the channel reports it, which
-the `info` log of an unknown sender shows.
+a different mailbox. This fails closed: a user whose mail arrives as `Me@…` has that spelling. Other
+namespaces rely on the channel to report a stable form (the IRC services account name, the WhatsApp
+number in E.164); the identity is written the way the channel reports it, which the `info` log of an
+unknown sender shows.
+
+The store splits an imported identity at its first `:`, since `[owner]` can't say where a namespace
+such as `irc:libera.chat` ends: lookups never depend on the split.
 
 The index holds each identity in its canonical form, `doozers_store::canonical_identity`: the joined
 identity with the domain of an `email` identity lowercased. The store keeps identities in that form
-too, and a lookup builds the same key, so the comparison above is one hash lookup per sender or
-alias.
+too, so one sender can't belong to two users by differing in the case of an email domain, and a
+lookup builds the same key, so the comparison above is one hash lookup per sender or alias.
 
 ## Routing
 
@@ -179,8 +237,9 @@ conversation id, is then `<agent>.<32 hex digits>` instead of 32 hex digits (`ch
 running `LiveConfig`) has it; otherwise the message is dropped as `UnknownAgent`, never sent to a
 routed agent instead. The rule is only for the web component: on any other channel such an id is an
 ordinary conversation id. Because `agents` is the running configuration, an agent created in the web
-UI is reachable at once, with no route for it. Only the owner gets past the sender check, and the
-web pages offer only the agents the user may use (v1: the owner may use all of them).
+UI is reachable at once, with no route for it. Only a user whose identity matches gets past the
+sender check, and the web pages offer only the agents the user may use (every user may use all of
+them for now).
 
 ## Core commands
 

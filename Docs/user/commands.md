@@ -18,7 +18,7 @@ A command must be the whole message. Spaces around it and capitalization don't m
 - a command with more text after it, such as `/new please`
 - any message with an attachment
 
-Commands work only from [the owner](configuration.md#owner), in conversations a
+Commands work only from [a known user](configuration.md#owner), in conversations a
 [route](configuration.md#routes) sends to an agent.
 
 ## Starting over and stopping

@@ -556,7 +556,8 @@ as joined strings and splits each at its first `:`. If `users_imported` has no r
 and creates the user, with its identities stored as `imported`, unless users exist already; it
 returns whether it created the user. If the row exists it does nothing and returns `None`, even when
 `owner` holds something new and even when every user has since been deleted: the marker, not the
-table being empty, says the import happened. A config with no `[owner]` still records the import.
+table being empty, says the import happened. A config with no `[owner]` still records the import, so
+a fresh install's first admin, made by `doozers admin login-link`, is never followed by an import.
 
 ## Toolsets
 

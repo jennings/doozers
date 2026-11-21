@@ -44,10 +44,10 @@ pub(super) enum Login {
 /// An authenticated web user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebUser {
-    /// The user (v1: always the owner).
+    /// The user.
     pub user: UserId,
     /// The native identifier in the `web` namespace: what messages from this user carry as
-    /// `InboundMessage::sender`, matched against `[owner] identities` as `web:<sender>`. A login
+    /// `InboundMessage::sender`, matched against the users' identities as `web:<sender>`. A login
     /// link's user id for a cookie login; the proxy's header value for a proxy login.
     pub sender: NativeId,
     /// This login's CSRF token: every form post must carry it ([`check_csrf`]).

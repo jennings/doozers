@@ -177,6 +177,7 @@ async fn serve(root: DataRoot, config: Config, lock: InstanceLock) -> anyhow::Re
             toolset_manager.clone() as Arc<dyn PluginControl>,
         ]))),
         login_links,
+        users: runtime.users.clone(),
         // Every toolset RPC goes through the manager, as the web pages do.
         toolsets: Some(toolset_manager.clone() as Arc<dyn ToolsetAdmin>),
         clock: Arc::new(SystemClock),

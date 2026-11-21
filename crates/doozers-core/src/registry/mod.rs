@@ -258,7 +258,7 @@ impl Registry {
     pub fn new(root: DataRoot, config: Arc<Config>) -> Self {
         Self {
             root,
-            users: UserList::from_owner(&config.owner, jiff::Timestamp::now()),
+            users: UserList::default(),
             config: LiveConfig::new(config),
             providers: RwLock::default(),
             channels: RwLock::default(),

@@ -24,6 +24,7 @@ use crate::paths::DataRoot;
 use crate::sandbox::HostReport;
 use crate::sessions::{ChannelStatusRecord, Clock, Sessions};
 use crate::toolsets::ToolsetManagerError;
+use crate::users::{LoginUserError, Users};
 
 /// The latest status each channel reported since startup. Implemented by [`Sessions`], which
 /// records them.
@@ -85,9 +86,9 @@ impl LoginLinks for crate::channels::web::WebChannel {
             Err(err @ web::LoginLinkError::UnknownUser(_)) => {
                 Err(LoginLinkError::UnknownUser(err.to_string()))
             }
-            Err(err @ web::LoginLinkError::NoWebIdentity(_)) => {
-                Err(LoginLinkError::Refused(err.to_string()))
-            }
+            Err(
+                err @ (web::LoginLinkError::NoWebIdentity(_) | web::LoginLinkError::Disabled(_)),
+            ) => Err(LoginLinkError::Refused(err.to_string())),
         }
     }
 }
@@ -113,6 +114,8 @@ pub struct AdminOptions {
     pub plugins: Option<Arc<dyn PluginControl>>,
     /// The web channel's login links, if it runs.
     pub login_links: Option<Arc<dyn LoginLinks>>,
+    /// The users, whom `CreateLoginLink` finds or, on a fresh install, creates the first of.
+    pub users: Arc<Users>,
     /// The toolset manager, which every toolset RPC calls. Without it they answer `UNAVAILABLE`.
     pub toolsets: Option<Arc<dyn ToolsetAdmin>>,
     /// The current time.
@@ -310,19 +313,53 @@ impl AdminRpc for AdminService {
         &self,
         request: Request<pb::CreateLoginLinkRequest>,
     ) -> Result<Response<pb::CreateLoginLinkResponse>, Status> {
-        let user = UserId::new(request.into_inner().user)
+        let requested = Some(request.into_inner().user)
+            .filter(|user| !user.is_empty())
+            .map(UserId::new)
+            .transpose()
             .map_err(|err| Status::invalid_argument(format!("user: {err}")))?;
+        // Before the first admin is created, so a daemon that can't make a link makes no user.
         let Some(links) = &self.options.login_links else {
             return Err(Status::unavailable(
                 "login links need the built-in web channel, which isn't running",
             ));
         };
-        match links.create_login_link(&user, self.options.clock.now()) {
+        let now = self.options.clock.now();
+        let user = match self.options.users.login_user(requested.as_ref(), now).await {
+            Ok(user) => user,
+            Err(err @ LoginUserError::NeedUser(_)) => {
+                return Err(Status::invalid_argument(err.to_string()));
+            }
+            Err(err @ LoginUserError::NoSuchUser(_)) => {
+                return Err(Status::not_found(err.to_string()));
+            }
+            Err(err @ (LoginUserError::Disabled(_) | LoginUserError::WebIdentityTaken { .. })) => {
+                return Err(Status::failed_precondition(err.to_string()));
+            }
+            Err(LoginUserError::Users(err)) if err.is_invalid_input() => {
+                return Err(Status::failed_precondition(err.to_string()));
+            }
+            Err(err) => {
+                error!(error = %err, "cannot prepare a login link");
+                return Err(Status::internal(err.to_string()));
+            }
+        };
+        match links.create_login_link(&user, now) {
             Ok(link) => {
                 info!(%user, "login link created through the admin service");
+                let username = self
+                    .options
+                    .users
+                    .list()
+                    .get()
+                    .user(&user)
+                    .map(|found| found.username.clone())
+                    .unwrap_or_default();
                 Ok(Response::new(pb::CreateLoginLinkResponse {
                     url: link.url,
                     expires_at: Some(timestamp_to_proto(link.expires_at)),
+                    user: user.to_string(),
+                    username,
                 }))
             }
             Err(LoginLinkError::UnknownUser(message)) => Err(Status::not_found(message)),
