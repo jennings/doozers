@@ -137,14 +137,15 @@ rules apply, and `before_migrate` receives that file's plan.
 - Row ids are opaque newtypes (`SessionId`, ...) over SQLite rowids.
 - Agent, user, channel instance, and conversation ids are stored as their string forms.
 
-## Schema (version 14)
+## Schema (version 15)
 
 The files in `crates/doozers-store/src/migrations/` are the authority. `0001_initial.sql` has every
 table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`,
-`archived_conversations`, `ssh_keys`, and `ssh_known_hosts`, which `0002_blobs.sql`,
-`0003_routes.sql`, `0004_toolsets.sql`, `0005_workspaces.sql`, `0007_secrets.sql`,
-`0009_archived_conversations.sql`, `0012_ssh_keys.sql`, and `0014_ssh_known_hosts.sql` add
-(`0013_workspace_key_user.sql` adds `workspaces.key_user`). This is their outline.
+`archived_conversations`, `ssh_keys`, `ssh_known_hosts`, `users`, `user_identities`, and
+`users_imported`, which `0002_blobs.sql`, `0003_routes.sql`, `0004_toolsets.sql`,
+`0005_workspaces.sql`, `0007_secrets.sql`, `0009_archived_conversations.sql`, `0012_ssh_keys.sql`,
+`0014_ssh_known_hosts.sql`, and `0015_users.sql` add (`0013_workspace_key_user.sql` adds
+`workspaces.key_user`). This is their outline.
 
 | Table          | Columns and rules                                                                    |
 | -------------- | ------------------------------------------------------------------------------------ |
@@ -168,9 +169,11 @@ table but `blobs`, `routes`, `toolsets`, `workspaces`, `secrets`, `secret_key`,
 | `archived_conversations` | The conversations their user archived: (`channel`, `conversation`) as the primary key, `archived_at`. No foreign key, since a conversation is a set of sessions. See [Conversations](#conversations). |
 | `ssh_keys`     | The metadata of users' SSH keys: `id` (`AUTOINCREMENT`, never reused), `user_id`, `label`, `algorithm`, `public_key`, `fingerprint`, `created_at`, `last_used_at`. `UNIQUE (user_id, fingerprint)`. The private keys are secrets. See [SSH keys](#ssh-keys). |
 | `ssh_known_hosts` | The SSH host keys workspaces trust, one set per environment instance: `id` (`AUTOINCREMENT`, never reused), `environment`, `host` (lowercased, no brackets or port), `port`, `key_type`, `public_key` (base64 blob), `fingerprint`, `first_seen_at`, `first_workspace`, `first_agent`, `first_user` (null for a pinned key), `added_by` (the admin who pinned it, else null), `last_used_at`. `UNIQUE (environment, host, port, public_key)`. See [Known SSH hosts](#known-ssh-hosts). |
+| `users`        | The users: `id` (opaque, never changes), `username` (unique, `NOCASE`), `display_name`, `role` (`admin`, `member`), `state` (`active`, `disabled`), `timezone` (an IANA name, or null), `default_identity` (one of the user's identities, or null), `created_at`, `updated_at`. See [Users](#users). |
+| `user_identities` | The channel identities of users: (`namespace`, `native_id`) as the primary key, `user_id` (cascades), `verified_at`, `verification` (`link`, `admin`, `imported`), and `identity`, the generated joined `<namespace>:<native id>`, which is unique. |
+| `users_imported` | One row, once the `[owner]` of `doozers.toml` was imported: `at`.                  |
 
-`identities` and `pairings` are deferred with multi-user support (PLAN 1.1, D49) and don't exist
-yet.
+`pairings` is deferred with multi-user support (PLAN 1.1, D49) and doesn't exist yet.
 
 Deleting a session cascades to its messages and summaries and clears `session_id` in `inbox` and
 `usage`, which keeps `doozers user forget` (PLAN 11.4) a matter of deleting rows.
@@ -512,6 +515,48 @@ already; it returns how many it stored. If the row exists it does nothing and re
 when `routes` holds something new and even when every route has since been deleted: the marker, not
 the table being empty, says the import happened. A config with no `[[routes]]` still records the
 import.
+
+## Users
+
+`users` and `user_identities` hold who uses this Doozers and which channel identities are theirs
+(PLAN 1.1, 3.2). A user's `id` is opaque and never changes: sessions, inbox, usage, and outbox rows,
+memories, and secret paths name it, so nothing is rewritten when a username changes. The user that
+`[owner]` described keeps the id `owner`. `username` is unique without regard to ASCII case.
+
+An identity belongs to one user. `(namespace, native_id)` is the key, and `identity`, the two joined
+with `:`, is unique as well. A namespace can contain `:` (`irc:libera.chat`), so two splits of one
+string are one identity, and the unique `identity` refuses the second. The import records an
+identity's namespace as the part before its first `:`, as the import can't tell where a namespace
+ends. Matching never depends on the split: the core compares joined strings
+([Identity and routing](identity-and-routing.md#matching-identities)). `verification` says how the
+identity was established: `link` (the user sent a link code from it), `admin` (an admin or the
+operator set it, such as a proxy login identity), or `imported`.
+
+An identity is stored in its canonical form, `canonical_identity`: the domain of an `email` identity
+(first segment `email`, after the last `@`) is lowercased, as the core compares it, so one sender
+can't belong to two users by differing in the case of a domain. Other identities are exact.
+
+The store checks the shapes the schema can: ids, usernames, and identities are unique, and a default
+identity is one of the user's identities. What a username may look like, which time zones exist, and
+who may do what are for the layer above the store to decide.
+
+| Method                                  | Contract                                                         |
+| --------------------------------------- | ---------------------------------------------------------------- |
+| `users`                                 | Every user with their identities, oldest first.                  |
+| `user(id)`                              | One user, or `None`.                                             |
+| `user_create(user, identities, now)`    | Creates an active user with identities verified at `now`. `Error::UserIdTaken`, `Error::UsernameTaken`, or `Error::IdentityTaken` store nothing. The default identity must be one of the identities. |
+| `user_set_state(id, state, now)`        | Sets `active` or `disabled`; `Error::NoSuchUser` if absent.      |
+| `user_identity_add(id, identity, now)`  | Adds an identity; the user's first becomes their default. `Error::IdentityTaken` if any user has it. |
+| `user_identity_remove(id, identity, now)` | Removes an identity, named as `<namespace>:<native id>`. If it was the default, the oldest one left is, or there is none. |
+| `users_imported`                        | Whether the import below has run.                                |
+| `users_import(owner, now)`              | The one-time import, below.                                      |
+
+`users_import` is the import of the `[owner]` of `doozers.toml` (PLAN 11.2). It takes the identities
+as joined strings and splits each at its first `:`. If `users_imported` has no row it inserts one
+and creates the user, with its identities stored as `imported`, unless users exist already; it
+returns whether it created the user. If the row exists it does nothing and returns `None`, even when
+`owner` holds something new and even when every user has since been deleted: the marker, not the
+table being empty, says the import happened. A config with no `[owner]` still records the import.
 
 ## Toolsets
 

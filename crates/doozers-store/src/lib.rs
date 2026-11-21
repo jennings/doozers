@@ -37,6 +37,7 @@ mod ssh_known_hosts;
 mod time;
 mod toolsets;
 mod usage;
+mod users;
 mod web_sessions;
 mod workspaces;
 
@@ -69,6 +70,10 @@ pub use ssh_keys::{NewSshKey, SshKeyId, SshKeyRecord};
 pub use ssh_known_hosts::{KnownHostId, KnownHostRecord, NewKnownHost};
 pub use toolsets::StoredToolset;
 pub use usage::{AgentUsage, ModelUsage, UsageRecord};
+pub use users::{
+    ImportedUser, NewIdentity, NewUser, Role, StoredIdentity, StoredUser, UserState, Verification,
+    canonical_identity,
+};
 pub use web_sessions::WebSession;
 pub use workspaces::{DeleteReason, NewWorkspace, WorkspaceOwner, WorkspaceRecord, WorkspaceState};
 

@@ -1572,8 +1572,10 @@ is `FULL`. Main tables:
 
 | Table          | Holds                                                                  |
 | -------------- | ---------------------------------------------------------------------- |
-| `identities`   | (namespace, native id) to user (multi-user; deferred, D49)             |
-| `pairings`     | Pending pairing and link codes                                         |
+| `users`        | The users: opaque id (the first user keeps `owner`), username, display name, role, state, time zone, default identity |
+| `user_identities` | (namespace, native id) to user, with when and how it was verified (`link`, `admin`, `imported`) |
+| `users_imported` | A marker that `doozers.toml`'s `[owner]` was imported                 |
+| `pairings`     | Pending pairing and link codes (deferred, D49)                         |
 | `sessions`     | Session key, agent, kind, start and end                                |
 | `messages`     | Session, sequence, role, content blocks (JSON), metadata               |
 | `summaries`    | Compaction summaries: session, covered sequence range, content         |
