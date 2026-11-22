@@ -380,6 +380,10 @@ view, except the chat page's approvals. Inside a table, every action is a `butto
 - Controls are 40 px tall with 12 px side padding, radius 8 px, the control border, the inset
   surface, and the text color. Textareas resize vertically. A disabled control uses the disabled
   surface and faint text.
+- On touch screens (`pointer: coarse`), every text field, select, and textarea uses at least 16 px
+  text, monospace fields included. iOS Safari zooms the page in when it focuses a field with smaller
+  text. Don't use `maximum-scale` or `user-scalable=no` instead: that stops people zooming on
+  purpose.
 - Every one-line control has the same fixed `height: 40px`, `<select>` included, so a select next to
   a text field lines up with it. Selects use `appearance: none`, because some browsers ignore
   `height` on a native select, and draw their chevron with background gradients in `--text-muted`.

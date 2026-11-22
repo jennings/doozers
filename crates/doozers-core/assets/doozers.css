@@ -1147,6 +1147,18 @@ input.mono {
   font-size: 0.875rem;
 }
 
+/* iOS Safari zooms the page in when it focuses a field whose text is smaller than 16 px, and
+ * doesn't zoom back out. On touch screens every field's text is at least 16 px. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"]),
+  select,
+  textarea,
+  input.mono,
+  textarea.mono {
+    font-size: max(1rem, 16px);
+  }
+}
+
 .form {
   display: flex;
   flex-direction: column;
