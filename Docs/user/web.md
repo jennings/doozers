@@ -59,8 +59,8 @@ A password lets you log in at `/login` with your username and password, without 
 
 To set a password, open an invite or recovery link, then choose **Password** on the page that
 follows, or use **Set a password** on your [account](#signing-in). To set or change it later,
-[confirm it's you](#confirming-its-you) first. A login that came from a password can't change it
-without that.
+[sign in again](#signing-in-again) first. A login that came from a password can't change it without
+that.
 
 A password has 15 to 128 characters. Spaces and any other characters are fine, and nothing else is
 required, so a few random words make a good password. It can't be one character repeated, or contain
@@ -88,23 +88,27 @@ username applies, because every visitor looks like the proxy. Use the
 the visitor's address to the `X-Forwarded-For` header. Without that header, Doozers counts every
 visitor through the proxy as one address.
 
-### Confirming it's you
+### Signing in again
 
 Adding, changing, or removing a way to sign in needs more than a login, so someone who got hold of
-your browser's login can't take over your account. Doozers asks you to confirm it's you with a way
-you already use: your password, a passkey, or the identity provider you connected. A login that came
-from an invite or recovery link doesn't need to confirm for its first 30 minutes, because that link
-is how you proved who you are. So finish setting up soon after you open the link. After that,
-confirm it's you like any other login, or ask for a new link if you have nothing to confirm with.
+your browser's login can't take over your account. Doozers asks you to sign in again with a way you
+already use: your password, a passkey, or the identity provider you connected. A login that came
+from an invite or recovery link doesn't need to for its first 30 minutes, because that link is how
+you proved who you are. So finish setting up soon after you open the link. After that, sign in again
+like any other login, or ask for a new link if you have nothing to sign in with.
 
-When you open a page that needs it, Doozers shows **Confirm it's you first** with a button that
-leads to **Confirm it's you**. Choose a way, and Doozers takes you back to the page you came from.
-The confirmation lasts 10 minutes and applies only to this login, not to your other browsers.
+The [account](#signing-in) always shows every control. When you use one that needs it, such as
+**Connect** or **Add a passkey**, Doozers shows a page titled by what you were doing, such as
+**Sign in again to connect Google**. Choose a way, such as **Continue with your password**, and
+Doozers goes straight on to what you chose. Signing in again lasts 10 minutes and applies only to
+this login, not to your other browsers.
 
-Confirming with a password counts as a login attempt of yours: the limits on wrong
-[passwords](#passwords) apply to it. If you have no password, passkey, or connected provider, ask
-for a recovery link. A login through a [trusted proxy](#a-trusted-reverse-proxy) can't confirm, so
-it can't change how you sign in.
+Signing in again with a password counts as a login attempt of yours: the limits on wrong
+[passwords](#passwords) apply to it. If you have no password, passkey, or connected provider, the
+page says to ask an admin for a recovery link, or to run `doozers admin login-link` if you run
+Doozers. The same goes for a login through a [trusted proxy](#a-trusted-reverse-proxy), which can't
+sign in again. After you sign in with the link, you can add a way to sign in for 30 minutes without
+signing in again.
 
 ### Passkeys
 
@@ -136,7 +140,7 @@ or use **Add a passkey** on your [account](#signing-in). Then use one of the two
 
 Name each one, so you can tell them apart. You can add as many as you like, such as one per device.
 
-A login that didn't come from a link [confirms it's you](#confirming-its-you) first.
+A login that didn't come from a link [signs in again](#signing-in-again) first.
 
 To log in with a passkey, open the login page at your `public_url`. Choose the username field, and
 your browser offers your passkeys. You can also press **Sign in with a passkey**. If you added a
@@ -196,7 +200,7 @@ To connect an account, a user opens an invite or recovery link, then chooses the
 page that follows, or uses **Connect** on their [account](#signing-in). The provider asks them to
 log in, and Doozers connects that account to them. Choosing the provider again connects a different
 account in place of the first. A login that came from a password, a passkey, or a provider
-[confirms it's you](#confirming-its-you) first.
+[signs in again](#signing-in-again) first.
 
 To log in later, the user chooses **Sign in with** the provider's name on the login page. Doozers
 matches the account the provider vouches for, never its email address or name. A user an admin
@@ -782,7 +786,7 @@ while an admin has the provider turned on. A login through a
 it up.
 
 You can add or remove a way to sign in, or change your password, only after you
-[confirm it's you](#confirming-its-you), which the page asks for with **Confirm it's you**. A login
+[sign in again](#signing-in-again), which Doozers asks for when you choose one of these. A login
 that came from an invite or recovery link doesn't need to for its first 30 minutes. Renaming a
 passkey doesn't need it.
 

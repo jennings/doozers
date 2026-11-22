@@ -722,7 +722,8 @@ async fn only_a_login_that_came_from_a_link_may_set_a_password() {
     let mia = UserId::new("mia").unwrap();
     let before = env.store.user_password(&mia).await.unwrap().unwrap();
 
-    // A login with the password can't change it, and the setup page doesn't offer to.
+    // A login with the password can't change it yet: the setup page lists it, and it and the
+    // form lead to signing in again.
     let response = log_in_as(&env, "mia", GOOD).await;
     let token = cookie_token(set_cookies(&response)[0]);
     let cookie = session(&token);
@@ -735,7 +736,8 @@ async fn only_a_login_that_came_from_a_link_may_set_a_password() {
     )
     .await;
     let html = body_text(response).await;
-    assert!(!html.contains("/setup/password"), "{html}");
+    assert!(html.contains("/setup/password"), "{html}");
+    assert!(!html.contains("onfirm"), "{html}");
     let response = call(
         env.main_app(),
         Method::GET,
@@ -744,9 +746,11 @@ async fn only_a_login_that_came_from_a_link_may_set_a_password() {
         None,
     )
     .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    let html = body_text(response).await;
-    assert!(html.contains("Confirm it's you first"), "{html}");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers()[LOCATION],
+        "/account/reverify?next=%2Fsetup%2Fpassword"
+    );
     let form = format!(
         "csrf={}&password=a+completely+new+password&confirm=a+completely+new+password",
         auth::cookie_csrf(&token)
@@ -759,7 +763,11 @@ async fn only_a_login_that_came_from_a_link_may_set_a_password() {
         Some(&form),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers()[LOCATION],
+        "/account/reverify?next=%2Fsetup%2Fpassword"
+    );
     assert_eq!(
         env.store.user_password(&mia).await.unwrap().unwrap(),
         before
@@ -817,7 +825,12 @@ async fn the_proxy_login_has_no_password_to_set() {
         None,
     )
     .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    // It is sent to the page that says what to do instead.
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers()[LOCATION],
+        "/account/reverify?next=%2Fsetup%2Fpassword"
+    );
 }
 
 #[tokio::test]

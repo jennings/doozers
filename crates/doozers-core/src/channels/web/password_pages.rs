@@ -8,7 +8,7 @@
 //!   invite or recovery link, or one the user re-verified in the last 10 minutes
 //!   ([`reverify`](super::reverify)), may: those are how a user proves who they are when they have no
 //!   password to prove it with, and a 30-day session that came from anything else isn't enough to
-//!   take over the account's way in.
+//!   take over the account's way in. Any other login is sent to sign in again, and then back here.
 
 use askama::Template;
 use axum::Extension;
@@ -28,7 +28,8 @@ use super::limits::{Limited, client_key, username_key};
 use super::login::{is_https, render_login, start_session};
 use super::pages::{WebApp, error_page, internal_error, no_store};
 use super::password::{self, MAX_CHARS, MIN_CHARS};
-use super::signin::{SetupOption, confirm_first};
+use super::reverify::Target;
+use super::signin::{SetupOption, sign_in_again};
 use crate::http::{self, PeerAddr};
 
 /// The password routes: `POST /login/password`, `GET /setup/password`, and `POST /setup/password`.
@@ -223,17 +224,15 @@ fn wait_text(seconds: u64) -> String {
 }
 
 impl WebApp {
-    /// The setup page's entry for the password, if `user` may set one: what it offers depends on
-    /// whether they have one.
+    /// The setup page's entry for the password: what it offers depends on whether `user` has one.
+    /// It is there for every login: the page it leads to sends one that may not change it to sign
+    /// in again.
     pub(super) async fn password_setup_option(
         &self,
         user: &WebUser,
-    ) -> doozers_store::Result<Option<SetupOption>> {
-        if !self.may_change_sign_in_methods(user).await? {
-            return Ok(None);
-        }
+    ) -> doozers_store::Result<SetupOption> {
         let has = self.inner.store.user_password(&user.user).await?.is_some();
-        Ok(Some(SetupOption {
+        Ok(SetupOption {
             label: if has {
                 "Change your password"
             } else {
@@ -248,7 +247,7 @@ impl WebApp {
                 )
             },
             href: "/setup/password".to_owned(),
-        }))
+        })
     }
 }
 
@@ -328,7 +327,7 @@ async fn setup_page(
 ) -> Response {
     match app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first(&user, "/setup/password"),
+        Ok(false) => return sign_in_again(&Target::SetPassword),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     render_setup(
@@ -368,7 +367,7 @@ async fn set_password(
     }
     match app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first(&user, "/setup/password"),
+        Ok(false) => return sign_in_again(&Target::SetPassword),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     let trusted = trusted.is_some();

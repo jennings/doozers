@@ -462,81 +462,93 @@ async fn with_every_method() -> (Page, i64) {
 }
 
 #[tokio::test]
-async fn the_page_lists_the_users_methods_and_offers_changes_only_to_a_login_that_may() {
+async fn the_page_shows_every_control_to_every_login_and_never_asks_to_confirm() {
     let (p, key) = with_every_method().await;
     let remove_password = "/account/sign-in/remove?method=password";
     let remove_passkey = format!("/account/sign-in/remove?method=passkey:{key}");
+    let controls = |what: &str, html: &str, csrf: &str| {
+        assert!(html.contains("You set your password"), "{what}: {html}");
+        assert!(
+            html.contains(r#"href="/setup/password">Change your password"#),
+            "{what}: {html}"
+        );
+        assert!(
+            html.contains(&format!(r#"href="{remove_password}""#)),
+            "{what}: {html}"
+        );
+        assert!(
+            html.contains("<td data-label=\"Passkey\" class=\"m-title\">Phone<br>"),
+            "{what}: {html}"
+        );
+        assert!(html.contains(">never</td>"), "{what}: {html}");
+        assert!(
+            html.contains(&format!(r#"href="{remove_passkey}""#)),
+            "{what}: {html}"
+        );
+        assert!(
+            html.contains(r#"href="/setup/passkey">Add a passkey"#),
+            "{what}: {html}"
+        );
+        assert!(html.contains("Idp:"), "{what}: {html}");
+        assert!(html.contains("Connect another account"), "{what}: {html}");
+        assert!(
+            html.contains(r#"href="/account/sign-in/remove?method=oidc:idp""#),
+            "{what}: {html}"
+        );
+        assert!(
+            html.contains(&format!(r#"href="/setup/oidc/idp?csrf={csrf}""#)),
+            "{what}: {html}"
+        );
+        assert!(
+            html.contains("/account/sign-in/passkey/rename"),
+            "{what}: {html}"
+        );
+        // A provider that is off, and has no connection, isn't offered, and nobody else's
+        // passkey is shown.
+        assert!(!html.contains("Off:"), "{what}: {html}");
+        assert!(!html.contains("Roots secret laptop"), "{what}: {html}");
+        // And nothing asks the user to confirm first, or says what they may do.
+        for gone in [
+            "Confirm it",
+            "confirm it",
+            "/account/reverify",
+            "You signed in with a link",
+            "You confirmed",
+        ] {
+            assert!(!html.contains(gone), "{what}: {gone}: {html}");
+        }
+    };
 
-    // A recovery login may change them as it is.
+    // A login from a recovery link, a password login nobody signed in again for, one that did
+    // (lately, and a while ago), and one from a link that is too old all see the same page.
     let recovery = p.login("mia").await;
-    let html = p.get(&recovery, "/account").await.body;
-    assert!(html.contains("You signed in with a link"), "{html}");
-    assert!(html.contains("You set your password"), "{html}");
-    assert!(
-        html.contains(r#"href="/setup/password">Change your password"#),
-        "{html}"
+    controls(
+        "recovery",
+        &p.get(&recovery, "/account").await.body,
+        &recovery.csrf,
     );
-    assert!(
-        html.contains(&format!(r#"href="{remove_password}""#)),
-        "{html}"
-    );
-    assert!(
-        html.contains("<td data-label=\"Passkey\" class=\"m-title\">Phone<br>"),
-        "{html}"
-    );
-    assert!(html.contains(">never</td>"), "{html}");
-    assert!(
-        html.contains(&format!(r#"href="{remove_passkey}""#)),
-        "{html}"
-    );
-    assert!(
-        html.contains(r#"href="/setup/passkey">Add a passkey"#),
-        "{html}"
-    );
-    assert!(html.contains("Idp:"), "{html}");
-    assert!(html.contains("Connect another account"), "{html}");
-    assert!(
-        html.contains(r#"href="/account/sign-in/remove?method=oidc:idp""#),
-        "{html}"
-    );
-    assert!(
-        html.contains(&format!(r#"href="/setup/oidc/idp?csrf={}""#, recovery.csrf)),
-        "{html}"
-    );
-    // A provider that is off, and has no connection, isn't offered, and nobody else's passkey is
-    // shown.
-    assert!(!html.contains("Off:"), "{html}");
-    assert!(!html.contains("Roots secret laptop"), "{html}");
-
-    // A login that came from a password may rename, and has to confirm before it may change.
     let stolen = p.password_login("mia").await;
-    let html = p.get(&stolen, "/account").await.body;
-    assert!(
-        html.contains(r#"href="/account/reverify">Confirm it's you"#),
-        "{html}"
+    controls(
+        "password",
+        &p.get(&stolen, "/account").await.body,
+        &stolen.csrf,
     );
-    assert!(html.contains("/account/sign-in/passkey/rename"), "{html}");
-    for gone in [
-        "/account/sign-in/remove",
-        "/setup/password",
-        "/setup/passkey",
-        "/setup/oidc/",
-    ] {
-        assert!(!html.contains(gone), "{gone}: {html}");
-    }
-
-    // After confirming, it may, and says until when.
     p.reverified_ago(&stolen, minutes(1)).await;
-    let html = p.get(&stolen, "/account").await.body;
-    assert!(html.contains("You confirmed it's you."), "{html}");
-    assert!(
-        html.contains(&format!(r#"href="{remove_password}""#)),
-        "{html}"
+    controls(
+        "signed in again",
+        &p.get(&stolen, "/account").await.body,
+        &stolen.csrf,
     );
-    assert!(
-        html.contains(r#"href="/setup/passkey">Add a passkey"#),
-        "{html}"
+    p.reverified_ago(&stolen, minutes(11)).await;
+    controls(
+        "signed in again long ago",
+        &p.get(&stolen, "/account").await.body,
+        &stolen.csrf,
     );
+    let old = p
+        .aged_login("mia", SignInMethod::Recovery, minutes(31))
+        .await;
+    controls("old link", &p.get(&old, "/account").await.body, &old.csrf);
 }
 
 #[tokio::test]
@@ -607,24 +619,26 @@ async fn a_user_removes_each_kind_of_method_but_not_the_last_one_that_works() {
 }
 
 #[tokio::test]
-async fn removing_a_method_needs_the_same_confirmation_as_adding_one() {
+async fn removing_a_method_needs_the_same_sign_in_as_adding_one() {
     let (p, key) = with_every_method().await;
     let stolen = p.password_login("mia").await;
     let method = format!("passkey:{key}");
+    let sign_in_again = format!(
+        "/account/reverify?next={}",
+        url_encode(&format!("/account/sign-in/remove?method={method}"))
+    );
 
+    // Neither the form nor the question works yet: both lead to signing in again, and back.
     let answer = p
         .post(&stolen, "/account/sign-in/remove", &[("method", &method)])
         .await;
-    assert_eq!(answer.status, StatusCode::FORBIDDEN);
-    assert!(
-        answer.body.contains("Confirm it's you first"),
-        "{}",
-        answer.body
-    );
+    assert_eq!(answer.status, StatusCode::SEE_OTHER, "{}", answer.body);
+    assert_eq!(answer.location.as_deref(), Some(sign_in_again.as_str()));
     let ask = p
         .get(&stolen, &format!("/account/sign-in/remove?method={method}"))
         .await;
-    assert_eq!(ask.status, StatusCode::FORBIDDEN);
+    assert_eq!(ask.status, StatusCode::SEE_OTHER, "{}", ask.body);
+    assert_eq!(ask.location.as_deref(), Some(sign_in_again.as_str()));
     assert_eq!(p.methods_left("mia").await, (true, 1, true));
 
     // It is the CSRF token's job too, and a login's.
@@ -649,12 +663,16 @@ async fn removing_a_method_needs_the_same_confirmation_as_adding_one() {
     assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
     assert_eq!(p.methods_left("mia").await, (true, 1, true));
 
-    // Confirmed, the same session removes it; and the confirmation runs out.
+    // Signed in again, the same session removes it; and that runs out.
     p.reverified_ago(&stolen, minutes(1)).await;
+    let ask = p
+        .get(&stolen, &format!("/account/sign-in/remove?method={method}"))
+        .await;
+    assert_eq!(ask.status, StatusCode::OK, "{}", ask.body);
     let answer = p
         .post(&stolen, "/account/sign-in/remove", &[("method", &method)])
         .await;
-    assert_eq!(answer.status, StatusCode::SEE_OTHER);
+    assert_eq!(answer.location.as_deref(), Some("/account?notice=removed"));
     p.reverified_ago(&stolen, minutes(11)).await;
     let answer = p
         .post(
@@ -663,8 +681,212 @@ async fn removing_a_method_needs_the_same_confirmation_as_adding_one() {
             &[("method", "password")],
         )
         .await;
-    assert_eq!(answer.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        answer.location.as_deref(),
+        Some("/account/reverify?next=%2Faccount%2Fsign-in%2Fremove%3Fmethod%3Dpassword")
+    );
     assert_eq!(p.methods_left("mia").await, (true, 0, true));
+}
+
+/// Every page of the Account router that adds, changes, or removes a sign-in method, and the
+/// `next` of the page that signs in again for it. The connection is in `oidc.rs`, which has a
+/// provider to connect to.
+fn entry_points(key: i64) -> Vec<(String, String)> {
+    let remove = |method: &str| format!("/account/sign-in/remove?method={method}");
+    [
+        ("/setup/password".to_owned(), "/setup/password".to_owned()),
+        ("/setup/passkey".to_owned(), "/setup/passkey".to_owned()),
+        (remove("password"), remove("password")),
+        (
+            remove(&format!("passkey:{key}")),
+            remove(&format!("passkey:{key}")),
+        ),
+        (remove("oidc:idp"), remove("oidc:idp")),
+    ]
+    .to_vec()
+}
+
+#[tokio::test]
+async fn each_page_that_changes_a_method_sends_a_login_that_may_not_to_sign_in_again_first() {
+    let (p, key) = with_every_method().await;
+    let stolen = p.password_login("mia").await;
+    for (path, next) in entry_points(key) {
+        let answer = p.get(&stolen, &path).await;
+        assert_eq!(
+            answer.status,
+            StatusCode::SEE_OTHER,
+            "{path}: {}",
+            answer.body
+        );
+        assert_eq!(
+            answer.location,
+            Some(format!("/account/reverify?next={}", url_encode(&next))),
+            "{path}"
+        );
+    }
+
+    // After signing in again, or from a link lately, each is served as it always was.
+    let recovery = p.login("mia").await;
+    p.reverified_ago(&stolen, minutes(1)).await;
+    for browser in [&stolen, &recovery] {
+        for (path, _) in entry_points(key) {
+            let answer = p.get(browser, &path).await;
+            assert_eq!(answer.status, StatusCode::OK, "{path}: {}", answer.body);
+        }
+    }
+
+    // A link's session is no better when it is old.
+    let old = p
+        .aged_login("mia", SignInMethod::Recovery, minutes(31))
+        .await;
+    for (path, next) in entry_points(key) {
+        let answer = p.get(&old, &path).await;
+        assert_eq!(answer.status, StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(
+            answer.location,
+            Some(format!("/account/reverify?next={}", url_encode(&next))),
+            "{path}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_sign_in_again_page_is_titled_by_what_the_user_was_doing() {
+    let (p, key) = with_every_method().await;
+    let stolen = p.password_login("mia").await;
+    let title = |next: String| {
+        let (p, stolen) = (&p, &stolen);
+        async move {
+            let page = p
+                .get(
+                    stolen,
+                    &format!("/account/reverify?next={}", url_encode(&next)),
+                )
+                .await;
+            assert_eq!(page.status, StatusCode::OK, "{next}: {}", page.body);
+            assert!(
+                !page.body.contains("Confirm it") && !page.body.contains("confirm it"),
+                "{next}: {}",
+                page.body
+            );
+            page.body
+        }
+    };
+    for (next, heading) in [
+        ("/setup/oidc/idp".to_owned(), "Sign in again to connect Idp"),
+        (
+            "/setup/passkey".to_owned(),
+            "Sign in again to add a passkey",
+        ),
+        (
+            "/setup/password".to_owned(),
+            "Sign in again to change your password",
+        ),
+        ("/setup".to_owned(), "Sign in again to add a way to sign in"),
+        (
+            "/account/sign-in/remove?method=password".to_owned(),
+            "Sign in again to remove your password",
+        ),
+        (
+            format!("/account/sign-in/remove?method=passkey:{key}"),
+            "Sign in again to remove the passkey Phone",
+        ),
+        (
+            "/account/sign-in/remove?method=oidc:idp".to_owned(),
+            "Sign in again to disconnect Idp",
+        ),
+        ("/account".to_owned(), "Sign in again"),
+    ] {
+        let html = title(next.clone()).await;
+        assert!(
+            html.contains(&format!("<h1>{heading}</h1>")),
+            "{next}: {html}"
+        );
+        assert!(
+            html.contains(&format!("<title>{heading} - Doozers</title>")),
+            "{next}: {html}"
+        );
+        assert!(
+            html.contains(&format!(r#"name="next" value="{next}""#)),
+            "{next}: {html}"
+        );
+        // It says why, and offers each of the user's own ways.
+        assert!(
+            html.contains("You must sign in again before you can update your sign in methods."),
+            "{next}: {html}"
+        );
+        assert!(
+            html.contains("Continue with your password"),
+            "{next}: {html}"
+        );
+        assert!(html.contains("Continue with Idp"), "{next}: {html}");
+        assert!(html.contains("&#38;next="), "{next}: {html}");
+    }
+
+    // Someone with no password is asked to set one; and what isn't there, a provider that is
+    // off, a method the user doesn't have, or a place that isn't known, is the Account page.
+    let root = p.password_login("root").await;
+    let page = p
+        .get(&root, "/account/reverify?next=%2Fsetup%2Fpassword")
+        .await;
+    assert!(
+        page.body
+            .contains("<h1>Sign in again to set a password</h1>"),
+        "{}",
+        page.body
+    );
+    for next in [
+        "/setup/oidc/off",
+        "/setup/oidc/nope",
+        "/setup/oidc/Bad%20Id",
+        "/setup/oidc/idp/extra",
+        "/account/sign-in/remove?method=passkey:99999",
+        "/account/sign-in/remove?method=oidc:nope",
+        "/account/sign-in/remove?method=bogus",
+        "/account/sign-in/remove?method=password&x=1",
+        "https://evil.example/",
+        "//evil.example",
+        "/admin",
+        "/account/reverify",
+        "",
+    ] {
+        let page = p
+            .get(
+                &stolen,
+                &format!("/account/reverify?next={}", url_encode(next)),
+            )
+            .await;
+        assert_eq!(page.status, StatusCode::OK, "{next}");
+        assert!(
+            page.body.contains("<h1>Sign in again</h1>"),
+            "{next}: {}",
+            page.body
+        );
+        assert!(
+            page.body.contains(r#"name="next" value="/account""#),
+            "{next}: {}",
+            page.body
+        );
+    }
+    // Another user's passkey isn't one to remove, so it can't be named either.
+    let roots = p.env.store.user_passkeys(&id("root")).await.unwrap()[0]
+        .id
+        .get();
+    let page = p
+        .get(
+            &stolen,
+            &format!(
+                "/account/reverify?next={}",
+                url_encode(&format!("/account/sign-in/remove?method=passkey:{roots}"))
+            ),
+        )
+        .await;
+    assert!(
+        page.body.contains("<h1>Sign in again</h1>"),
+        "{}",
+        page.body
+    );
+    assert!(!page.body.contains("Roots secret laptop"), "{}", page.body);
 }
 
 #[tokio::test]
@@ -760,7 +982,7 @@ async fn a_connection_to_a_provider_that_is_off_does_not_count() {
 }
 
 #[tokio::test]
-async fn a_passkey_is_renamed_by_its_user_without_confirming_and_nobody_elses_is() {
+async fn a_passkey_is_renamed_by_its_user_without_signing_in_again_and_nobody_elses_is() {
     let (p, key) = with_every_method().await;
     let roots = p.env.store.user_passkeys(&id("root")).await.unwrap()[0]
         .id
@@ -1070,10 +1292,53 @@ async fn a_proxy_login_is_told_why_it_cannot_change_methods_and_marks_no_login_a
     let cookie_login = p.login("mia").await;
     let cookie_id = p.session_id_of(&cookie_login).await;
 
+    // It sees the same controls as everyone, and each leads to what to do instead.
     let html = body_text(p.as_proxy(Method::GET, "/account", None).await).await;
-    assert!(html.contains("proxy in front of Doozers"), "{html}");
-    assert!(!html.contains("Confirm it's you"), "{html}");
-    assert!(!html.contains("/account/sign-in/remove"), "{html}");
+    assert!(!html.contains("Confirm it"), "{html}");
+    assert!(!html.contains("proxy in front of Doozers"), "{html}");
+    for control in [
+        r#"href="/setup/password">Change your password"#,
+        r#"href="/setup/passkey">Add a passkey"#,
+        "/account/sign-in/remove?method=password",
+        "/account/sign-in/remove?method=oidc:idp",
+        "/setup/oidc/idp?csrf=csrf-of-proxy",
+    ] {
+        assert!(html.contains(control), "{control}: {html}");
+    }
+    let response = p
+        .as_proxy(Method::GET, "/account/sign-in/remove?method=password", None)
+        .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers()[LOCATION],
+        "/account/reverify?next=%2Faccount%2Fsign-in%2Fremove%3Fmethod%3Dpassword"
+    );
+    let explained = body_text(
+        p.as_proxy(
+            Method::GET,
+            "/account/reverify?next=%2Faccount%2Fsign-in%2Fremove%3Fmethod%3Dpassword",
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        explained.contains("<h1>Sign in again to remove your password</h1>"),
+        "{explained}"
+    );
+    assert!(
+        explained.contains("proxy in front of Doozers"),
+        "{explained}"
+    );
+    assert!(
+        explained.contains("doozers admin login-link"),
+        "{explained}"
+    );
+    assert!(explained.contains("30 minutes"), "{explained}");
+    assert!(
+        !explained.contains("/account/reverify/password"),
+        "{explained}"
+    );
     // Its cookie logins are listed, and none is this one.
     assert!(
         html.contains(&format!("/account/sessions/{cookie_id}/revoke")),
@@ -1088,11 +1353,10 @@ async fn a_proxy_login_is_told_why_it_cannot_change_methods_and_marks_no_login_a
             Some(&format!("csrf=csrf-of-proxy&method=passkey:{key}")),
         )
         .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    assert!(
-        body_text(response)
-            .await
-            .contains("proxy in front of Doozers")
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers()[LOCATION],
+        format!("/account/reverify?next=%2Faccount%2Fsign-in%2Fremove%3Fmethod%3Dpasskey%3A{key}")
     );
     assert_eq!(p.methods_left("mia").await, (true, 1, true));
 
@@ -1111,18 +1375,11 @@ async fn a_proxy_login_is_told_why_it_cannot_change_methods_and_marks_no_login_a
 }
 
 #[tokio::test]
-async fn a_links_session_older_than_thirty_minutes_is_sent_to_confirm_like_any_other() {
+async fn a_links_session_older_than_thirty_minutes_is_sent_to_sign_in_again_like_any_other() {
     let (p, key) = with_every_method().await;
     let old = p
         .aged_login("mia", SignInMethod::Recovery, minutes(31))
         .await;
-    let html = p.get(&old, "/account").await.body;
-    assert!(
-        html.contains(r#"href="/account/reverify">Confirm it's you"#),
-        "{html}"
-    );
-    assert!(!html.contains("You signed in with a link"), "{html}");
-    assert!(!html.contains("/account/sign-in/remove"), "{html}");
     let answer = p
         .post(
             &old,
@@ -1130,14 +1387,13 @@ async fn a_links_session_older_than_thirty_minutes_is_sent_to_confirm_like_any_o
             &[("method", &format!("passkey:{key}"))],
         )
         .await;
-    assert_eq!(answer.status, StatusCode::FORBIDDEN);
-    // The page it sends to leads back to the account page.
-    assert!(
-        answer
-            .body
-            .contains(r#"href="/account/reverify?next=/account""#),
-        "{}",
-        answer.body
+    assert_eq!(answer.status, StatusCode::SEE_OTHER);
+    // The page it sends to leads back to the removal, which asks first.
+    assert_eq!(
+        answer.location,
+        Some(format!(
+            "/account/reverify?next=%2Faccount%2Fsign-in%2Fremove%3Fmethod%3Dpasskey%3A{key}"
+        ))
     );
     assert_eq!(p.methods_left("mia").await, (true, 1, true));
 }

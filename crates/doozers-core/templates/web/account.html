@@ -39,20 +39,6 @@
 </form>
 
 <h2 id="sign-in">Signing in</h2>
-{%- if methods.proxy %}
-<p class="banner banner-warn">You are logged in through the proxy in front of Doozers, so you can't change how you sign in here. Ask an admin for a recovery link, or run <code>doozers admin login-link</code> if you run Doozers.</p>
-{%- else %}
-{%- if methods.link %}
-<p class="banner banner-info">You signed in with a link, so you can change your ways to sign in without confirming it's you.</p>
-{%- else %}
-{%- if let Some(until) = methods.until %}
-<p class="banner banner-info" role="status">You confirmed it's you. You can add or remove a way to sign in, or change your password, until {{ until }}.</p>
-{%- else %}
-<p>To add or remove a way to sign in, or to change your password, first confirm it's you with a way you already use.</p>
-<p><a class="button button-primary" href="/account/reverify">Confirm it's you</a></p>
-{%- endif %}
-{%- endif %}
-{%- endif %}
 {%- if methods.only_one %}
 <p class="help">You have one way to sign in.</p>
 {%- endif %}
@@ -63,9 +49,7 @@
 {%- else %}
 <p>You haven't set a password.</p>
 {%- endif %}
-{%- if methods.can_change %}
 <p class="actions"><a class="button" href="/setup/password">{% if methods.password.is_some() %}Change your password{% else %}Set a password{% endif %}</a>{% if methods.password.is_some() %} <a class="button button-danger" href="/account/sign-in/remove?method=password">Remove</a>{% endif %}</p>
-{%- endif %}
 
 <h3>Passkeys</h3>
 {%- if let Some(why) = methods.passkeys_unavailable %}
@@ -85,9 +69,7 @@
 <td data-label="Last used" class="secondary m-meta m-label">{{ passkey.last_used }}</td>
 <td class="row-actions">
 <form method="post" action="/account/sign-in/passkey/rename"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ passkey.id }}"><input name="name" value="{{ passkey.name }}" maxlength="64" aria-label="Name of {{ passkey.name }}" autocomplete="off"> <button type="submit" class="button-small">Rename</button></form>
-{%- if methods.can_change %}
 <a class="button button-small button-danger" href="/account/sign-in/remove?method=passkey:{{ passkey.id }}" aria-label="Remove {{ passkey.name }}">Remove</a>
-{%- endif %}
 </td>
 </tr>
 {%- endfor %}
@@ -95,7 +77,7 @@
 </table>
 </div>
 {%- endif %}
-{%- if methods.can_change && methods.passkeys_unavailable.is_none() %}
+{%- if methods.passkeys_unavailable.is_none() %}
 <p class="actions"><a class="button" href="/setup/passkey">Add a passkey</a></p>
 {%- endif %}
 
@@ -109,10 +91,8 @@
 {%- if let Some(connected) = provider.connected %} connected {{ connected }}{% if !provider.enabled %} (an admin turned this provider off){% else if !provider.works %} (needs to reconnect because the provider changed){% endif %}
 {%- else %} not connected
 {%- endif %}
-{%- if methods.can_change %}
 {%- if provider.enabled %} <a class="button button-small" href="{{ provider.connect_href }}">{% if provider.connected.is_some() %}Connect another account{% else %}Connect{% endif %}</a>{% endif %}
 {%- if provider.connected.is_some() %} <a class="button button-small button-danger" href="/account/sign-in/remove?method=oidc:{{ provider.id }}">Disconnect</a>{% endif %}
-{%- endif %}
 </li>
 {%- endfor %}
 </ul>

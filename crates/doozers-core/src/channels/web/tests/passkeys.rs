@@ -562,7 +562,7 @@ async fn registering_needs_an_invite_or_recovery_login_and_its_csrf_token() {
         json_of(response).await["error"]
             .as_str()
             .unwrap()
-            .contains("Confirm it's you first")
+            .contains("Sign in again to add a passkey")
     );
     let response = call(
         env.main_app(),
@@ -572,7 +572,11 @@ async fn registering_needs_an_invite_or_recovery_login_and_its_csrf_token() {
         None,
     )
     .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers()[LOCATION],
+        "/account/reverify?next=%2Fsetup%2Fpasskey"
+    );
     let response = call(
         env.main_app(),
         Method::GET,
@@ -582,7 +586,8 @@ async fn registering_needs_an_invite_or_recovery_login_and_its_csrf_token() {
     )
     .await;
     let html = body_text(response).await;
-    assert!(!html.contains("/setup/passkey"), "{html}");
+    assert!(html.contains("/setup/passkey"), "{html}");
+    assert!(!html.contains("onfirm"), "{html}");
 
     // Nobody logged in gets the login-required page.
     let response = start(&env, &[]).await;
@@ -1479,7 +1484,7 @@ async fn the_login_page_offers_passkeys_above_a_folded_password_form() {
     }
 }
 
-// --- Confirming it's you with a passkey -------------------------------------------------------
+// --- Signing in again with a passkey -------------------------------------------------------
 
 /// `mia`, who has one discoverable passkey on the returned browser, and a session of hers that
 /// signed in with a password, which is what a stolen cookie is.
@@ -1511,7 +1516,7 @@ async fn password_login(env: &Env, user: &str) -> Login {
     Login::new(token)
 }
 
-/// What the page's script does to confirm it's you: start, let `browser` answer, finish. The answers
+/// What the page's script does to sign in again: start, let `browser` answer, finish. The answers
 /// of both requests.
 async fn reverify(
     env: &Env,
@@ -1580,7 +1585,7 @@ async fn reverified_at(env: &Env, login: &Login) -> Option<Timestamp> {
 }
 
 #[tokio::test]
-async fn confirming_with_a_passkey_lets_that_session_add_a_passkey() {
+async fn signing_in_again_with_a_passkey_lets_that_session_add_a_passkey() {
     let (env, mut phone, stolen) = with_a_passkey_and_a_password_login().await;
     let mia = UserId::new("mia").unwrap();
 
@@ -1591,7 +1596,7 @@ async fn confirming_with_a_passkey_lets_that_session_add_a_passkey() {
         json_of(response).await["error"]
             .as_str()
             .unwrap()
-            .contains("Confirm it's you first")
+            .contains("Sign in again to add a passkey")
     );
     let page = call(
         env.main_app(),
@@ -1602,6 +1607,11 @@ async fn confirming_with_a_passkey_lets_that_session_add_a_passkey() {
     )
     .await;
     let html = body_text(page).await;
+    assert!(
+        html.contains("<h1>Sign in again to add a passkey</h1>"),
+        "{html}"
+    );
+    assert!(html.contains("Continue with a passkey"), "{html}");
     assert!(html.contains(r#"id="passkey-reverify""#), "{html}");
     assert!(html.contains(r#"data-next="/setup/passkey""#), "{html}");
     assert!(
@@ -1613,7 +1623,7 @@ async fn confirming_with_a_passkey_lets_that_session_add_a_passkey() {
         "{html}"
     );
 
-    // The user's passkey answers, and the session is confirmed.
+    // The user's passkey answers, and the session signed in again.
     let (started, response) = reverify(&env, &stolen, &mut phone, "/setup/passkey").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
@@ -1632,13 +1642,37 @@ async fn confirming_with_a_passkey_lets_that_session_add_a_passkey() {
     let used = env.store.user_passkeys(&mia).await.unwrap();
     assert!(used[0].last_used_at.is_some());
 
+    // It carries `next` on to a removal's page, and to a connection, which gets the CSRF token
+    // the start of one requires.
+    let (_, response) = reverify(
+        &env,
+        &stolen,
+        &mut phone,
+        "/account/sign-in/remove?method=password",
+    )
+    .await;
+    assert_eq!(
+        json_of(response).await,
+        json!({ "redirect": "/account/sign-in/remove?method=password" })
+    );
+    let (_, response) = reverify(&env, &stolen, &mut phone, "/setup/oidc/idp").await;
+    assert_eq!(
+        json_of(response).await,
+        json!({ "redirect": format!("/setup/oidc/idp?csrf={}", stolen.csrf) })
+    );
+    let (_, response) = reverify(&env, &stolen, &mut phone, "https://evil.example/").await;
+    assert_eq!(
+        json_of(response).await,
+        json!({ "redirect": "/account?notice=reverified" })
+    );
+
     // Now that session adds a second passkey, as an invite's would.
     let mut key = Browser::new(true);
     let (_, response) = register(&env, &stolen, &mut key, "non_resident", "Key").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(env.store.user_passkeys(&mia).await.unwrap().len(), 2);
 
-    // Another session of the user didn't confirm anything.
+    // Another session of the user didn't sign in again.
     let other = password_login(&env, "mia").await;
     assert_eq!(
         start(&env, &other.headers()).await.status(),
@@ -1647,7 +1681,7 @@ async fn confirming_with_a_passkey_lets_that_session_add_a_passkey() {
 }
 
 #[tokio::test]
-async fn a_confirmation_ceremony_is_the_users_own_and_belongs_to_one_login_and_works_once() {
+async fn a_sign_in_again_ceremony_is_the_users_own_and_belongs_to_one_login_and_works_once() {
     let (env, mut phone, stolen) = with_a_passkey_and_a_password_login().await;
     let root_login = login(&env, "root").await;
     let mut roots = Browser::new(false);
@@ -1746,7 +1780,7 @@ async fn a_confirmation_ceremony_is_the_users_own_and_belongs_to_one_login_and_w
 }
 
 #[tokio::test]
-async fn without_a_secure_public_url_a_passkey_cannot_confirm_and_is_not_offered() {
+async fn without_a_secure_public_url_a_passkey_cannot_sign_in_again_and_is_not_offered() {
     let env = env_at(None).await;
     stored_users(&env).await;
     let mia = UserId::new("mia").unwrap();

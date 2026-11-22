@@ -38,7 +38,8 @@ use webauthn_rs_proto::ResidentKeyRequirement;
 use super::auth::{WebUser, check_csrf};
 use super::pages::{WebApp, internal_error, no_store};
 use super::passkey::{Ceremony, registration_binding, user_handle};
-use super::signin::{SetupOption, confirm_first, confirm_first_json};
+use super::reverify::Target;
+use super::signin::{SetupOption, sign_in_again, sign_in_again_json};
 use crate::http;
 
 /// The longest name a passkey is given, in characters.
@@ -126,18 +127,15 @@ fn require_discoverable(options: &mut CreationChallengeResponse) -> Result<(), &
 }
 
 impl WebApp {
-    /// The setup page's entry for passkeys, if `user` may add one. It is there even when passkeys
-    /// aren't available, so the page it leads to can say why.
+    /// The setup page's entry for passkeys. It is there for every login, and even when passkeys
+    /// aren't available, so the page it leads to can say why or send the login to sign in again.
     pub(super) async fn passkey_setup_option(
         &self,
         user: &WebUser,
-    ) -> doozers_store::Result<Option<SetupOption>> {
-        if !self.may_change_sign_in_methods(user).await? {
-            return Ok(None);
-        }
+    ) -> doozers_store::Result<SetupOption> {
         let have = self.inner.store.user_passkeys(&user.user).await?.len();
         let available = self.inner.passkeys.relying_party().is_ok();
-        Ok(Some(SetupOption {
+        Ok(SetupOption {
             label: if have == 0 {
                 "Passkey"
             } else {
@@ -157,7 +155,7 @@ impl WebApp {
                 )
             },
             href: "/setup/passkey".to_owned(),
-        }))
+        })
     }
 }
 
@@ -195,7 +193,7 @@ async fn setup_page(
 ) -> Response {
     match app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first(&user, "/setup/passkey"),
+        Ok(false) => return sign_in_again(&Target::AddPasskey),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     let stored = match app.inner.store.user_passkeys(&user.user).await {
@@ -246,7 +244,7 @@ async fn start(
     }
     match app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first_json(&user),
+        Ok(false) => return sign_in_again_json(&user, "add a passkey"),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     let rp = match app.inner.passkeys.relying_party() {
@@ -320,7 +318,7 @@ async fn finish(
     }
     match app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first_json(&user),
+        Ok(false) => return sign_in_again_json(&user, "add a passkey"),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     let rp = match app.inner.passkeys.relying_party() {

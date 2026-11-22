@@ -356,8 +356,11 @@ async fn an_invited_user_connects_an_account_and_signs_in_with_it_later() {
             &format!("/setup/oidc/idp?csrf={}", later.csrf()),
         )
         .await;
-    assert_eq!(again.status(), StatusCode::FORBIDDEN);
-    assert!(body_text(again).await.contains("Confirm it's you first"));
+    assert_eq!(again.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        location(&again),
+        "/account/reverify?next=%2Fsetup%2Foidc%2Fidp"
+    );
 }
 
 #[tokio::test]
@@ -668,10 +671,15 @@ async fn only_a_login_that_came_from_a_link_connects_an_account() {
     site.sign_in(&mut browser, "mia-sub").await;
     let path = format!("/setup/oidc/idp?csrf={}", browser.csrf());
     let response = browser.get(&site.router, &path).await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    assert!(body_text(response).await.contains("Confirm it's you first"));
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        location(&response),
+        "/account/reverify?next=%2Fsetup%2Foidc%2Fidp"
+    );
+    // The setup page lists it all the same, and leads to signing in again.
     let setup = body_text(browser.get(&site.router, "/setup").await).await;
-    assert!(!setup.contains("/setup/oidc/"), "{setup}");
+    assert!(setup.contains("/setup/oidc/idp"), "{setup}");
+    assert!(!setup.contains("onfirm"), "{setup}");
 
     // Nobody logged in.
     let mut nobody = Browser::default();
@@ -2041,7 +2049,7 @@ async fn the_removal_page_counts_every_connection_the_removal_forgets() {
     );
 }
 
-// --- Confirming it's you with an identity provider ---------------------------------------------
+// --- Signing in again with an identity provider ---------------------------------------------
 
 impl Site {
     /// A browser of `user` whose session signed in with a password: a login that is no invite's.
@@ -2075,7 +2083,7 @@ impl Site {
             .reverified_at
     }
 
-    /// The link on the re-verify page that confirms it's you at provider `idp`.
+    /// The link on the re-verify page that signs in again at provider `idp`.
     fn reverify_path(browser: &Browser, next: &str) -> String {
         format!(
             "/account/reverify/oidc/idp?csrf={}&next={next}",
@@ -2085,39 +2093,46 @@ impl Site {
 }
 
 #[tokio::test]
-async fn confirming_with_a_connected_account_lets_that_session_change_methods() {
+async fn signing_in_again_with_a_connected_account_lets_that_session_change_methods() {
     let site = site().await;
     site.connected("mia", "mia-sub").await;
     let mut mia = site.password_login("mia").await;
 
-    // Connecting another account is refused to a login that hasn't confirmed anything, and the
-    // re-verify page offers the provider the user is connected to.
+    // Connecting another account is sent to sign in again by a login that hasn't, and the page
+    // offers the provider the user is connected to.
     let response = mia
         .get(
             &site.router,
             &format!("/setup/oidc/idp?csrf={}", mia.csrf()),
         )
         .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    assert!(body_text(response).await.contains("Confirm it's you first"));
-    let page = body_text(mia.get(&site.router, "/account/reverify").await).await;
-    assert!(page.contains("Confirm with Idp"), "{page}");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        location(&response),
+        "/account/reverify?next=%2Fsetup%2Foidc%2Fidp"
+    );
+    let page = body_text(mia.get(&site.router, &location(&response)).await).await;
+    assert!(
+        page.contains("<h1>Sign in again to connect Idp</h1>"),
+        "{page}"
+    );
+    assert!(page.contains("Continue with Idp"), "{page}");
     assert!(
         page.contains(&format!(
-            "/account/reverify/oidc/idp?csrf={}&#38;next=/account",
+            "/account/reverify/oidc/idp?csrf={}&#38;next=%2Fsetup%2Foidc%2Fidp",
             mia.csrf()
         )),
         "{page}"
     );
     assert_eq!(site.reverified_at(&mia).await, None);
 
-    // The user's own account at the provider confirms it, and leads to the account page.
+    // The user's own account at the provider signs in again, and leads to the account page.
     let path = Site::reverify_path(&mia, "/account");
     let response = site.through_idp(&mut mia, &path, "mia-sub").await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&response), "/account?notice=reverified");
     assert!(site.reverified_at(&mia).await.is_some());
-    // The login is the same one: confirming doesn't sign anyone in again.
+    // The login is the same one: signing in again doesn't start another.
     assert!(mia.session().is_some());
 
     // Now the session connects another account, as an invite's would.
@@ -2129,7 +2144,7 @@ async fn confirming_with_a_connected_account_lets_that_session_change_methods() 
 }
 
 #[tokio::test]
-async fn an_account_that_is_not_the_users_confirms_nothing() {
+async fn an_account_that_is_not_the_users_signs_nothing_in_again() {
     let site = site().await;
     site.connected("mia", "mia-sub").await;
     site.connected("root", "root-sub").await;
@@ -2156,7 +2171,7 @@ async fn an_account_that_is_not_the_users_confirms_nothing() {
 }
 
 #[tokio::test]
-async fn a_confirmation_finishes_only_in_the_login_that_began_it_and_needs_the_csrf_token() {
+async fn signing_in_again_finishes_only_in_the_login_that_began_it_and_needs_the_csrf_token() {
     let site = site().await;
     site.connected("mia", "mia-sub").await;
     let mut mia = site.password_login("mia").await;
@@ -2175,8 +2190,8 @@ async fn a_confirmation_finishes_only_in_the_login_that_began_it_and_needs_the_c
         .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-    // Someone else's login, with Mia's binding cookie, can't finish Mia's confirmation, and it is
-    // gone afterwards.
+    // Someone else's login, with Mia's binding cookie, can't finish Mia's sign-in, and it is gone
+    // afterwards.
     let start = mia
         .get(&site.router, &Site::reverify_path(&mia, "/account"))
         .await;
@@ -2195,7 +2210,7 @@ async fn a_confirmation_finishes_only_in_the_login_that_began_it_and_needs_the_c
 }
 
 #[tokio::test]
-async fn a_provider_that_is_disabled_is_not_offered_to_confirm_with() {
+async fn a_provider_that_is_disabled_is_not_offered_to_sign_in_again_with() {
     let site = site().await;
     site.connected("mia", "mia-sub").await;
     let mut mia = site.password_login("mia").await;
@@ -2205,7 +2220,7 @@ async fn a_provider_that_is_disabled_is_not_offered_to_confirm_with() {
         .await
         .unwrap();
     let page = body_text(mia.get(&site.router, "/account/reverify").await).await;
-    assert!(!page.contains("Confirm with Idp"), "{page}");
+    assert!(!page.contains("Continue with Idp"), "{page}");
     let response = mia
         .get(&site.router, &Site::reverify_path(&mia, "/account"))
         .await;
@@ -2213,7 +2228,7 @@ async fn a_provider_that_is_disabled_is_not_offered_to_confirm_with() {
 }
 
 #[tokio::test]
-async fn confirming_makes_the_provider_authenticate_the_user_again() {
+async fn signing_in_again_makes_the_provider_authenticate_the_user_again() {
     let site = site().await;
     site.connected("mia", "mia-sub").await;
     let mut mia = site.password_login("mia").await;
@@ -2234,8 +2249,8 @@ async fn confirming_makes_the_provider_authenticate_the_user_again() {
         location(&start)
     );
 
-    // An ID token that says the user authenticated long before, or doesn't say when, confirms
-    // nothing, though the account is the user's.
+    // An ID token that says the user authenticated long before, or doesn't say when, signs in
+    // nothing again, though the account is the user's.
     for (what, ago) in [
         ("an old authentication", Some(Some(3600))),
         ("no authentication time", Some(None)),
@@ -2250,4 +2265,102 @@ async fn confirming_makes_the_provider_authenticate_the_user_again() {
     let response = site.through_idp(&mut mia, &path, "mia-sub").await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert!(site.reverified_at(&mia).await.is_some());
+}
+
+#[tokio::test]
+async fn signing_in_again_with_the_provider_continues_into_the_connection_with_the_csrf_token() {
+    let site = site().await;
+    site.connected("mia", "mia-sub").await;
+    let mut mia = site.password_login("mia").await;
+    let csrf = mia.csrf();
+
+    // Choosing Connect sends the user to sign in again for it; the page's link to the provider
+    // carries what to do after.
+    let ask = mia
+        .get(&site.router, &format!("/setup/oidc/idp?csrf={csrf}"))
+        .await;
+    assert_eq!(
+        location(&ask),
+        "/account/reverify?next=%2Fsetup%2Foidc%2Fidp"
+    );
+    let path = Site::reverify_path(&mia, "%2Fsetup%2Foidc%2Fidp");
+    let response = site.through_idp(&mut mia, &path, "mia-sub").await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    // The way on starts the connection, with the token the start requires added by the server.
+    assert_eq!(location(&response), format!("/setup/oidc/idp?csrf={csrf}"));
+    assert!(site.reverified_at(&mia).await.is_some());
+
+    // And that start goes to the provider, to connect a second account.
+    let response = site.connect(&mut mia, "mia-second").await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/account?notice=connected");
+    assert_eq!(site.connection("mia-second").await, Some(id("mia")));
+
+    // An address that isn't one of the known ones, or a provider that isn't one, is the account
+    // page after signing in again.
+    for next in [
+        "https%3A%2F%2Fevil.example%2F",
+        "%2Fsetup%2Foidc%2FBad%20Id",
+        "%2Fadmin",
+    ] {
+        let path = Site::reverify_path(&mia, next);
+        // The second account replaced the first at the provider, so it is the user's now.
+        let response = site.through_idp(&mut mia, &path, "mia-second").await;
+        assert_eq!(location(&response), "/account?notice=reverified", "{next}");
+    }
+}
+
+#[tokio::test]
+async fn signing_in_again_with_the_password_continues_into_the_connection_at_the_provider() {
+    let site = site().await;
+    site.connected("mia", "mia-sub").await;
+    let normalized =
+        crate::channels::web::password::check_new(super::reverify::GOOD, "mia").unwrap();
+    let hash = site.env.app.inner.passwords.hash(normalized).await.unwrap();
+    site.env
+        .store
+        .user_password_set(&id("mia"), &hash, Timestamp::now())
+        .await
+        .unwrap();
+    let mut mia = site.password_login("mia").await;
+    let csrf = mia.csrf();
+
+    let form = format!(
+        "csrf={csrf}&password={}&next=%2Fsetup%2Foidc%2Fidp",
+        super::reverify::GOOD.replace(' ', "+")
+    );
+    let response = mia
+        .send(
+            &site.router,
+            Method::POST,
+            "/account/reverify/password",
+            Some(&form),
+        )
+        .await;
+    // Not a redirect: a form submission's redirects may not leave the site (`form-action 'self'`),
+    // and this one ends at the provider. The page moves on by `refresh` instead.
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get(LOCATION).is_none());
+    assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+    let to = format!("/setup/oidc/idp?csrf={csrf}");
+    let page = body_text(response).await;
+    assert!(
+        page.contains(&format!(
+            r#"<meta http-equiv="refresh" content="0; url={to}">"#
+        )),
+        "{page}"
+    );
+    assert!(page.contains("Continue to Idp"), "{page}");
+
+    // Following it goes straight to the provider with a state of the connection, which the
+    // provider sends back, and the account is connected.
+    let start = mia.get(&site.router, &to).await;
+    assert_eq!(start.status(), StatusCode::SEE_OTHER);
+    let back = site
+        .idp
+        .approve(&location(&start), "mia-second")
+        .unwrap_or_else(|why| panic!("{why}"));
+    let done = mia.get(&site.router, &path_of(&back)).await;
+    assert_eq!(location(&done), "/account?notice=connected");
+    assert_eq!(site.connection("mia-second").await, Some(id("mia")));
 }
