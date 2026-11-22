@@ -3,16 +3,17 @@
 //! `Docs/technical/web-channel.md#account-page`.
 //!
 //! Adding and changing reuse the pages that already do it: `/setup/password`, `/setup/passkey`,
-//! and `/setup/oidc/<id>`. The account page links to them, and they send the browser back to it
-//! unless the login came from a link, which lands on the setup page. Removing a method needs the
+//! and `/setup/oidc/<id>`. The account page always links to them, and they send the browser back to
+//! it unless the login came from a link, which lands on the setup page. Removing a method needs the
 //! same permission as adding one ([`WebApp::sign_in_change`]: a link's session, or one the user
-//! re-verified lately), and the store refuses to remove the last method that can sign the user in
+//! signed in again for lately); a login without it is sent to sign in again first
+//! ([`sign_in_again`]), and the store refuses to remove the last method that can sign the user in
 //! (`user_sign_in_method_remove`). Which methods count is the store's rule, with passkeys counted
 //! only where this install can offer them (the relying party works). The proxy identity is not a
 //! method of the user's: an admin sets it, and it works only behind a trusted proxy, so it doesn't
 //! make the last method removable.
 //!
-//! Renaming a passkey needs no confirmation: it changes nothing about how anyone signs in.
+//! Renaming a passkey needs no signing in again: it changes nothing about how anyone signs in.
 
 use askama::Template;
 use axum::extract::{Form, Query, State};
@@ -22,11 +23,12 @@ use doozers_store::{Error, PasskeyId, SignInMethodRef};
 use serde::Deserialize;
 
 use super::account::AccountPages;
-use super::auth::{Login, WebUser, check_csrf};
+use super::auth::{WebUser, check_csrf};
 use super::pages::{WebApp, error_page, error_page_back, internal_error};
 use super::passkey_pages::{kind_label, tidy_name};
+use super::reverify::Target;
 use super::shell::{Nav, Shell};
-use super::signin::{SignInChange, confirm_first};
+use super::signin::sign_in_again;
 use super::toolsets::when;
 use crate::http;
 
@@ -56,14 +58,6 @@ pub(super) struct ProviderRow {
 
 /// What the page shows of the user's sign-in methods.
 pub(super) struct MethodsView {
-    /// The login came from an invite or recovery link.
-    pub(super) link: bool,
-    /// The user confirmed it's them lately: until when.
-    pub(super) until: Option<String>,
-    /// A proxy login, which can't confirm anything.
-    pub(super) proxy: bool,
-    /// Whether the login may add or remove a method, or change the password, now.
-    pub(super) can_change: bool,
     /// When the user set their password, if they have one.
     pub(super) password: Option<String>,
     pub(super) passkeys: Vec<PasskeyRow>,
@@ -78,7 +72,6 @@ impl WebApp {
     /// The user's sign-in methods as the account page shows them.
     pub(super) async fn methods_view(&self, user: &WebUser) -> doozers_store::Result<MethodsView> {
         let store = &self.inner.store;
-        let change = self.sign_in_change(user).await?;
         let password = store.user_password(&user.user).await?;
         let passkeys = store.user_passkeys(&user.user).await?;
         let connections = store.user_oidc_connections(&user.user).await?;
@@ -110,13 +103,6 @@ impl WebApp {
             .collect();
 
         Ok(MethodsView {
-            link: change == SignInChange::Link,
-            until: match change {
-                SignInChange::Reverified { until } => Some(until.strftime("%H:%M UTC").to_string()),
-                _ => None,
-            },
-            proxy: !matches!(user.login, Login::Cookie(_)),
-            can_change: change != SignInChange::Refused,
             password: password.map(|stored| when(stored.changed_at)),
             passkeys: passkeys
                 .into_iter()
@@ -136,7 +122,7 @@ impl WebApp {
 }
 
 /// A method as a form or link names it: `password`, `passkey:<id>`, or `oidc:<provider id>`.
-fn parse_method(text: &str) -> Option<SignInMethodRef> {
+pub(super) fn parse_method(text: &str) -> Option<SignInMethodRef> {
     if text == "password" {
         return Some(SignInMethodRef::Password);
     }
@@ -153,6 +139,21 @@ fn parse_method(text: &str) -> Option<SignInMethodRef> {
     }
 }
 
+/// A method as [`parse_method`] reads it.
+pub(super) fn method_text(method: &SignInMethodRef) -> String {
+    match method {
+        SignInMethodRef::Password => "password".to_owned(),
+        SignInMethodRef::Passkey(id) => format!("passkey:{}", id.get()),
+        SignInMethodRef::Oidc { provider } => format!("oidc:{provider}"),
+    }
+}
+
+/// Where signing in again leads on to for the removal of the method `text` names: its page, or the
+/// Account page if `text` isn't a method.
+fn remove_target(text: &str) -> Target {
+    parse_method(text).map_or(Target::Account, Target::Remove)
+}
+
 fn no_such_method() -> Response {
     error_page(
         StatusCode::NOT_FOUND,
@@ -161,14 +162,16 @@ fn no_such_method() -> Response {
     )
 }
 
-/// What the remove page says about a method the user has.
-struct Described {
-    label: String,
-    consequence: String,
+/// What the pages say about a method the user has.
+pub(super) struct Described {
+    pub(super) label: String,
+    pub(super) consequence: String,
+    /// What removing it is, to finish "Sign in again to": `remove your password`.
+    pub(super) action: String,
 }
 
 /// Describes `method` of `user`, or `None` if they don't have it.
-async fn describe(
+pub(super) async fn describe(
     app: &WebApp,
     user: &WebUser,
     method: &SignInMethodRef,
@@ -178,6 +181,7 @@ async fn describe(
         SignInMethodRef::Password => store.user_password(&user.user).await?.map(|_| Described {
             label: "your password".to_owned(),
             consequence: "You can no longer log in with your username and password.".to_owned(),
+            action: "remove your password".to_owned(),
         }),
         SignInMethodRef::Passkey(id) => store
             .user_passkeys(&user.user)
@@ -191,6 +195,7 @@ async fn describe(
                     passkey.name
                 ),
                 label: format!("the passkey {}", passkey.name),
+                action: format!("remove the passkey {}", passkey.name),
             }),
         SignInMethodRef::Oidc { provider } => {
             let connected = store
@@ -207,6 +212,7 @@ async fn describe(
                     "You can no longer sign in with {name}. You can connect it again later."
                 ),
                 label: format!("your {name} account"),
+                action: format!("disconnect {name}"),
             })
         }
     })
@@ -229,7 +235,8 @@ pub(super) struct MethodQuery {
 }
 
 /// `GET /account/sign-in/remove?method=`: asks before removing a method of the user's. It needs
-/// the permission to change methods, so the question doesn't invite a click that would be refused.
+/// the permission to change methods, so the question doesn't invite a click that would be refused:
+/// without it, the answer is 303 to the page where the user signs in again, which leads back here.
 /// A method the user doesn't have is a 404.
 pub(super) async fn remove_page(
     State(pages): State<AccountPages>,
@@ -239,7 +246,7 @@ pub(super) async fn remove_page(
     let app = &pages.app;
     match app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first(&user, "/account"),
+        Ok(false) => return sign_in_again(&remove_target(&query.method)),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     let Some(method) = parse_method(&query.method) else {
@@ -267,8 +274,8 @@ pub(super) struct RemoveForm {
     method: String,
 }
 
-/// `POST /account/sign-in/remove` (CSRF-checked, and allowed like adding a method): removes the
-/// method, then 303 to the account page. The only method that can sign the user in is refused
+/// `POST /account/sign-in/remove` (CSRF-checked, and allowed like adding a method; without that, 303
+/// to the page where the user signs in again): removes the method, then 303 to the account page. The only method that can sign the user in is refused
 /// (409), and nothing changes. A method the user doesn't have, another user's included, is a 404.
 pub(super) async fn remove(
     State(pages): State<AccountPages>,
@@ -282,7 +289,7 @@ pub(super) async fn remove(
     let app = &pages.app;
     match app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first(&user, "/account"),
+        Ok(false) => return sign_in_again(&remove_target(&form.method)),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     let Some(method) = parse_method(&form.method) else {

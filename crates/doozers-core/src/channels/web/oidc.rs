@@ -53,6 +53,7 @@ use url::Url;
 use super::limits::LoginLimits;
 use super::login::is_loopback_host;
 use super::pending::Pending;
+use super::reverify::Target;
 use crate::config::Secret;
 
 /// The signing algorithms an ID token may use: RSA (PKCS#1 v1.5 and PSS), ECDSA on P-256 and
@@ -222,15 +223,15 @@ pub(super) enum Purpose {
         /// The CSRF token of their login.
         csrf: String,
     },
-    /// Prove that the account is connected to `user`, who is logged in, to confirm it's them (see
+    /// Prove that the account is connected to `user`, who is logged in, to sign them in again (see
     /// [`reverify`](super::reverify)), and go on to `next`.
     Reverify {
         /// The user who started it.
         user: UserId,
         /// The CSRF token of their login.
         csrf: String,
-        /// The page to go on to, one of the pages `reverify::back_to` knows.
-        next: &'static str,
+        /// Where to go on to, one of the places `reverify::Target` knows.
+        next: Target,
     },
 }
 
@@ -586,7 +587,7 @@ impl Oidc {
                 move || nonce,
             )
             .set_pkce_challenge(challenge);
-        // Confirming it's the user must not be answered by a provider's session that is already
+        // Signing the user in again must not be answered by a provider's session that is already
         // there: it has to ask the user to authenticate again.
         if matches!(purpose, Purpose::Reverify { .. }) {
             request = request.set_max_age(std::time::Duration::ZERO);

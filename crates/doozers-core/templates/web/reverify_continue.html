@@ -1,0 +1,13 @@
+{% extends "web/app.html" %}
+
+{% block title %}Continuing to {{ name }} - Doozers{% endblock %}
+
+{% block head %}
+<meta http-equiv="refresh" content="0; url={{ href }}">
+{% endblock %}
+
+{% block content %}
+<h1>Continuing to {{ name }}…</h1>
+<p class="lede">You signed in again. Sending you to {{ name }} to connect your account.</p>
+<p><a class="button button-primary" href="{{ href }}">Continue to {{ name }}</a></p>
+{% endblock %}

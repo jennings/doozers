@@ -10,7 +10,7 @@
 // - The setup page (`#passkey-setup`): "Add a passkey" and "Add a non-resident key" each ask the
 //   server for registration options, call the browser, and post the result.
 //
-// - The re-verify page (`#passkey-reverify`): "Confirm with a passkey" asks the server for the
+// - The re-verify page (`#passkey-reverify`): "Continue with a passkey" asks the server for the
 //   options of a sign-in with one of the user's own passkeys, calls the browser, and posts the
 //   assertion, which the server accepts as proof it's the user before they change how they sign in.
 //

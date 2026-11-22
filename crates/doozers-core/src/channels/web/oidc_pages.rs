@@ -6,10 +6,10 @@
 //!   page's sign-in nonce, which must match the browser's `SameSite=Strict` nonce cookie, so
 //!   another site can't start sign-ins in a visitor's browser (they would use up the visitor's,
 //!   and everyone behind the same address's, limit on starts).
-//! - `GET /setup/oidc/<id>?csrf=` starts a connection from the setup page, for a user who signed
-//!   in with an invite or recovery link, or confirmed it's them lately, the only logins that may add
-//!   a way to sign in.
-//! - `GET /account/reverify/oidc/<id>?csrf=&next=` confirms it's the user, with an account of
+//! - `GET /setup/oidc/<id>?csrf=` starts a connection from the Account or setup page, for a user
+//!   who signed in with an invite or recovery link, or signed in again lately, the only logins that
+//!   may add a way to sign in. Any other login is sent to sign in again, and then back here.
+//! - `GET /account/reverify/oidc/<id>?csrf=&next=` signs the user in again, with an account of
 //!   theirs at the provider ([`reverify`](super::reverify)).
 //! - `GET /auth/oidc/<id>/callback` is where the provider sends the browser back, for both. It is
 //!   one address per provider, the one an admin registers there.
@@ -57,8 +57,8 @@ use super::login::{is_https, start_session};
 use super::oidc::{Identity, Oidc, Purpose, Returned};
 use super::pages::{WebApp, error_page, internal_error, no_store};
 use super::random_hex;
-use super::reverify::{back_to, done_href};
-use super::signin::{LoginOption, SetupOption, confirm_first};
+use super::reverify::{Target, no_session};
+use super::signin::{LoginOption, SetupOption, sign_in_again};
 use crate::http::{PeerAddr, RouterBuilder};
 use crate::secrets::{SecretPath, SecretProvider};
 
@@ -141,8 +141,8 @@ impl WebApp {
             .collect())
     }
 
-    /// The setup page's entries for the enabled providers, if `user` may add a sign-in method.
-    /// Each is the link that starts the connection, which carries the CSRF token of the login.
+    /// The setup page's entries for the enabled providers. Each is the link that starts the
+    /// connection, which carries the CSRF token of the login.
     ///
     /// # Errors
     ///
@@ -151,9 +151,6 @@ impl WebApp {
         &self,
         user: &WebUser,
     ) -> doozers_store::Result<Vec<SetupOption>> {
-        if !self.may_change_sign_in_methods(user).await? {
-            return Ok(Vec::new());
-        }
         let connections = self.inner.store.user_oidc_connections(&user.user).await?;
         let csrf: String = url::form_urlencoded::byte_serialize(user.csrf.as_bytes()).collect();
         Ok(self
@@ -337,6 +334,16 @@ async fn sign_in(
     .await
 }
 
+/// Where signing in again leads on to for connecting an account at provider `id`: the connection,
+/// or the Account page if `id` isn't a provider's id.
+fn connect_target(id: &str) -> Target {
+    if is_provider_id(id) {
+        Target::Connect(id.to_owned())
+    } else {
+        Target::Account
+    }
+}
+
 /// `?csrf=` on the link that starts a connection.
 #[derive(Debug, Deserialize)]
 struct ConnectQuery {
@@ -345,7 +352,8 @@ struct ConnectQuery {
 }
 
 /// `GET /setup/oidc/<id>?csrf=`: sends the browser to provider `id` to connect the account to the
-/// user, who must have signed in with an invite or recovery link.
+/// user, who must have signed in with an invite or recovery link or signed in again lately; any
+/// other login is 303 to the page where they do.
 async fn connect(
     State(pages): State<OidcPages>,
     user: WebUser,
@@ -360,7 +368,7 @@ async fn connect(
     }
     match pages.app.may_change_sign_in_methods(&user).await {
         Ok(true) => {}
-        Ok(false) => return confirm_first(&user, "/account"),
+        Ok(false) => return sign_in_again(&connect_target(&id)),
         Err(err) => return internal_error("cannot look up a web session", &err),
     }
     start(
@@ -386,8 +394,8 @@ struct ReverifyQuery {
     next: Option<String>,
 }
 
-/// `GET /account/reverify/oidc/<id>?csrf=&next=`: sends the browser to provider `id` to confirm
-/// it's the user, who must have a cookie login. The account that signs in must be one connected to
+/// `GET /account/reverify/oidc/<id>?csrf=&next=`: sends the browser to provider `id` to sign the
+/// user in again, who must have a cookie login. The account that signs in must be one connected to
 /// the user ([`reverify_user`]).
 async fn reverify(
     State(pages): State<OidcPages>,
@@ -402,7 +410,7 @@ async fn reverify(
         return rejected.into_response();
     }
     if !matches!(user.login, Login::Cookie(_)) {
-        return confirm_first(&user, "/account");
+        return no_session();
     }
     start(
         &pages,
@@ -410,7 +418,7 @@ async fn reverify(
         Purpose::Reverify {
             user: user.user.clone(),
             csrf: user.csrf.clone(),
-            next: back_to(query.next.as_deref()),
+            next: Target::parse(query.next.as_deref()),
         },
         trusted.is_some(),
         peer.as_ref().map(|Extension(c)| &c.0),
@@ -490,7 +498,7 @@ async fn callback(
     {
         match app.may_change_sign_in_methods(user).await {
             Ok(true) => {}
-            Ok(false) => return confirm_first(user, "/account"),
+            Ok(false) => return sign_in_again(&connect_target(&id)),
             Err(err) => return internal_error("cannot look up a web session", &err),
         }
     }
@@ -598,7 +606,7 @@ async fn sign_in_user(
     start_session(app, user, SignInMethod::Oidc, previous, https, "/").await
 }
 
-/// Records that `user` confirmed it's them, if `identity` is an account connected to `owner`, and
+/// Records that `user` signed in again, if `identity` is an account connected to `owner`, and
 /// goes on to `next`. Any other account, which the provider vouches for just as well, is refused:
 /// being signed in at a provider proves nothing about this user.
 async fn reverify_user(
@@ -607,7 +615,7 @@ async fn reverify_user(
     identity: &Identity,
     owner: &doozers_types::UserId,
     user: &WebUser,
-    next: &'static str,
+    next: Target,
 ) -> Response {
     let app = &pages.app;
     let found = match app
@@ -620,7 +628,7 @@ async fn reverify_user(
         Err(err) => return internal_error("cannot look up an OpenID Connect connection", &err),
     };
     if found.as_ref() != Some(owner) {
-        info!(user = %owner, provider = %provider.id, "an OpenID Connect account that isn't the user's tried to confirm it's them");
+        info!(user = %owner, provider = %provider.id, "an OpenID Connect account that isn't the user's tried to sign in again");
         return no_store(error_page(
             StatusCode::FORBIDDEN,
             "That isn't your account",
@@ -634,7 +642,7 @@ async fn reverify_user(
     if let Err(response) = app.reverified(user).await {
         return *response;
     }
-    Redirect::to(&done_href(next)).into_response()
+    Redirect::to(&next.done_href(&user.csrf)).into_response()
 }
 
 /// Connects `identity` to `owner`, then to `target`, which says it did.
