@@ -238,6 +238,11 @@ async fn deleting_removes_the_chat_and_its_workspace() {
     let page = chats.page(&format!("/chats/{}", chat())).await;
     assert!(page.contains(r#"commandfor="delete-chat""#), "{page}");
     assert!(
+        page.contains(r#"<button class="button-quiet" autofocus>Cancel</button>"#),
+        "{page}"
+    );
+    assert_eq!(page.matches("autofocus").count(), 1, "{page}");
+    assert!(
         page.contains(&format!(r#"action="/chats/{}/delete""#, chat())),
         "{page}"
     );

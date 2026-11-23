@@ -275,7 +275,8 @@ Archive a chat to take it off the list without losing it. Open the chat and pres
 - Replies from [jobs](#scheduled-jobs) scheduled in an archived chat still go to it, and it stays
   archived.
 
-Delete a chat to remove it for good. Open the chat, press **Delete**, and confirm.
+Delete a chat to remove it for good. Open the chat, press **Delete**, and confirm. The dialog opens
+with **Cancel** focused, so pressing Enter right away keeps the chat.
 
 - **Deleting can't be undone.** The chat's messages are removed, and so is the agent's
   [workspace](environments.md) for the chat, with its files.

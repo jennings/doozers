@@ -82,10 +82,13 @@ How much an action asks first depends on what it costs:
         <input type="hidden" name="csrf" value="…">
         <button type="submit" class="button button-danger-solid">Delete x</button>
       </form>
-      <form method="dialog"><button class="button-quiet">Cancel</button></form>
+      <form method="dialog"><button class="button-quiet" autofocus>Cancel</button></form>
     </div>
   </dialog>
   ```
+
+  Put `autofocus` on Cancel. Without it `showModal()` focuses the first focusable element, which is
+  the danger button, and Enter or Space right after opening the dialog would confirm the action.
 
   `showModal()` gives the backdrop, the focus trap, Escape to close, and an inert page behind it.
   `closedby="any"` closes it on a backdrop click.
