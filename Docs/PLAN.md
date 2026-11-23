@@ -814,24 +814,25 @@ One process per configured instance. Two IRC networks are two `doozers-channel-i
 with its own config and sandbox grants. RPCs carry no instance id. Instance config is described in
 section 11.2.
 
-Instance names are permanent ids: sessions, the inbox, group memories, and the plugin's data
-directory are keyed by them. Providers, channels, environments, and toolsets have separate
-namespaces: one of each can be named `aperture`, and the kinds keep their rows, directories, pid
-files, and sandbox specs apart. A name is unique within its kind, ignoring case, so a
-case-insensitive file system never gives two instances of a kind one directory. Renaming one in its
-config alone would orphan all of that, so `doozers <kind> rename <old> <new>` does it (`channel`,
-`environment`, `provider`, or `toolset`), with the core stopped: it migrates the database rows,
-renames the directories, and renames the instance's config (in the current layout, the
-`[<kind>.<old>]` table in `doozers.toml`, section 11.2). The command's kind says which instance is
-renamed; it only touches that kind's rows, directories, and table. `doozers toolset rename` also
-works with the core running, for a toolset stored in the database. Doozers doesn't check for a
-rename done in the config alone: the renamed instance starts with no data, and the old name's rows
-and directories stay where they are, unused. The command finishes such a hand-rename only before the
-renamed instance has started: launching it creates `data/<kind>/<new>/`, and then `<new>` has data
-and the command refuses. Renaming a provider, channel, or environment that has no `component` key
-keeps its component by writing `component = "<old>"`, since the component defaults to the instance
-name. A toolset has no component. Renaming an environment also rewrites the name in each agent's
-`environments` list.
+An instance name is how you refer to an instance of a plugin: in its config, commands, routes, tool
+prefixes, and the web UI. It isn't a permanent id, and `doozers <kind> rename` changes it. Sessions,
+the inbox, group memories, and the plugin's data directory are stored under the name. Providers,
+channels, environments, and toolsets have separate namespaces: one of each can be named `aperture`,
+and the kinds keep their rows, directories, pid files, and sandbox specs apart. A name is unique
+within its kind, ignoring case, so a case-insensitive file system never gives two instances of a
+kind one directory. Renaming one in its config alone would orphan all of that, so
+`doozers <kind> rename <old> <new>` does it (`channel`, `environment`, `provider`, or `toolset`),
+with the core stopped: it migrates the database rows, renames the directories, and renames the
+instance's config (in the current layout, the `[<kind>.<old>]` table in `doozers.toml`, section
+11.2). The command's kind says which instance is renamed; it only touches that kind's rows,
+directories, and table. `doozers toolset rename` also works with the core running, for a toolset
+stored in the database. Doozers doesn't check for a rename done in the config alone: the renamed
+instance starts with no data, and the old name's rows and directories stay where they are, unused.
+The command finishes such a hand-rename only before the renamed instance has started: launching it
+creates `data/<kind>/<new>/`, and then `<new>` has data and the command refuses. Renaming a
+provider, channel, or environment that has no `component` key keeps its component by writing
+`component = "<old>"`, since the component defaults to the instance name. A toolset has no
+component. Renaming an environment also rewrites the name in each agent's `environments` list.
 
 ### 7.3 Discovery and enablement
 

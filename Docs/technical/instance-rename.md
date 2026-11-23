@@ -1,7 +1,8 @@
 # Instance rename
 
-Instance names are permanent ids (PLAN section 7.2). `doozers_core::rename` renames one,
-`rename_instance`, which `doozers channel rename <old> <new>`,
+An instance name is how you refer to an instance of a plugin, and it can change (PLAN section 7.2).
+The database rows, directories, and config stored under the name move with it.
+`doozers_core::rename` renames one, `rename_instance`, which `doozers channel rename <old> <new>`,
 `doozers environment rename <old> <new>`, `doozers provider rename <old> <new>`, and
 `doozers toolset rename <old> <new>` (with Doozers stopped) call, each for its own kind.
 `ToolsetManager::rename` renames a toolset stored in the database while Doozers runs. This page
