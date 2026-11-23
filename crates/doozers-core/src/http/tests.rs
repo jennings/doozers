@@ -267,6 +267,22 @@ async fn unknown_paths_get_the_not_found_page() {
     assert!(html.contains(HTMX.path), "not in the layout: {html}");
 }
 
+#[tokio::test]
+async fn the_layout_starts_with_a_skip_link_to_a_focusable_main() {
+    for path in ["/", "/no/such/page"] {
+        let (_, html) = get_page(path).await;
+        let link = html
+            .find(r##"<a class="skip-link" href="#main">Skip to content</a>"##)
+            .unwrap_or_else(|| panic!("{path}: {html}"));
+        assert!(link < html.find("<main").unwrap(), "{path}: {html}");
+        assert_eq!(link, html.find("<a ").unwrap(), "{path}: {html}");
+        assert!(
+            html.contains(r#"<main id="main" tabindex="-1" class="standalone">"#),
+            "{path}: {html}"
+        );
+    }
+}
+
 async fn http_get(addr: SocketAddr, path: &str) -> String {
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");

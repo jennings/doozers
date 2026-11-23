@@ -353,7 +353,7 @@ document it here.
   row of buttons, `.back` the back link, `.lede` the intro paragraph, and `.section` a titled
   section (a column with a 12 px gap).
 - Text helpers: `.muted` (muted color), `.meta` (12 px muted), `.warn-text`, `.mono`, and `.sr-only`
-  (read out but not shown).
+  (read out but not shown). `.skip-link` is the one link that is shown only while focused.
 
 ### Buttons
 
@@ -531,6 +531,12 @@ whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
   keys" link reads "SSH keys (all users)".
 - Error banners are `role="alert"`, and result banners are `role="status"`.
 - Focus is always visible: a 2 px accent outline with a 2 px offset (`:focus-visible`).
+- Every page starts with a skip link, `<a class="skip-link" href="#main">`. `layout.html` puts it
+  ahead of `{% block body %}`, so it is the first Tab stop on every page and no template repeats it.
+  Both `<main>` elements, in `layout.html` and in `app.html`, carry `id="main"` and `tabindex="-1"`,
+  so the link moves focus there in every browser. `main:focus-visible` draws no ring, because
+  `<main>` is not a control. `.skip-link` is clipped out of sight until it has focus. A new template
+  that overrides `{% block body %}` gives its `<main>` both `id="main"` and `tabindex="-1"`.
 - Icons are decorative SVGs with `aria-hidden="true"` next to text, or inside a button with an
   `aria-label`.
 - Text meets 4.5:1 contrast on its surface in both themes.

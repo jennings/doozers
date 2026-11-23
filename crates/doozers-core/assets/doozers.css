@@ -130,6 +130,34 @@ ul {
   display: none !important;
 }
 
+/* A skipped-to <main> takes focus so the next Tab starts inside it, but it is not a control, so it
+   draws no ring. */
+main:focus-visible {
+  outline: none;
+}
+
+/* The first Tab stop on every page: out of sight until it has focus. */
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:not(:focus) {
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
