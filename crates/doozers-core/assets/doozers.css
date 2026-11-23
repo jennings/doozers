@@ -1826,6 +1826,17 @@ details.card[open] > summary {
   & .banner {
     flex-basis: 100%;
   }
+
+  /* Shown by compose-keys.js, only while Enter sends the message. */
+  & .compose-hint {
+    display: none;
+    flex-basis: 100%;
+    margin: 0;
+
+    :root.enter-sends & {
+      display: block;
+    }
+  }
 }
 
 @media (width < 1024px) {

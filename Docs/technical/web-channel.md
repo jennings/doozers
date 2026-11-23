@@ -2012,8 +2012,22 @@ handlers (the CSP and `allowEval: false` forbid them). The chat page is `hx-ext=
 replaces itself (`hx-target="this"`, `hx-swap="outerHTML"`), and approval forms use
 `hx-swap="none"`. The form that answers a post, including a refusal, has `autofocus` on the
 textarea, which htmx focuses after the swap, so focus doesn't fall back to `<body>`; the chat page
-renders it without. Every form also works as a plain form post. Styles are classes in
-`assets/doozers.css`.
+renders it without. `assets/compose-keys.js`, which only the chat page loads, listens for `keydown`
+on the `document`, because the form is replaced after every post. Enter in `#compose textarea` calls
+`requestSubmit()`, so the `required` check runs and htmx sends the post. Shift, Ctrl, Alt, and Meta
+with Enter, and Enter that confirms IME composition, keep their default action: the script checks
+`isComposing` and also `keyCode === 229`, because Safari ends the composition before the Enter that
+confirms it (WebKit bug 165004), so `isComposing` is already false then. While the form has htmx's
+`htmx-request` class, Enter does nothing, so a second press can't queue the same text again. When
+`(pointer: coarse)` matches, the script leaves Enter alone: a touch screen's primary pointer is its
+finger. The script also adds `enter-sends` to `<html>` while that query doesn't match, and
+`.compose-hint` in the form, the "Enter to send, Shift+Enter for a new line" line under the Send
+button, is visible only then. In the same cases the script sets `aria-describedby` on the textarea
+to the hint's id, `compose-hint`, and removes it otherwise, so a screen reader announces the
+shortcut where the user types, and never announces it where Enter doesn't send. It does this on load
+and on `htmx:load`, which covers the form that replaces itself. The chat page loads the script
+without `defer`, so `enter-sends` is set before the first paint and the hint doesn't shift the
+layout. Every form also works as a plain form post. Styles are classes in `assets/doozers.css`.
 
 ## Tests
 
