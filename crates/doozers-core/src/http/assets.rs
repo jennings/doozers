@@ -229,4 +229,19 @@ mod tests {
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         );
     }
+
+    #[test]
+    fn placeholders_use_the_faint_text_color() {
+        // Browsers' own gray is #757575, 4.3:1 on `--surface-inset` (#f6f8fc). `--text-faint` is
+        // #5f6d88 there (4.9:1) and #8e9fc2 on dark (6.8:1), and `opacity: 1` stops Firefox from
+        // fading it.
+        let css = std::str::from_utf8(STYLESHEET_BODY).unwrap();
+        let rule = css
+            .split("::placeholder {")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("the stylesheet styles ::placeholder");
+        assert!(rule.contains("color: var(--text-faint);"), "{rule}");
+        assert!(rule.contains("opacity: 1;"), "{rule}");
+    }
 }

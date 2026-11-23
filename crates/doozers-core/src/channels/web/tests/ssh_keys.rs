@@ -313,6 +313,8 @@ async fn the_page_lists_a_key_with_its_details_and_public_key_and_never_the_priv
     }
     assert!(empty.body.contains("action=\"/ssh-keys/generate\""));
     assert!(empty.body.contains("enctype=\"multipart/form-data\""));
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!empty.body.contains("placeholder="), "{}", empty.body);
 
     let key = ssh
         .keys
@@ -373,7 +375,7 @@ async fn the_page_lists_a_key_with_its_details_and_public_key_and_never_the_priv
         assert!(!answer.body.contains(body_line), "{path}");
         assert!(
             !answer.body.contains("-----END OPENSSH PRIVATE KEY-----"),
-            "{path}: no key text, only the upload form's placeholder"
+            "{path}: no key text"
         );
     }
 }

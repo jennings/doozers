@@ -141,6 +141,12 @@ async fn the_page_needs_a_login_and_shows_only_the_users_own_profile_and_identit
     let root = p.login("root").await;
     let html = p.get(&root, "/account").await.body;
     assert!(html.contains("<dd>Admin</dd>"), "{html}");
+    // The time zone's example is in the help text. A placeholder would look like a value.
+    assert!(!html.contains("placeholder="), "{html}");
+    assert!(
+        html.contains("such as <code>America/Los_Angeles</code>"),
+        "{html}"
+    );
 }
 
 #[tokio::test]

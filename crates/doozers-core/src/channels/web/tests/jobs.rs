@@ -162,6 +162,8 @@ async fn the_form_schedules_a_job_for_the_user_and_tells_the_scheduler() {
     assert!(page.contains(r#"href="/jobs/new""#));
     let form = body_text(send(&env, owner(), Method::GET, "/jobs/new", None).await).await;
     assert!(form.contains(r#"<option value="bunter">bunter</option>"#));
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!form.contains("placeholder="), "{form}");
 
     let response = post(
         &env,

@@ -55,9 +55,9 @@
 </div>
 <div class="field">
 <label for="add-line">Line</label>
-<textarea id="add-line" name="line" rows="3" class="mono" autocomplete="off" spellcheck="false" placeholder="github.com ssh-ed25519 AAAAC3...">
+<textarea id="add-line" name="line" rows="3" class="mono" autocomplete="off" spellcheck="false">
 {{ line }}</textarea>
-<p class="help">Paste one <code>known_hosts</code> line, such as the one <code>ssh-keyscan</code> prints or a server publishes, to trust the key before any workspace connects. Hashed host names (<code>|1|</code>), markers such as <code>@cert-authority</code>, and wildcard patterns aren't supported. A line that lists several hosts pins the key for each.</p>
+<p class="help">Paste one <code>known_hosts</code> line, such as the one <code>ssh-keyscan</code> prints or a server publishes, to trust the key before any workspace connects. It looks like <code>github.com ssh-ed25519 AAAAC3...</code>. Hashed host names (<code>|1|</code>), markers such as <code>@cert-authority</code>, and wildcard patterns aren't supported. A line that lists several hosts pins the key for each.</p>
 </div>
 <div class="form-actions">
 <button type="submit" class="button-primary">Add</button>

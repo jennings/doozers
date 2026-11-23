@@ -40,23 +40,27 @@
 {%- endif %}
 <div class="field">
 <label for="url">URL</label>
-<input id="url" name="url" value="{{ form.url }}" placeholder="https://example.com/mcp" required class="mono">
+<input id="url" name="url" value="{{ form.url }}" required class="mono">
+<p class="help">The address of the MCP server, such as <code>https://example.com/mcp</code>.</p>
 <label class="check" id="insecure-field"{% if !form.plain_http() %} hidden{% endif %}><input type="checkbox" name="insecure"{% if form.insecure %} checked{% endif %}> Allow insecure connections</label>
 </div>
+<div class="field-row">
 <div class="field">
-<span class="field-label">Authentication</span>
-<div class="control-row">
-<select name="auth" aria-label="How Doozers authenticates to the server">
+<label for="auth">Authentication</label>
+<select id="auth" name="auth">
 <option value="none"{% if form.auth == "none" %} selected{% endif %}>No authentication</option>
 <option value="token"{% if form.auth == "token" %} selected{% endif %}>Bearer token</option>
 <option value="oauth"{% if form.auth == "oauth" %} selected{% endif %}>OAuth: each user signs in</option>
 </select>
-<input type="password" name="bearer_token" autocomplete="off" aria-label="Bearer token" placeholder="{% if form.bearer_stored %}stored; leave blank to keep it{% else %}bearer token{% endif %}">
+</div>
+<div class="field">
+<label for="bearer_token">Bearer token</label>
+<input type="password" id="bearer_token" name="bearer_token" autocomplete="off" {% if form.bearer_stored %}placeholder="stored; leave blank to keep it"{% endif %}>
 {%- if form.bearer_stored %}
 <input type="hidden" name="bearer_stored" value="1">
 {%- endif %}
+<p class="help">Only when Authentication is Bearer token. Doozers keeps the token encrypted and never shows it again. To change it, type the new one.</p>
 </div>
-<p class="help">For a bearer token, Doozers keeps the token encrypted and never shows it again. To change it, type the new one.</p>
 </div>
 <div class="field-row">
 <div class="field">
@@ -65,21 +69,22 @@
 </div>
 <div class="field">
 <label for="oauth_client_secret">OAuth client secret</label>
-<input type="password" id="oauth_client_secret" name="oauth_client_secret" autocomplete="off" placeholder="{% if form.oauth_secret_stored %}stored; leave blank to keep it{% else %}none{% endif %}">
+<input type="password" id="oauth_client_secret" name="oauth_client_secret" autocomplete="off" {% if form.oauth_secret_stored %}placeholder="stored; leave blank to keep it"{% endif %}>
 {%- if form.oauth_secret_stored %}
 <input type="hidden" name="oauth_secret_stored" value="1">
 {%- endif %}
+<p class="help">Leave it empty if the app has no secret.</p>
 </div>
 </div>
 <div class="field">
 <label for="oauth_scopes">OAuth scopes</label>
-<input id="oauth_scopes" name="oauth_scopes" value="{{ form.oauth_scopes }}" placeholder="repo read:org" class="mono">
-<p class="help">For OAuth, each user signs in with their own account on the Connections page. Enter the client ID and secret of the OAuth app you registered with the server, or leave them blank if the server registers clients itself. Scopes are optional, separated by spaces.</p>
+<input id="oauth_scopes" name="oauth_scopes" value="{{ form.oauth_scopes }}" class="mono">
+<p class="help">For OAuth, each user signs in with their own account on the Connections page. Enter the client ID and secret of the OAuth app you registered with the server, or leave them blank if the server registers clients itself. Scopes are optional, separated by spaces, such as <code>repo read:org</code>.</p>
 </div>
 <div class="field-row">
 <div class="field">
 <label for="deadline">Deadline</label>
-<input id="deadline" name="deadline" value="{{ form.deadline }}" placeholder="5m">
+<input id="deadline" name="deadline" value="{{ form.deadline }}">
 <p class="help">Optional. How long one tool call may run, such as <code>90s</code>. The default is <code>5m</code>.</p>
 </div>
 <div class="field">

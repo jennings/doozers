@@ -40,7 +40,7 @@
 </div>
 <div class="field">
 <label for="timezone">Time zone</label>
-<input id="timezone" name="timezone" value="{{ form.timezone }}" placeholder="America/Los_Angeles" autocomplete="off" spellcheck="false">
+<input id="timezone" name="timezone" value="{{ form.timezone }}" autocomplete="off" spellcheck="false">
 <p class="help">An IANA name, such as <code>America/Los_Angeles</code>. It sets the times agents see in their messages and when their jobs run. Leave it empty to use the server's default time zone.</p>
 </div>
 <div class="form-actions">
@@ -71,7 +71,7 @@
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <div class="field">
 <label for="proxy-identity-input">Identity</label>
-<input id="proxy-identity-input" name="proxy_identity" value="{{ form.proxy_identity }}" class="mono" placeholder="alice@example.com" autocomplete="off" autocapitalize="none" spellcheck="false">
+<input id="proxy-identity-input" name="proxy_identity" value="{{ form.proxy_identity }}" class="mono" autocomplete="off" autocapitalize="none" spellcheck="false">
 <p class="help">Allows a trusted reverse proxy to automatically sign the user in. This is the value the proxy puts in its identity header, such as <code>alice@example.com</code>. Leave empty to disable this. {% if let Some(current) = proxy_identity %}They have <code>{{ current }}</code> now.{% else %}None{% endif %}</p>
 </div>
 <div class="form-actions">

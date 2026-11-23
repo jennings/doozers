@@ -305,6 +305,8 @@ async fn an_empty_page_says_so_and_offers_the_environments() {
         "{page}"
     );
     assert!(page.contains("<textarea"));
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!page.contains("placeholder="), "{page}");
     assert!(page.contains(&format!("name=\"csrf\" value=\"{CSRF}\"")));
     assert!(!page.contains("<script>"), "no inline scripts");
 }

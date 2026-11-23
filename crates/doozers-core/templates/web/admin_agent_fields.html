@@ -70,7 +70,7 @@
 </div>
 <div class="field">
 <label for="max_iterations_jobs">Max iterations for jobs</label>
-<input id="max_iterations_jobs" name="max_iterations_jobs" value="{{ form.advanced.max_iterations_jobs }}" type="number" min="1" placeholder="{{ crate::config::DEFAULT_MAX_ITERATIONS_JOBS }}">
+<input id="max_iterations_jobs" name="max_iterations_jobs" value="{{ form.advanced.max_iterations_jobs }}" type="number" min="1">
 <p class="help">The same for scheduled jobs. Empty for {{ crate::config::DEFAULT_MAX_ITERATIONS_JOBS }}.</p>
 </div>
 </div>
@@ -86,12 +86,12 @@
 <div class="field-row">
 <div class="field">
 <label for="memory_cap">Memory cap</label>
-<input id="memory_cap" name="memory_cap" value="{{ form.advanced.memory_cap }}" type="number" min="1" placeholder="{{ crate::config::DEFAULT_MEMORY_CAP }}">
+<input id="memory_cap" name="memory_cap" value="{{ form.advanced.memory_cap }}" type="number" min="1">
 <p class="help">The most characters of core memories in each scope: shared, each user, and each group. Empty for {{ crate::config::DEFAULT_MEMORY_CAP }}.</p>
 </div>
 <div class="field">
 <label for="approval_timeout">Approval timeout</label>
-<input id="approval_timeout" name="approval_timeout" value="{{ form.advanced.approval_timeout }}" placeholder="{{ crate::config::DEFAULT_APPROVAL_TIMEOUT.as_secs() / 60 }}m">
+<input id="approval_timeout" name="approval_timeout" value="{{ form.advanced.approval_timeout }}">
 <p class="help">How long a tool call in Ask first waits for your approval before it is denied, such as <code>30s</code>, <code>10m</code>, or <code>1h30m</code>. Empty for {{ crate::config::DEFAULT_APPROVAL_TIMEOUT.as_secs() / 60 }} minutes.</p>
 </div>
 </div>
