@@ -243,6 +243,11 @@ secret_header = "X-Doozers-Proxy-Secret"  # the default
 
 There's no logout for a proxy login. The proxy decides who you are on every request.
 
+## Using the keyboard
+
+On any page, the first press of Tab shows a **Skip to content** link. Press Enter to jump past the
+navigation to the page itself.
+
 ## Chats
 
 The home page lists your chats. Each chat is a separate conversation with its own history. The chat

@@ -458,6 +458,44 @@ async fn every_page_needs_a_login() {
     assert!(env.pending_texts().await.is_empty());
 }
 
+/// The skip link is the first focusable element in the document, ahead of the sidebar, and
+/// points at the `<main>` that can take focus.
+fn assert_skip_link_first(html: &str, what: &str) {
+    let link = html
+        .find(r##"<a class="skip-link" href="#main">Skip to content</a>"##)
+        .unwrap_or_else(|| panic!("{what} has no skip link: {html}"));
+    let first_focusable = [
+        "<a ",
+        "<button",
+        "<input",
+        "<select",
+        "<textarea",
+        "<summary",
+    ]
+    .iter()
+    .filter_map(|tag| html.find(tag))
+    .min()
+    .unwrap();
+    assert_eq!(link, first_focusable, "{what}: {html}");
+    assert_eq!(
+        html.matches(r#"<main id="main" tabindex="-1" class=""#)
+            .count(),
+        1,
+        "{what}: {html}"
+    );
+}
+
+#[tokio::test]
+async fn every_page_starts_with_a_skip_link_to_the_main_content() {
+    let env = env().await;
+    let signed_in = body_text(env.get("/").await).await;
+    assert!(signed_in.contains(r#"class="sidebar""#), "{signed_in}");
+    assert_skip_link_first(&signed_in, "the chat list");
+
+    let login = body_text(call(env.main_app(), Method::GET, "/login", &[], None).await).await;
+    assert_skip_link_first(&login, "the login page");
+}
+
 #[tokio::test]
 async fn the_chat_list_shows_this_instances_chats_newest_first() {
     let env = env().await;

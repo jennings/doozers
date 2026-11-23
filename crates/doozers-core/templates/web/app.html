@@ -1,5 +1,7 @@
 {#- The frame of every signed-in page: the sidebar, the top bar and navigation dialog of narrow
-    screens, and the page in <main>. The page's struct has a `shell` (`web::shell::Shell`). #}
+    screens, and the page in <main>. The layout puts the skip link ahead of this block, so it
+    stays the first focusable element, and <main> is its target. The page's struct has a
+    `shell` (`web::shell::Shell`). #}
 {% extends "layout.html" %}
 
 {%- block body %}
@@ -19,7 +21,7 @@
 </div>
 {% include "web/nav.html" %}
 </dialog>
-<main class="{% block main_class %}page{% endblock %}">
+<main id="main" tabindex="-1" class="{% block main_class %}page{% endblock %}">
 {% block content %}{% endblock %}
 </main>
 </div>

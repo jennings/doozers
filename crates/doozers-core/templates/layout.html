@@ -13,8 +13,9 @@
 {% block head %}{% endblock %}
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 {%- block body %}
-<main class="standalone">
+<main id="main" tabindex="-1" class="standalone">
 <section class="card solo">
 <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">D</span> Doozers</a>
 {% block content %}{% endblock %}
