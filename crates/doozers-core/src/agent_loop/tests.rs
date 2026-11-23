@@ -1076,33 +1076,37 @@ async fn a_turn_for_an_unknown_agent_fails_with_a_notice() {
 }
 
 #[tokio::test]
-async fn the_owner_timezone_falls_back_to_the_agent_timezone() {
-    let mut h =
-        Harness::with_agent("models = [\"anthropic/test-model\"]\ntimezone = \"Asia/Tokyo\"\n")
-            .await;
+async fn the_user_timezone_falls_back_to_the_core_timezone() {
+    let mut h = Harness::with_agent("models = [\"anthropic/test-model\"]\n").await;
     let config = h.registry.config();
-    let agent = &config.agents[&AgentId::new(AGENT).unwrap()];
+    let mut core = config.core.clone();
+    core.timezone = Some(jiff::tz::TimeZone::get("Asia/Tokyo").unwrap());
     let owner = identity::owner();
     // The user's zone wins, for a config job (no user) as the owner.
     let users = h.registry.users();
     assert_eq!(
-        history::message_timezone(&users, Some(&owner), agent).iana_name(),
+        history::message_timezone(&users, Some(&owner), &core).iana_name(),
         Some("America/Los_Angeles")
     );
     assert_eq!(
-        history::message_timezone(&users, None, agent).iana_name(),
+        history::message_timezone(&users, None, &core).iana_name(),
         Some("America/Los_Angeles")
     );
-    // Without one, the agent's applies, and so it does for a user who isn't known.
+    // Without one, `core.timezone` applies, and so it does for a user who isn't known.
     let without_owner = UserList::owner(&["web:owner"], None);
     assert_eq!(
-        history::message_timezone(&without_owner, Some(&owner), agent).iana_name(),
+        history::message_timezone(&without_owner, Some(&owner), &core).iana_name(),
         Some("Asia/Tokyo")
     );
     let stranger = UserId::new("stranger").unwrap();
     assert_eq!(
-        history::message_timezone(&users, Some(&stranger), agent).iana_name(),
+        history::message_timezone(&users, Some(&stranger), &core).iana_name(),
         Some("Asia/Tokyo")
+    );
+    // Without either, the system's.
+    assert_eq!(
+        history::message_timezone(&without_owner, Some(&owner), &config.core).iana_name(),
+        jiff::tz::TimeZone::system().iana_name()
     );
 
     // An agent without tools offers none.

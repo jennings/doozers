@@ -311,7 +311,6 @@ struct AgentPage {
     models: String,
     tools: String,
     ask: String,
-    timezone: Option<String>,
     files: Vec<FileView>,
     /// Why the files couldn't be listed.
     files_error: Option<String>,
@@ -372,11 +371,6 @@ async fn agent_page(
         models: models(&agent),
         tools: list(&agent.tools),
         ask: list(&agent.ask),
-        timezone: agent
-            .timezone
-            .as_ref()
-            .and_then(|tz| tz.iana_name())
-            .map(str::to_owned),
         files,
         files_error,
         truncated,
@@ -405,7 +399,6 @@ struct CreateForm {
     #[serde(flatten)]
     checks: HashMap<String, String>,
     ask: String,
-    timezone: String,
     soul: String,
 }
 
@@ -420,7 +413,6 @@ impl Default for CreateForm {
             advanced: AdvancedForm::default(),
             checks: HashMap::new(),
             ask: String::new(),
-            timezone: String::new(),
             soul: DEFAULT_SOUL.to_owned(),
         }
     }
@@ -503,7 +495,6 @@ async fn create(
         tools: tool_picker::compose(&config, &picked(&form.checks), &split_list(&form.tools)),
         ask: split_list(&form.ask),
         environments: environment_picker::compose(&picked_environments(&form.checks)),
-        timezone: form.timezone.clone(),
         advanced,
         // Browsers submit a textarea's line breaks as CRLF; the file keeps plain LF.
         soul: form.soul.replace("\r\n", "\n"),
@@ -547,7 +538,6 @@ struct EditForm {
     #[serde(flatten)]
     checks: HashMap<String, String>,
     ask: String,
-    timezone: String,
     soul: String,
     /// What the form was rendered from ([`AgentForm::version`]), posted back unchanged.
     version: String,
@@ -567,7 +557,6 @@ impl EditForm {
             checks: checks_of(&tools, &agent.environments),
             ask: list(&agent.ask),
             name: agent.name,
-            timezone: agent.timezone,
             soul: agent.soul,
             version: agent.version,
         }
@@ -696,7 +685,6 @@ async fn edit(
         tools: tool_picker::compose(&config, &picked(&form.checks), &split_list(&form.tools)),
         ask: split_list(&form.ask),
         environments: environment_picker::compose(&picked_environments(&form.checks)),
-        timezone: form.timezone.clone(),
         advanced,
         // Browsers submit a textarea's line breaks as CRLF; the file keeps plain LF.
         soul: form.soul.replace("\r\n", "\n"),

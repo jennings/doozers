@@ -168,14 +168,14 @@ impl CoreTool for MemorySearchTool {
         };
         let agent = &call.context.agent;
         let config = self.config.get();
-        let Some(agent_config) = config.agents.get(agent) else {
+        if !config.agents.contains_key(agent) {
             return ToolOutput::error(format!("agent `{agent}` is not configured"));
-        };
+        }
         match self.store.search(scope, &query, limit).await {
             Ok(hits) => ToolOutput {
                 content: vec![Block::text(render(
                     &hits,
-                    &message_timezone(&self.users, call.context.requester.as_ref(), agent_config),
+                    &message_timezone(&self.users, call.context.requester.as_ref(), &config.core),
                 ))],
                 is_error: false,
             },

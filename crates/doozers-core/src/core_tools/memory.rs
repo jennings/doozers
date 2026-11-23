@@ -92,7 +92,7 @@ impl MemoryEnv {
             store,
             viewer,
             cap: agent_config.memory_cap as usize,
-            tz: message_timezone(&self.users, requester, agent_config),
+            tz: message_timezone(&self.users, requester, &config.core),
             session: session.id,
             now: self.clock.now(),
         })

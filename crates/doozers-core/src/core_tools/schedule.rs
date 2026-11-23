@@ -388,11 +388,11 @@ impl CoreTool for ScheduleTool {
     async fn call(&self, call: CoreCall) -> ToolOutput {
         let agent = &call.context.agent;
         let config = self.config.get();
-        let Some(agent_config) = config.agents.get(agent) else {
+        if !config.agents.contains_key(agent) {
             return ToolOutput::error(format!("agent `{agent}` is not configured"));
-        };
+        }
         // Runtime jobs run as the requester, in their time zone.
-        let tz = message_timezone(&self.users, call.context.requester.as_ref(), agent_config);
+        let tz = message_timezone(&self.users, call.context.requester.as_ref(), &config.core);
         let request = match parse_input(call.input, self.clock.now(), &tz) {
             Ok(request) => request,
             Err(error) => return ToolOutput::error(error),

@@ -1278,13 +1278,13 @@ the path must be a configured agent, exactly (anything else, `..` included, is a
 no id field.
 
 - **What the form is rendered from.** The files on disk, not the running configuration: `agent.toml`
-  is read with `toml_edit` for `name`, `models`, `tools`, `ask`, `environments`, `timezone`, and the
-  "Advanced" keys (a key that isn't a string, list of strings, or for the number keys an integer
-  that fits a `u32`, shows empty), and `SOUL.md` (CRLF shown as LF). `AgentForm::version` is the
-  SHA-256 of both files (name, whether it exists, length, and bytes of each), carried in a hidden
-  field. `read_text` refuses what the form must not write through: a symbolic link (the rename would
-  replace the link), anything but a regular file, more than `MAX_EDIT_FILE_BYTES` (1 MiB), text that
-  isn't UTF-8, and TOML that doesn't parse (`EditError::Unsupported`, a 409 page on `GET`).
+  is read with `toml_edit` for `name`, `models`, `tools`, `ask`, `environments`, and the "Advanced"
+  keys (a key that isn't a string, list of strings, or for the number keys an integer that fits a
+  `u32`, shows empty), and `SOUL.md` (CRLF shown as LF). `AgentForm::version` is the SHA-256 of both
+  files (name, whether it exists, length, and bytes of each), carried in a hidden field. `read_text`
+  refuses what the form must not write through: a symbolic link (the rename would replace the link),
+  anything but a regular file, more than `MAX_EDIT_FILE_BYTES` (1 MiB), text that isn't UTF-8, and
+  TOML that doesn't parse (`EditError::Unsupported`, a 409 page on `GET`).
 - **`edited_toml`.** A pure function from the text and the edit to the new text, with `toml_edit`. A
   managed key whose value already equals the field is not touched (so an unchanged form gives the
   file back byte for byte, and the text is returned as is rather than re-serialized when nothing

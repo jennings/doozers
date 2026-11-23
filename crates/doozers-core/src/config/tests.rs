@@ -243,6 +243,25 @@ fn the_secret_key_file_defaults_to_the_data_root_and_resolves_relative_paths_the
 }
 
 #[test]
+fn the_default_time_zone_is_unset_unless_core_names_a_known_one() {
+    let home = Home::new(MINIMAL);
+    assert!(home.load_ok().core.timezone.is_none());
+    home.write(
+        "doozers.toml",
+        &format!("{MINIMAL}[core]\ntimezone = \"Europe/London\"\n"),
+    );
+    assert_eq!(
+        home.load_ok().core.timezone.unwrap().iana_name(),
+        Some("Europe/London")
+    );
+    home.write(
+        "doozers.toml",
+        &format!("{MINIMAL}[core]\ntimezone = \"Nowhere\"\n"),
+    );
+    assert_error(&home, "doozers.toml", "core.timezone", "unknown time zone");
+}
+
+#[test]
 fn no_grant_may_reach_a_secret_key_file_outside_the_data_root() {
     let outside = tempfile::tempdir().unwrap();
     let key_dir = outside.path().join("credentials");
@@ -977,7 +996,6 @@ fn agent_defaults() {
     assert_eq!(agent.busy_mode, BusyMode::Steer);
     assert_eq!(agent.memory_cap, 2200);
     assert_eq!(agent.approval_timeout, Duration::from_secs(600));
-    assert!(agent.timezone.is_none());
     assert_eq!(agent.idle_reset, None);
     assert!(agent.jobs.is_empty());
 }
@@ -1290,7 +1308,6 @@ fn agent_settings() {
             busy_mode = "queue"
             memory_cap = 4000
             approval_timeout = "5m"
-            timezone = "Europe/London"
             idle_reset = "12h"
 
             [[jobs]]
@@ -1328,10 +1345,6 @@ fn agent_settings() {
     assert_eq!(agent.busy_mode, BusyMode::Queue);
     assert_eq!(agent.memory_cap, 4000);
     assert_eq!(agent.approval_timeout, Duration::from_secs(300));
-    assert_eq!(
-        agent.timezone.as_ref().unwrap().iana_name(),
-        Some("Europe/London")
-    );
     assert_eq!(agent.idle_reset, Some(Duration::from_secs(12 * 3600)));
 
     let [morning, check_in, digest] = &agent.jobs[..] else {
@@ -1366,6 +1379,16 @@ fn agent_settings() {
     assert_eq!(check_in.ask_to, Some(AskTo::DeliverTo));
 
     assert_eq!(digest.dm_excerpt, Some(20));
+}
+
+#[test]
+fn an_agent_time_zone_is_an_unknown_key_now_that_users_set_their_own() {
+    let home = with_provider();
+    home.agent(
+        "jeeves",
+        "models = [\"anthropic/claude-sonnet-4-5\"]\ntimezone = \"Europe/London\"\n",
+    );
+    assert_eq!(unknown_keys(&home.load_ok()), ["timezone"]);
 }
 
 #[test]
@@ -1429,11 +1452,6 @@ fn agent_rules() {
             format!("{model}\nidle_reset = \"0m\""),
             "idle_reset",
             "longer than 0s",
-        ),
-        (
-            format!("{model}\ntimezone = \"Nowhere\""),
-            "timezone",
-            "unknown time zone",
         ),
         (
             format!("{model}\ntools = [\"memory\", \"\"]"),

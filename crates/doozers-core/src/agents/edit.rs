@@ -3,8 +3,8 @@
 //! running configuration ([`LiveConfig`](crate::config::LiveConfig)), so the next session uses it.
 //! A session that is running keeps the tools and `system` it started with (PLAN section 6.3).
 //!
-//! The form manages `name`, `models`, `tools`, `ask`, `environments`, and `timezone`, the settings
-//! of its "Advanced" section ([`AdvancedSettings`]), and `SOUL.md`. Everything else in
+//! The form manages `name`, `models`, `tools`, `ask`, and `environments`, the settings of its
+//! "Advanced" section ([`AdvancedSettings`]), and `SOUL.md`. Everything else in
 //! `agent.toml` is the owner's and stays as written: [`edited_toml`] changes only those keys in the
 //! text, with `toml_edit`, so comments, `[[jobs]]`, and any key a later version adds survive, and a
 //! key whose value the form doesn't change is not even rewritten. A key whose field was emptied is
@@ -63,8 +63,6 @@ pub struct AgentForm {
     pub ask: Vec<String>,
     /// `environments`.
     pub environments: Vec<String>,
-    /// `timezone`, empty if unset.
-    pub timezone: String,
     /// The settings of the form's "Advanced" section.
     pub advanced: AdvancedSettings,
     /// `SOUL.md` with `\n` line ends; empty if there is none.
@@ -91,8 +89,6 @@ pub struct AgentEdit {
     pub ask: Vec<String>,
     /// Environment instances the agent may use; empty for none.
     pub environments: Vec<String>,
-    /// An IANA time zone; empty for none.
-    pub timezone: String,
     /// The settings of the form's "Advanced" section.
     pub advanced: AdvancedSettings,
     /// `SOUL.md`.
@@ -198,7 +194,6 @@ struct Managed {
     tools: Vec<String>,
     ask: Vec<String>,
     environments: Vec<String>,
-    timezone: String,
     advanced: AdvancedSettings,
 }
 
@@ -243,7 +238,6 @@ fn managed_of(source: &str) -> Result<Managed, EditError> {
         tools: list("tools"),
         ask: list("ask"),
         environments: list("environments"),
-        timezone: string("timezone"),
         advanced: AdvancedSettings {
             compaction_model: string("compaction_model"),
             max_iterations: whole("max_iterations"),
@@ -287,7 +281,6 @@ pub fn edited_toml(source: &str, edit: &AgentEdit) -> Result<String, EditError> 
         set_list(root, "tools", &edit.tools, false),
         set_list(root, "ask", &edit.ask, false),
         set_members(root, "environments", &edit.environments),
-        set_string(root, "timezone", edit.timezone.trim()),
         set_string(root, "compaction_model", advanced.compaction_model.trim()),
         set_whole(root, "max_iterations", advanced.max_iterations),
         set_whole(root, "max_iterations_jobs", advanced.max_iterations_jobs),
@@ -637,7 +630,6 @@ impl AgentManager {
             tools: managed.tools,
             ask: managed.ask,
             environments: managed.environments,
-            timezone: managed.timezone,
             advanced: managed.advanced,
             soul: files
                 .soul
@@ -717,7 +709,6 @@ max_iterations = 50
 busy_mode = "queue"
 memory_cap = 4000
 idle_reset = "6h"
-timezone = "Europe/London"   # the agent's own zone
 
 [[jobs]]
 id = "morning"   # runs daily
@@ -739,7 +730,6 @@ prompt = "Summarize the week."
             tools: managed.tools,
             ask: managed.ask,
             environments: managed.environments,
-            timezone: managed.timezone,
             advanced: managed.advanced,
             soul: String::new(),
             version: String::new(),
@@ -808,7 +798,6 @@ prompt = "Summarize the week."
             "busy_mode",
             "memory_cap",
             "idle_reset",
-            "timezone",
             "jobs",
         ] {
             assert_eq!(parsed[key], original[key], "{key}");
@@ -822,15 +811,9 @@ prompt = "Summarize the week."
         let mut edit = edit_of(source);
         edit.name = "Jeeves".into();
         edit.tools = vec!["memory_add".into()];
-        edit.timezone = "Europe/London".into();
         let edited = edited_toml(source, &edit).unwrap();
         let parsed: toml::Table = toml::from_str(&edited).unwrap();
         assert_eq!(parsed["name"].as_str(), Some("Jeeves"), "{edited}");
-        assert_eq!(
-            parsed["timezone"].as_str(),
-            Some("Europe/London"),
-            "{edited}"
-        );
         assert_eq!(parsed["tools"][0].as_str(), Some("memory_add"), "{edited}");
         let jobs = parsed["jobs"].as_array().unwrap();
         assert_eq!(jobs.len(), 1);
@@ -846,11 +829,10 @@ prompt = "Summarize the week."
         let mut edit = edit_of(HAND_WRITTEN);
         edit.name = "  ".into();
         edit.tools.clear();
-        edit.timezone.clear();
         edit.models.clear();
         let edited = edited_toml(HAND_WRITTEN, &edit).unwrap();
         let parsed: toml::Table = toml::from_str(&edited).unwrap();
-        for key in ["name", "tools", "timezone"] {
+        for key in ["name", "tools"] {
             assert!(!parsed.contains_key(key), "{key} in {edited}");
         }
         assert_eq!(parsed["models"].as_array().unwrap().len(), 0, "{edited}");
@@ -957,7 +939,7 @@ prompt = "Summarize the week."
 
     #[test]
     fn a_removed_key_takes_its_own_comment_but_not_the_files_header_or_a_standalone_one() {
-        let source = "# The household agent.\nname = \"Jeeves\"\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\n# The tools it may use.\ntools = [\"memory\"]   # trailing\ntimezone = \"Europe/London\"\n";
+        let source = "# The household agent.\nname = \"Jeeves\"\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\n# The tools it may use.\ntools = [\"memory\"]   # trailing\nidle_reset = \"6h\"\n";
         let mut edit = edit_of(source);
         edit.name.clear();
         edit.tools.clear();
@@ -966,20 +948,20 @@ prompt = "Summarize the week."
         // that belonged to `tools` went with it.
         assert_eq!(
             edited,
-            "# The household agent.\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\ntimezone = \"Europe/London\"\n"
+            "# The household agent.\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\nidle_reset = \"6h\"\n"
         );
     }
 
     #[test]
     fn a_file_with_crlf_line_ends_keeps_them_and_the_blank_line_rule_holds() {
-        let source = "# The household agent.\nname = \"Jeeves\"\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\n# The tools it may use.\ntools = [\"memory\"]\ntimezone = \"Europe/London\"\n".replace('\n', "\r\n");
+        let source = "# The household agent.\nname = \"Jeeves\"\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\n# The tools it may use.\ntools = [\"memory\"]\nidle_reset = \"6h\"\n".replace('\n', "\r\n");
         let mut edit = edit_of(&source);
         edit.name.clear();
         edit.tools.clear();
         let edited = edited_toml(&source, &edit).unwrap();
         assert_eq!(
             edited,
-            "# The household agent.\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\ntimezone = \"Europe/London\"\n"
+            "# The household agent.\n\n# Which models.\nmodels = [\"a/b\"]\n\n# Standalone notes.\n\nidle_reset = \"6h\"\n"
                 .replace('\n', "\r\n")
         );
         // Unchanged, it is returned as read, CRLF and all.

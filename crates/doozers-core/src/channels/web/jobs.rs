@@ -166,16 +166,9 @@ fn session_name(session: JobSession) -> &'static str {
     }
 }
 
-/// The zone `agent`'s jobs of `user` (`None`: a config job) run in; the user's or the system's for
-/// an agent that isn't configured.
-fn zone(app: &WebApp, user: Option<&UserId>, config: &Config, agent: &AgentId) -> TimeZone {
-    let users = app.inner.channel.users();
-    match config.agents.get(agent) {
-        Some(agent) => message_timezone(users, user, agent),
-        None => users
-            .timezone(user.unwrap_or(&identity::owner()))
-            .unwrap_or_else(TimeZone::system),
-    }
+/// The zone the jobs of `user` (`None`: a config job) run in.
+fn zone(app: &WebApp, user: Option<&UserId>, config: &Config) -> TimeZone {
+    message_timezone(app.inner.channel.users(), user, &config.core)
 }
 
 /// How the form names a time zone.
@@ -192,7 +185,7 @@ fn row(
     last: Option<Timestamp>,
     now: Timestamp,
 ) -> JobRow {
-    let tz = zone(app, job.creator.as_ref(), config, &job.agent);
+    let tz = zone(app, job.creator.as_ref(), config);
     let configured = config.agents.contains_key(&job.agent);
     let next_at = (configured && !job.disabled)
         .then(|| next_run(job, &tz, now))
@@ -438,36 +431,21 @@ fn render_form(
     error: Option<(StatusCode, String)>,
 ) -> Response {
     let config = app.inner.agents.get();
-    let (title, action, submit, agents, agent, zone) = match target {
-        Target::New => {
-            let agents = agent_choices(&config);
-            // The zone of the chosen agent: say which when they all agree.
-            let mut zones = agents.iter().filter_map(|choice| {
-                AgentId::new(&choice.id)
-                    .ok()
-                    .map(|id| zone_name(&zone(app, Some(&user.user), &config, &id)))
-            });
-            let zone = match zones.next() {
-                Some(first) if zones.all(|other| other == first) => first,
-                Some(_) => "the time zone of the job's agent".to_owned(),
-                None => "the system's time zone".to_owned(),
-            };
-            (
-                "New job".to_owned(),
-                "/jobs".to_owned(),
-                "Schedule",
-                agents,
-                None,
-                zone,
-            )
-        }
+    let zone = zone_name(&zone(app, Some(&user.user), &config));
+    let (title, action, submit, agents, agent) = match target {
+        Target::New => (
+            "New job".to_owned(),
+            "/jobs".to_owned(),
+            "Schedule",
+            agent_choices(&config),
+            None,
+        ),
         Target::Edit(job) => (
             format!("Edit job #{}", job.id),
             format!("/jobs/{}/edit", job.id),
             "Save",
             Vec::new(),
             Some(agent_label(&config, &job.agent)),
-            zone_name(&zone(app, Some(&user.user), &config, &job.agent)),
         ),
     };
     let (status, error) = match error {
@@ -584,7 +562,7 @@ async fn create(
         None => return refuse(StatusCode::BAD_REQUEST, "Pick an agent.".to_owned()),
     };
     let now = app.inner.clock.now();
-    let spec = match form.spec(&zone(&app, Some(&user.user), &config, &agent), now) {
+    let spec = match form.spec(&zone(&app, Some(&user.user), &config), now) {
         Ok(spec) => spec,
         Err(error) => return refuse(StatusCode::BAD_REQUEST, error),
     };
@@ -627,7 +605,7 @@ async fn edit_page(State(app): State<WebApp>, user: WebUser, Path(id): Path<Stri
     };
     let config = app.inner.agents.get();
     let form = match serde_json::from_value::<RuntimeSpec>(job.spec.clone()) {
-        Ok(spec) => JobForm::of(&spec, &zone(&app, Some(&user.user), &config, &job.agent)),
+        Ok(spec) => JobForm::of(&spec, &zone(&app, Some(&user.user), &config)),
         Err(_) => JobForm::blank(),
     };
     render_form(&app, &user, &Target::Edit(&job), &form, None)
@@ -651,7 +629,7 @@ async fn edit(
     };
     let config = app.inner.agents.get();
     let now = app.inner.clock.now();
-    let mut spec = match form.spec(&zone(&app, Some(&user.user), &config, &job.agent), now) {
+    let mut spec = match form.spec(&zone(&app, Some(&user.user), &config), now) {
         Ok(spec) => spec,
         Err(error) => {
             return render_form(

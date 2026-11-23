@@ -632,9 +632,9 @@ everything after it
      memories come first, then the session's own: a user's in a DM, the group's in a group. In a DM,
      the user's `USER.md` follows. Participants' `USER.md` and private memories are never loaded in
      a group, so the agent can't repeat them to others there.
-- Messages: each stored user message carries a prefix with the time it was sent, in the user's
-  timezone (DM) or the agent's (group), next to the `[sender]` prefix in groups. The current time
-  never goes in `system`.
+- Messages: each stored user message carries a prefix with the time it was sent, in the user's time
+  zone (DM) or the default time zone of `doozers.toml` (group), next to the `[sender]` prefix in
+  groups. The current time never goes in `system`.
 - The Anthropic provider uses automatic caching plus one breakpoint at the end of `system`, with a
   1-hour cache TTL for human-paced sessions and 5 minutes for job runs.
 - A snapshot test of the rendered `system` and tool list catches changes to the prefix (section
@@ -780,8 +780,8 @@ ask_to = "deliver_to"         # optional; without it, `ask` tools are denied (se
   appended to the job's DM session as an assistant message, so a reply to it has context.
 - Each job's last run time is kept in the `job_runs` table, keyed by the job's `id`. Missed runs
   while the core was down are coalesced into one run at startup.
-- Timezone: the job's user, else the agent's `timezone`, else the default time zone in
-  `doozers.toml` (section 11.2), else the system timezone.
+- Time zone: the job's user's, else the default time zone in `doozers.toml` (section 11.2), else the
+  system time zone. Agents have no time zone of their own.
 
 Every proactive send (job output, approval prompts, login codes) goes through the `outbox` table
 (section 11.4). It's retried with backoff until the channel accepts it, so output from a job that
@@ -1305,9 +1305,9 @@ agent) are admin-only pages (section 3.1), but have no RPCs yet: they call the c
 management in-process. A created agent is written as `agent.toml` and `SOUL.md`, validated like
 startup config, and added to the running configuration without a reload; nothing else changes until
 a restart. An edit changes only the keys the form manages (`name`, `models`, `tools`, `ask`,
-`environments`, `timezone`, and the limits and policies of its "Advanced" section) and `SOUL.md`, in
-place: everything else in `agent.toml` (comments, jobs, any other key) stays as the owner wrote it.
-The result is validated like startup config before anything is replaced, both files are replaced or
+`environments`, and the limits and policies of its "Advanced" section) and `SOUL.md`, in place:
+everything else in `agent.toml` (comments, jobs, any other key) stays as the owner wrote it. The
+result is validated like startup config before anything is replaced, both files are replaced or
 neither, and the edit is refused if the files changed on disk since the form was opened. The edited
 agent replaces the old one in the running configuration: chats started afterwards use it, and a
 session already running keeps the tools and `system` it started with (section 6.3). Removing an
@@ -1451,7 +1451,7 @@ No plugin is ever granted read or write access to any part of `DOOZERS_HOME` exc
 program on the host. The operator writes them and Doozers never edits them:
 
 - The address the web interface listens on (`[core] http_listen`).
-- The default time zone for users who don't set one.
+- The default time zone for users who don't set one (`[core] timezone`).
 - Security-model requirements, such as whether the sandbox is always enforced or a plugin instance
   may be configured to run unsandboxed (section 12).
 - The programs Doozers launches, with their arguments, environment, and sandbox grants: plugin
@@ -1498,6 +1498,7 @@ Doozers may create and edit `agent.toml` files, for example for an agent created
 [core]
 http_listen = "127.0.0.1:8080"
 journal_mode = "wal"          # SQLite journal mode: wal (default), delete, truncate, persist (11.4)
+timezone = "America/Los_Angeles"   # for users who set none; default: the system's
 
 # Instances: [<kind>.<instance>]. A provider's or channel's `component` defaults to the instance
 # name. The core uses a built-in component with that name if there is one, else the plugin
@@ -1563,7 +1564,6 @@ environments = ["docker"]    # optional: environment instances the agent may use
 max_iterations_jobs = 25     # interactive turns: no cap unless `max_iterations` is set
 memory_cap = 2200            # characters of core memories per scope (shared, each user, each group)
 approval_timeout = "10m"
-timezone = "America/Los_Angeles"
 idle_reset = "12h"          # optional
 
 [[jobs]]
