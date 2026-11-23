@@ -516,7 +516,10 @@ whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
 ## Accessibility
 
 - Every control has a `<label>`. A control without a visible label gets an `aria-label`.
-- A repeated button in a table names its row: `aria-label="Delete job Check CI"`.
+- A repeated button or link in a table, or in a list of cards, names its row with an `aria-label`
+  that starts with the visible text: `aria-label="Delete job Check CI"`. No two on a page share a
+  name unless their rows read the same. A row with no name of its own, such as a route, uses its
+  position (`Edit route 2`), and a login session uses how it signed in and when it started.
 - The current navigation link has `aria-current="page"`, and so does the open chat in the list.
 - Each navigation group's `<ul>` has an `aria-label` with the group's name ("You", "Admin"). It's
   not `aria-labelledby`, because `nav.html` is rendered twice (sidebar and drawer) and ids would

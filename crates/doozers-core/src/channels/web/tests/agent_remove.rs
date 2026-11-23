@@ -185,7 +185,7 @@ async fn the_confirmation_page_says_exactly_what_will_happen() {
         .await;
     assert!(
         list.contains(
-            r#"<a class="button button-small button-danger" href="/admin/agents/jeeves/remove">Remove</a>"#
+            r#"<a class="button button-small button-danger" href="/admin/agents/jeeves/remove" aria-label="Remove Jeeves (jeeves)">Remove</a>"#
         ),
         "{list}"
     );

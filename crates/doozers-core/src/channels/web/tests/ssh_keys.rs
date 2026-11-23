@@ -342,6 +342,16 @@ async fn the_page_lists_a_key_with_its_details_and_public_key_and_never_the_priv
     // The links.
     assert!(page.contains(&format!("/ssh-keys/{}/rename", key.id)));
     assert!(page.contains(&format!("/ssh-keys/{}/delete", key.id)));
+    // Each button names its key, and starts with its text.
+    for action in ["Rename", "Delete"] {
+        assert!(
+            page.contains(&format!(
+                "aria-label=\"{action} the {} key work &#60;b&#62;laptop&#60;/b&#62;\">{action}</a>",
+                key.type_label
+            )),
+            "{action}: {page}"
+        );
+    }
     // The sidebar.
     assert!(
         page.contains("href=\"/ssh-keys\" aria-current=\"page\">SSH keys</a>"),
@@ -799,6 +809,14 @@ async fn an_admin_sees_every_users_keys_on_the_admin_page_and_deletes_one() {
             page.body
                 .contains(&format!("/admin/ssh-keys/{}/delete", key.id))
         );
+    }
+    // Each button names the key and its owner.
+    for key in [&hers, &mine] {
+        let name = format!(
+            "aria-label=\"Delete the {} key {} of {}\">Delete</a>",
+            key.type_label, key.label, key.user
+        );
+        assert!(page.body.contains(&name), "{name}\n{}", page.body);
     }
     assert!(page.body.contains("<code>guest</code>"));
     // Details only: no public key line either, and nothing to copy.

@@ -365,6 +365,10 @@ async fn the_owner_sees_their_own_and_the_shared_memories_but_not_other_users_pr
         .as_str(),
         r#"action="/admin/agents/jeeves/memory/edit""#,
         r#"action="/admin/agents/jeeves/memory/forget""#,
+        // Each memory's buttons name it.
+        r#"aria-label="Edit memory #1">Edit</summary>"#,
+        r#"aria-label="Save memory #1">Save</button>"#,
+        r#"aria-label="Forget memory #1">Forget</button>"#,
         r#"<input type="checkbox" name="core" checked>"#,
         r#"<input type="checkbox" name="shared">"#,
     ] {

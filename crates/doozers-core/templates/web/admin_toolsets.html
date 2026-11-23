@@ -27,8 +27,8 @@
 {%- if toolset.from_file %}
 <span class="muted">Edit it in doozers.toml</span>
 {%- else %}
-<a class="button button-small" href="/admin/mcp-servers/{{ toolset.name }}/edit">Edit</a>
-<a class="button button-small button-danger" href="/admin/mcp-servers/{{ toolset.name }}/remove">Remove</a>
+<a class="button button-small" href="/admin/mcp-servers/{{ toolset.name }}/edit" aria-label="Edit {{ toolset.name }}">Edit</a>
+<a class="button button-small button-danger" href="/admin/mcp-servers/{{ toolset.name }}/remove" aria-label="Remove {{ toolset.name }}">Remove</a>
 {%- endif %}
 </td>
 </tr>

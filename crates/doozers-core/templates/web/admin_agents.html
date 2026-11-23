@@ -18,7 +18,7 @@
 <tr id="agent-{{ agent.id }}">
 <td data-label="Agent" class="m-title"><strong><a href="/admin/agents/{{ agent.id }}">{{ agent.label }}</a></strong></td>
 <td data-label="Models" class="m-body"><code>{{ agent.models }}</code></td>
-<td class="row-actions"><a class="button button-small" href="/chats/new?agent={{ agent.id }}">Chat</a> <a class="button button-small" href="/admin/agents/{{ agent.id }}/edit">Edit</a> <a class="button button-small button-danger" href="/admin/agents/{{ agent.id }}/remove">Remove</a></td>
+<td class="row-actions"><a class="button button-small" href="/chats/new?agent={{ agent.id }}" aria-label="Chat with {{ agent.label }}">Chat</a> <a class="button button-small" href="/admin/agents/{{ agent.id }}/edit" aria-label="Edit {{ agent.label }}">Edit</a> <a class="button button-small button-danger" href="/admin/agents/{{ agent.id }}/remove" aria-label="Remove {{ agent.label }}">Remove</a></td>
 </tr>
 {%- endfor %}
 </tbody>

@@ -26,12 +26,12 @@
 <td class="row-actions">
 <form method="post" action="/connections/{{ server.name }}/sign-out">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<button type="submit" class="button-small">Sign out</button>
+<button type="submit" class="button-small" aria-label="Sign out of {{ server.name }}">Sign out</button>
 </form>
 </td>
 {%- else %}
 <td data-label="Your sign-in" class="m-split"><span class="pill pill-neutral m-aside">Not signed in</span></td>
-<td class="row-actions"><a class="button button-small button-primary" href="/connections/{{ server.name }}/sign-in?csrf={{ csrf }}">Sign in</a></td>
+<td class="row-actions"><a class="button button-small button-primary" href="/connections/{{ server.name }}/sign-in?csrf={{ csrf }}" aria-label="Sign in to {{ server.name }}">Sign in</a></td>
 {%- endif %}
 </tr>
 {%- endfor %}

@@ -86,7 +86,7 @@
 {%- if memory.writable %}
 <div class="actions">
 <details>
-<summary class="button button-small">Edit</summary>
+<summary class="button button-small" aria-label="Edit memory #{{ memory.id }}">Edit</summary>
 <form method="post" action="/admin/agents/{{ agent }}/memory/edit">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="id" value="{{ memory.id }}">
@@ -105,7 +105,7 @@
 <label class="check"><input type="checkbox" name="shared"{% if memory.shared %} checked{% endif %}> Shared</label>
 {%- endif %}
 <div class="form-actions">
-<button type="submit" class="button-primary">Save</button>
+<button type="submit" class="button-primary" aria-label="Save memory #{{ memory.id }}">Save</button>
 </div>
 </form>
 </details>
@@ -116,7 +116,7 @@
 <input type="hidden" name="group_instance" value="{{ group.instance }}">
 <input type="hidden" name="group_conversation" value="{{ group.conversation }}">
 {%- endif %}
-<button type="submit" class="button-small button-danger">Forget</button>
+<button type="submit" class="button-small button-danger" aria-label="Forget memory #{{ memory.id }}">Forget</button>
 </form>
 </div>
 {%- else %}

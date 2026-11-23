@@ -433,6 +433,11 @@ async fn the_list_shows_state_tools_and_errors_and_doozers_toml_toolsets_read_on
         r#"href="/admin/mcp-servers/box/edit""#,
         r#"href="/admin/mcp-servers/box/remove""#,
         r#"href="/admin/mcp-servers/remote/edit""#,
+        // Each row's actions name the server.
+        r#"aria-label="Edit box">Edit</a>"#,
+        r#"aria-label="Remove box">Remove</a>"#,
+        r#"aria-label="Edit remote">Edit</a>"#,
+        r#"aria-label="Remove remote">Remove</a>"#,
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
@@ -1412,7 +1417,7 @@ async fn the_connections_page_signs_the_user_in_and_out() {
     assert_eq!(status, StatusCode::OK);
     assert!(
         html.contains(&format!(
-            r#"<a class="button button-small button-primary" href="/connections/notes/sign-in?csrf={CSRF}">Sign in</a>"#
+            r#"<a class="button button-small button-primary" href="/connections/notes/sign-in?csrf={CSRF}" aria-label="Sign in to notes">Sign in</a>"#
         )),
         "{html}"
     );
@@ -1446,6 +1451,10 @@ async fn the_connections_page_signs_the_user_in_and_out() {
     );
     assert!(
         html.contains(r#"action="/connections/notes/sign-out""#),
+        "{html}"
+    );
+    assert!(
+        html.contains(r#"aria-label="Sign out of notes">Sign out</button>"#),
         "{html}"
     );
     let (status, _, location) = t.post("/connections/notes/sign-out", &[]).await;

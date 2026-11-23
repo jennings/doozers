@@ -68,7 +68,7 @@
 <td data-label="Added" class="secondary m-meta m-label">{{ passkey.added }}</td>
 <td data-label="Last used" class="secondary m-meta m-label">{{ passkey.last_used }}</td>
 <td class="row-actions">
-<form method="post" action="/account/sign-in/passkey/rename"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ passkey.id }}"><input name="name" value="{{ passkey.name }}" maxlength="64" aria-label="Name of {{ passkey.name }}" autocomplete="off"> <button type="submit" class="button-small">Rename</button></form>
+<form method="post" action="/account/sign-in/passkey/rename"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ passkey.id }}"><input name="name" value="{{ passkey.name }}" maxlength="64" aria-label="Name of {{ passkey.name }}" autocomplete="off"> <button type="submit" class="button-small" aria-label="Rename {{ passkey.name }}">Rename</button></form>
 <a class="button button-small button-danger" href="/account/sign-in/remove?method=passkey:{{ passkey.id }}" aria-label="Remove {{ passkey.name }}">Remove</a>
 </td>
 </tr>
@@ -91,8 +91,8 @@
 {%- if let Some(connected) = provider.connected %} connected {{ connected }}{% if !provider.enabled %} (an admin turned this provider off){% else if !provider.works %} (needs to reconnect because the provider changed){% endif %}
 {%- else %} not connected
 {%- endif %}
-{%- if provider.enabled %} <a class="button button-small" href="{{ provider.connect_href }}">{% if provider.connected.is_some() %}Connect another account{% else %}Connect{% endif %}</a>{% endif %}
-{%- if provider.connected.is_some() %} <a class="button button-small button-danger" href="/account/sign-in/remove?method=oidc:{{ provider.id }}">Disconnect</a>{% endif %}
+{%- if provider.enabled %} <a class="button button-small" href="{{ provider.connect_href }}" aria-label="{% if provider.connected.is_some() %}Connect another account to{% else %}Connect{% endif %} {{ provider.name }}">{% if provider.connected.is_some() %}Connect another account{% else %}Connect{% endif %}</a>{% endif %}
+{%- if provider.connected.is_some() %} <a class="button button-small button-danger" href="/account/sign-in/remove?method=oidc:{{ provider.id }}" aria-label="Disconnect {{ provider.name }}">Disconnect</a>{% endif %}
 </li>
 {%- endfor %}
 </ul>
@@ -126,7 +126,7 @@
 <td data-label="Last used" class="secondary m-meta m-label">{{ session.last_seen }}</td>
 <td data-label="Ends" class="secondary m-meta m-label">{{ session.expires }}</td>
 <td class="row-actions">
-<form method="post" action="/account/sessions/{{ session.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small button-danger"{% if session.current %} aria-label="End this login and log out"{% endif %}>{% if session.current %}Log out{% else %}End{% endif %}</button></form>
+<form method="post" action="/account/sessions/{{ session.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="button-small button-danger" aria-label="{% if session.current %}Log out and end this login{% else %}End login: {{ session.how }}, started {{ session.started }}{% endif %}">{% if session.current %}Log out{% else %}End{% endif %}</button></form>
 </td>
 </tr>
 {%- endfor %}

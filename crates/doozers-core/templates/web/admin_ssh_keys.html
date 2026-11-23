@@ -23,7 +23,7 @@
 <td data-label="Fingerprint"><code>{{ key.fingerprint }}</code></td>
 <td data-label="Created">{{ key.created }}</td>
 <td data-label="Last used">{{ key.last_used }}</td>
-<td class="row-actions"><a class="button button-small button-danger" href="/admin/ssh-keys/{{ key.id }}/delete">Delete</a></td>
+<td class="row-actions"><a class="button button-small button-danger" href="/admin/ssh-keys/{{ key.id }}/delete" aria-label="Delete the {{ key.type_label }} key {{ key.label }} of {{ key.user }}">Delete</a></td>
 </tr>
 {%- endfor %}
 </tbody>

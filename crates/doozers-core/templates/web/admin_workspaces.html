@@ -64,7 +64,7 @@ job run (session {{ job }})
 {%- endif %}
 </dl>
 <details class="disclosure">
-<summary>Details from the environment</summary>
+<summary aria-label="Details from the environment for workspace {{ workspace.id }}">Details from the environment</summary>
 {%- if let Some(details) = workspace.details %}
 {%- if details.is_empty() %}
 <p class="muted">none</p>

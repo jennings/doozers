@@ -264,6 +264,11 @@ async fn the_list_shows_routes_in_order_escaped_with_links_and_buttons() {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
     assert!(!html.contains(XSS), "{html}");
+    // Each row's actions name the row, so no two share an accessible name.
+    assert!(html.contains(r#"aria-label="Edit route 1""#), "{html}");
+    assert!(html.contains(r#"aria-label="Edit route 2""#), "{html}");
+    assert!(html.contains(r#"aria-label="Remove route 1""#), "{html}");
+    assert!(html.contains(r#"aria-label="Remove route 2""#), "{html}");
     // The first route can't move up and the last can't move down.
     assert!(!html.contains(r#"aria-label="Move route 1 up""#), "{html}");
     assert!(html.contains(r#"aria-label="Move route 1 down""#), "{html}");
