@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use askama::Template;
-use doozers_plugin_sdk::render::{html, is_local_image};
+use doozers_plugin_sdk::render::{html, is_local_image, spoken_text};
 use doozers_store::{ConversationMessage, Entry, InboxEntry, SessionId, StoredMessageId};
 use doozers_types::{Block, ChannelEvent, EventId, InboundMessage, MediaRef, Role, Timestamp};
 use serde_json::Value;
@@ -198,6 +198,36 @@ pub(super) fn compose(
         error,
         focus,
     })
+}
+
+#[derive(Template)]
+#[template(path = "web/announcement.html")]
+struct AnnouncementFragment<'a> {
+    lines: &'a [String],
+}
+
+/// What a screen reader announces for an agent reply: out-of-band content for the page's
+/// `#reply-announcer` live region. It is text only, because the region is hidden from sight but not
+/// from the keyboard: links and images in it would be tab stops nobody can see, and its headings
+/// would show up twice in a screen reader's lists. A `New message:` lead-in is followed by a
+/// paragraph for each block of the reply's `markdown` read as plain text (links without their URLs),
+/// `Attachment: <name>` for each of `media`, and the page's own `Stopped before the end.` if
+/// `state` is [`State::CutOff`]. Empty for a reply with nothing to read, so it announces nothing.
+/// Only agent text replies get one: user messages, tool calls, and approval prompts don't.
+pub(super) fn announcement(markdown: &str, media: &[&MediaRef], state: State) -> String {
+    let mut lines = spoken_text(markdown);
+    lines.extend(media.iter().map(|m| {
+        let name = m.name.as_deref().unwrap_or(m.media_type.as_str());
+        format!("Attachment: {name}")
+    }));
+    if state == State::CutOff {
+        lines.push("Stopped before the end.".to_owned());
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    lines.insert(0, "New message:".to_owned());
+    fragment(&AnnouncementFragment { lines: &lines })
 }
 
 /// The page notice that events were missed.
@@ -676,6 +706,42 @@ mod tests {
         assert!(html.contains(">application/pdf</a>"), "{html}");
         assert!(is_inline_image("IMAGE/PNG; charset=x"));
         assert!(!is_inline_image("image/svg+xml"));
+    }
+
+    #[test]
+    fn announcements_are_escaped_text_for_the_live_region() {
+        let png = media("image/png", Some("chart.png"));
+        let pdf = media("application/pdf", None);
+        let announced = announcement(
+            "# Done\n\nSee [the docs](https://example.com/x) & <b>more</b>.\n\n![alt](/blobs/b1)",
+            &[&png, &pdf],
+            State::Done,
+        );
+        assert_eq!(
+            announced,
+            concat!(
+                r#"<div id="reply-announcer" hx-swap-oob="innerHTML"><p>New message:</p>"#,
+                "<p>Done</p><p>See the docs &#38; &#60;b&#62;more&#60;/b&#62;.</p><p>alt</p>",
+                "<p>Attachment: chart.png</p><p>Attachment: application/pdf</p></div>"
+            )
+        );
+        for markup in ["<a", "<img", "<h", "href", "example.com"] {
+            assert!(!announced.contains(markup), "{markup} in {announced}");
+        }
+    }
+
+    #[test]
+    fn announcements_say_when_a_reply_was_cut_off_and_skip_blank_ones() {
+        assert_eq!(
+            announcement("partial", &[], State::CutOff),
+            concat!(
+                r#"<div id="reply-announcer" hx-swap-oob="innerHTML"><p>New message:</p>"#,
+                "<p>partial</p><p>Stopped before the end.</p></div>"
+            )
+        );
+        assert!(announcement("", &[], State::CutOff).contains("Stopped before the end."));
+        assert_eq!(announcement("", &[], State::Done), "");
+        assert_eq!(announcement("\n ", &[], State::Done), "");
     }
 
     #[test]

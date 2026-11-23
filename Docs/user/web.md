@@ -265,6 +265,9 @@ cursor stays in the message box so you can write the next one.
 Replies appear as the agent writes them. Image attachments show inline, and other attachments
 download. Images from other sites aren't loaded. The model's reasoning isn't shown.
 
+A screen reader announces each reply from the agent when it's complete. It doesn't announce your own
+messages, tool calls, or approval prompts.
+
 Each tool the agent runs shows in the chat as a box with its name and the first line of its input.
 Click the box to see the whole input and output, and click its name to fold it again.
 

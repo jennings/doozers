@@ -7,11 +7,13 @@
 mod discord;
 mod html;
 mod irc;
+mod spoken;
 mod text;
 
 pub use discord::{DISCORD_MAX_CHARS, discord};
 pub use html::{html, is_local_image};
 pub use irc::irc;
+pub use spoken::spoken_text;
 pub use text::{plain_text, whatsapp};
 
 use std::borrow::Cow;

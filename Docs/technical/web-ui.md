@@ -537,6 +537,9 @@ whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
   so the link moves focus there in every browser. `main:focus-visible` draws no ring, because
   `<main>` is not a control. `.skip-link` is clipped out of sight until it has focus. A new template
   that overrides `{% block body %}` gives its `<main>` both `id="main"` and `tabindex="-1"`.
+- The chat announces agent replies, and only those, through
+  `<div id="reply-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true">`
+  after `#messages`. See [Outbound and live output](web-channel.md#outbound-and-live-output).
 - Icons are decorative SVGs with `aria-hidden="true"` next to text, or inside a button with an
   `aria-label`.
 - Text meets 4.5:1 contrast on its surface in both themes.

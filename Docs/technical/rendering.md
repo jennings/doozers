@@ -10,6 +10,7 @@ on `pulldown-cmark`.
 | `html(markdown, allow_image)`   | Web, email (HTML part) | Sanitized HTML fragment                   |
 | `is_local_image(url)`           | Web (as `allow_image`) | Whether an image URL loads nothing remote |
 | `plain_text(markdown)`          | Email (text part)      | Readable plain text                       |
+| `spoken_text(markdown)`         | Web (screen readers)   | Blocks of text to read aloud              |
 | `irc(markdown, max_line_bytes)` | IRC                    | Message lines with IRC formatting codes   |
 | `whatsapp(markdown)`            | WhatsApp               | WhatsApp markup                           |
 | `discord(markdown, max_chars)`  | Discord                | Messages in Discord's Markdown            |
@@ -106,6 +107,17 @@ The text renderers share one layout:
 - Code blocks keep their text verbatim, indented by four spaces.
 - Tables are aligned columns separated by ` | `, with a `-` rule under the header row. Widths count
   characters, so wide (CJK, emoji) and combining characters misalign columns slightly.
+
+## Spoken text
+
+`spoken_text` reduces Markdown to the blocks of text a screen reader reads, for the web channel's
+live region. It returns one string per paragraph, heading, list item, code block, or table row:
+
+- Styling and URLs are dropped. A link reads as its text, an autolink (whose text is its URL) as
+  nothing, and an image as its alt text, or `image` without one.
+- Code is kept as text.
+- A table row reads as its cells separated by commas.
+- Blocks with no text are left out.
 
 ## IRC
 

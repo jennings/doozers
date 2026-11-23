@@ -624,6 +624,25 @@ async fn a_chat_page_shows_the_transcript_and_follows_its_events() {
         "{html}"
     );
     assert!(html.contains(r#"name="csrf" value="csrf-token-for-tests""#));
+    // Screen readers hear agent replies through a separate live region, which comes after the
+    // message list: the list itself has no live role, so tool calls and approval prompts that
+    // land in it stay silent.
+    assert!(
+        html.contains(concat!(
+            r#"<div id="reply-announcer" class="sr-only" role="status" "#,
+            r#"aria-live="polite" aria-atomic="true"></div>"#
+        )),
+        "{html}"
+    );
+    let messages = html.find(r#"id="messages""#).unwrap();
+    let announcer = html.find(r#"id="reply-announcer""#).unwrap();
+    assert!(messages < announcer, "{html}");
+    let list_tag = &html[html[..messages].rfind('<').unwrap()..];
+    let list_tag = &list_tag[..list_tag.find('>').unwrap()];
+    assert!(
+        !list_tag.contains("aria-live") && !list_tag.contains("role="),
+        "{list_tag}"
+    );
     assert!(
         html.contains(r#"aria-label="Message">"#),
         "opening a chat doesn't focus the message box: {html}"
@@ -863,6 +882,22 @@ async fn sent_messages_reach_open_pages_and_only_conversations_are_targets() {
         event.data
     );
     assert_eq!(event.id, Some(env.channel.hubs.cursor(1)));
+    // The same event announces the reply: its text, after a lead-in, in the live region.
+    let (shown, announced) = event
+        .data
+        .split_once(r#"<div id="reply-announcer""#)
+        .unwrap();
+    assert!(shown.starts_with("<article"), "{}", event.data);
+    assert_eq!(
+        announced,
+        concat!(
+            r#" hx-swap-oob="innerHTML"><p>New message:</p><p>done x</p>"#,
+            "<p>Attachment: pic.png</p></div>"
+        ),
+        "{}",
+        event.data
+    );
+    assert_eq!(event.data.matches("reply-announcer").count(), 1);
 
     let err = env
         .channel
@@ -894,6 +929,11 @@ async fn event_streams_resume_after_their_cursor_and_flag_stale_ones() {
     let mut sse = Sse::open(&env, &path, &[]).await;
     let event = sse.next().await;
     assert!(event.data.contains("two"), "{}", event.data);
+    assert!(
+        !event.data.contains("reply-announcer"),
+        "the user's own message isn't announced: {}",
+        event.data
+    );
     assert_eq!(event.id, Some(env.channel.hubs.cursor(2)));
 
     // A reconnecting EventSource sends Last-Event-ID, which wins over the page's cursor.
@@ -941,6 +981,11 @@ async fn live_messages_stream_coalesce_and_finish() {
         !started.data.contains("hx-swap-oob"),
         "appended, not swapped"
     );
+    assert!(
+        !started.data.contains("reply-announcer"),
+        "{}",
+        started.data
+    );
     let element = started
         .data
         .split('"')
@@ -961,6 +1006,11 @@ async fn live_messages_stream_coalesce_and_finish() {
         update.data
     );
     assert!(update.data.contains("Hello"), "{}", update.data);
+    assert!(
+        !update.data.contains("reply-announcer"),
+        "a reply isn't announced while it grows: {}",
+        update.data
+    );
 
     // A page loaded now shows the live message as it is.
     let page = body_text(env.get(&format!("/chats/{}", chat())).await).await;
@@ -981,6 +1031,18 @@ async fn live_messages_stream_coalesce_and_finish() {
         "{}",
         done.data
     );
+    assert_eq!(
+        done.data.matches("reply-announcer").count(),
+        1,
+        "announced once, when it ends: {}",
+        done.data
+    );
+    assert!(
+        done.data
+            .contains(r#"hx-swap-oob="innerHTML"><p>New message:</p><p>Hello world</p></div>"#),
+        "{}",
+        done.data
+    );
     let page = body_text(env.get(&format!("/chats/{}", chat())).await).await;
     assert!(
         !page.contains(&element),
@@ -995,6 +1057,14 @@ async fn live_messages_stream_coalesce_and_finish() {
     let cut = sse.next().await;
     assert!(cut.data.contains("cut-off"), "{}", cut.data);
     assert!(cut.data.contains("partial"), "{}", cut.data);
+    assert!(
+        cut.data.ends_with(concat!(
+            r#"<div id="reply-announcer" hx-swap-oob="innerHTML"><p>New message:</p>"#,
+            "<p>partial</p><p>Stopped before the end.</p></div>"
+        )),
+        "a cut-off reply is announced as incomplete: {}",
+        cut.data
+    );
 }
 
 #[tokio::test]
@@ -1020,6 +1090,7 @@ async fn approval_buttons_answer_with_the_code() {
         prompt.data
     );
     assert!(!prompt.data.contains("csrf"), "{}", prompt.data);
+    assert!(!prompt.data.contains("reply-announcer"), "{}", prompt.data);
 
     // A page load shows the pending prompt, with the CSRF field for plain form posts.
     let page = body_text(env.get(&format!("/chats/{}", chat())).await).await;
@@ -1047,6 +1118,7 @@ async fn approval_buttons_answer_with_the_code() {
     assert_eq!(env.pending_texts().await, ["yes! 4821"]);
     let posted = sse.next().await;
     assert!(posted.data.contains("yes! 4821"), "{}", posted.data);
+    assert!(!posted.data.contains("reply-announcer"), "{}", posted.data);
     let answered = sse.next().await;
     assert!(
         answered
@@ -1056,6 +1128,11 @@ async fn approval_buttons_answer_with_the_code() {
         answered.data
     );
     assert!(answered.data.contains("Sent: yes!"), "{}", answered.data);
+    assert!(
+        !answered.data.contains("reply-announcer"),
+        "{}",
+        answered.data
+    );
     let page = body_text(env.get(&format!("/chats/{}", chat())).await).await;
     assert!(!page.contains(r#"<form id="a-4821""#), "{page}");
     assert!(page.contains("Sent: yes!"), "{page}");
@@ -1077,6 +1154,11 @@ async fn approval_buttons_answer_with_the_code() {
         resolved
             .data
             .contains("Allowed for the rest of this session."),
+        "{}",
+        resolved.data
+    );
+    assert!(
+        !resolved.data.contains("reply-announcer"),
         "{}",
         resolved.data
     );
@@ -2723,6 +2805,7 @@ async fn the_agent_loop_shows_tool_calls_on_the_page() {
     assert!(started.starts_with(r#"<article id="t-"#), "{started}");
     assert!(started.contains(r#"class="tool live""#), "{started}");
     assert!(started.contains("shell__exec"), "{started}");
+    assert!(!started.contains("reply-announcer"), "{started}");
     assert!(
         started.contains(r#"<code class="tool-first-line">command: ls …</code>"#),
         "{started}"
@@ -2741,14 +2824,21 @@ async fn the_agent_loop_shows_tool_calls_on_the_page() {
         "{ended}"
     );
     assert!(ended.contains("Failed"), "{ended}");
+    assert!(!ended.contains("reply-announcer"), "{ended}");
 
     let reply = tokio::time::timeout(WAIT, sse.next()).await.unwrap().data;
     assert!(reply.contains("msg assistant"), "{reply}");
+    assert!(
+        !reply.contains("reply-announcer"),
+        "the reply is announced when it ends: {reply}"
+    );
     loop {
         let event = tokio::time::timeout(WAIT, sse.next()).await.unwrap().data;
         if event.contains("<p>Done.</p>") && !event.contains("Writing") {
+            assert_eq!(event.matches("reply-announcer").count(), 1, "{event}");
             break;
         }
+        assert!(!event.contains("reply-announcer"), "{event}");
     }
 
     let page = body_text(env.get(&format!("/chats/{}", chat())).await).await;
@@ -2785,6 +2875,7 @@ async fn a_tool_call_dropped_without_its_result_shows_as_stopped() {
         "{stopped}"
     );
     assert!(stopped.contains("Stopped"), "{stopped}");
+    assert!(!stopped.contains("reply-announcer"), "{stopped}");
 }
 
 /// The owner may start a chat with any configured agent; the chat keeps it.

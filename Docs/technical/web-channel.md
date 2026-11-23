@@ -853,6 +853,43 @@ HTML fragment for the page's message list. Fragments that change an element alre
 carry `hx-swap-oob="true"` (`render::out_of_band`), so htmx replaces the element with the same id
 instead of appending.
 
+Screen readers hear agent text replies through a separate live region, not through `#messages`.
+`#messages` has no live role. A tool call, an approval prompt, and a live message that grows are all
+swapped into it, most of them by replacing an element (`hx-swap-oob="true"` removes the old node and
+inserts a new one), and a `role="log"` or `aria-live` list would announce every one of those
+insertions. Nothing inside a live region can be excluded reliably, so the list stays silent.
+`chat.html` has
+`<div id="reply-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true">`
+after the list. `render::announcement(markdown, media, state)` makes the out-of-band fragment
+`<div id="reply-announcer" hx-swap-oob="innerHTML">{paragraphs}</div>`, and htmx replaces only the
+region's content, so the region itself stays in the page. The fragment is part of the hub event that
+completes the reply, so one SSE event carries both the message and its announcement.
+
+The announcement is text only, and it doesn't copy the message's HTML. The region is hidden from
+sight but not from the keyboard, so a link or image in it would be a tab stop nobody can see, and
+its headings and links would appear twice in a screen reader's lists. Its paragraphs are, each
+escaped:
+
+- `New message:`. `Channel::send` also carries notices and restart notices, so the lead-in doesn't
+  claim the agent wrote the message.
+- One paragraph per block of the reply, from `render::spoken_text` (see
+  [Rendering](rendering.md#spoken-text)): Markdown reduced to its text, code included, URLs dropped.
+- `Attachment: <name>` for each attachment, with the media type for one that has no name.
+- `Stopped before the end.`, the visible article's own wording, for a message that ended in
+  `render::State::CutOff`.
+
+Which events carry one:
+
+- `Channel::send` appends the message followed by its announcement.
+- `Hub::live_end` sends the final rendering and the announcement. `start` and `push` send none, so a
+  reply streaming in isn't announced chunk by chunk. A message cut off before the end is announced
+  with the text it has, marked as stopped.
+- The user's own posts, tool calls (start and result), and approval prompts and answers carry none.
+
+A reply with nothing to read makes no announcement. A page load doesn't announce the transcript it
+shows, and a page that catches up on events from the ring announces the replies among them. The
+region keeps the last reply's text until the next one replaces it.
+
 Hubs are made on first use and dropped when idle: making a new hub first drops every hub that has no
 open event stream, no live message, no unanswered prompt, no `Arc` held elsewhere, and no use
 (publish, snapshot, subscription, lookup) for `HUB_IDLE` (10 minutes). So memory follows the chats
@@ -917,7 +954,8 @@ the event name `message`, the cursor as its `id`, and the fragment as its data.
 
 Known edge: if the htmx SSE extension gives up on an `EventSource` (the browser closed it after an
 HTTP error, e.g. a 401 once the login expired) and creates a new one, it reconnects with the page's
-original `after` cursor and replays events the page already showed. A reload fixes the page.
+original `after` cursor and replays events the page already showed. The page then announces every
+reply since it loaded again, one after another. A reload fixes the page.
 
 ### History
 
