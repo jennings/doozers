@@ -2009,8 +2009,11 @@ The fragments `message.html`, `tool_call.html`, `approval.html`, `compose.html`,
 `attachments.html` are rendered by `render.rs`. Nothing is inline: no scripts, styles, or `hx-on`
 handlers (the CSP and `allowEval: false` forbid them). The chat page is `hx-ext="sse"` with
 `sse-connect`; `#messages` has `sse-swap="message"` and `hx-swap="beforeend"`. The compose form
-replaces itself (`hx-target="this"`, `hx-swap="outerHTML"`); approval forms use `hx-swap="none"`.
-Every form also works as a plain form post. Styles are classes in `assets/doozers.css`.
+replaces itself (`hx-target="this"`, `hx-swap="outerHTML"`), and approval forms use
+`hx-swap="none"`. The form that answers a post, including a refusal, has `autofocus` on the
+textarea, which htmx focuses after the swap, so focus doesn't fall back to `<body>`; the chat page
+renders it without. Every form also works as a plain form post. Styles are classes in
+`assets/doozers.css`.
 
 ## Tests
 
