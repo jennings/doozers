@@ -167,6 +167,12 @@ async fn the_list_and_the_page_show_when_a_user_last_signed_in() {
     let p = Pages::new().await;
     let owner = session_of(&p.env, "owner").await;
     let html = p.page(&owner, "/admin/users/mia").await.body;
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!html.contains("placeholder="), "{html}");
+    assert!(
+        html.contains("such as <code>alice@example.com</code>"),
+        "{html}"
+    );
     assert!(html.contains("<dt>Last sign-in</dt>"), "{html}");
     assert!(html.contains("<dd>Never</dd>"), "{html}");
     let list = p.page(&owner, "/admin/users").await.body;

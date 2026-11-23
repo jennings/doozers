@@ -466,13 +466,23 @@ async fn creating_a_toolset_stores_it_starts_it_and_gives_agents_a_box_for_it() 
     let t = env.toolsets("").await;
     let (status, html) = t.get("/admin/mcp-servers/new").await;
     assert_eq!(status, StatusCode::OK);
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!html.contains("placeholder="), "{html}");
+    for example in ["https://example.com/mcp", "repo read:org"] {
+        assert!(
+            html.contains(&format!("such as <code>{example}</code>")),
+            "{example}\n{html}"
+        );
+    }
     for expected in [
         r#"<form class="card form form-wide" method="post" action="/admin/mcp-servers">"#,
         &format!(r#"name="csrf" value="{CSRF}""#),
         r#"id="url" name="url""#,
         r#"<option value="none" selected>No authentication</option>"#,
         r#"<option value="token">Bearer token</option>"#,
-        r#"<input type="password" name="bearer_token" autocomplete="off""#,
+        r#"<label for="bearer_token">Bearer token</label>"#,
+        r#"<input type="password" id="bearer_token" name="bearer_token" autocomplete="off""#,
+        "Leave it empty if the app has no secret.",
         // Hidden until the URL is plain http.
         r#"<label class="check" id="insecure-field" hidden><input type="checkbox" name="insecure"> Allow insecure connections</label>"#,
         r#"name="deadline""#,

@@ -61,7 +61,8 @@
 </div>
 <div class="field">
 <label for="generate-label">Label</label>
-<input id="generate-label" name="label" value="{{ generate_label }}" maxlength="100" placeholder="{{ default_label }}">
+<input id="generate-label" name="label" value="{{ generate_label }}" maxlength="100">
+<p class="help">Empty for <code>{{ default_label }}</code>.</p>
 </div>
 </div>
 <p class="help">RSA keys take a few seconds to generate. They sign with SHA-2, which GitHub and current servers accept.</p>
@@ -75,7 +76,7 @@
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <div class="field">
 <label for="upload-text">Private key</label>
-<textarea id="upload-text" name="key_text" rows="6" class="mono" autocomplete="off" spellcheck="false" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+<textarea id="upload-text" name="key_text" rows="6" class="mono" autocomplete="off" spellcheck="false"></textarea>
 <p class="help">Paste the key, or choose its file below. Doozers reads OpenSSH, PKCS#1 RSA, SEC1 EC, and PKCS#8 keys in PEM form. PuTTY (<code>.ppk</code>), DSA, and security keys (<code>sk-</code>) aren't supported.</p>
 </div>
 <div class="field">
@@ -85,12 +86,13 @@
 <div class="field-row">
 <div class="field">
 <label for="upload-passphrase">Passphrase</label>
-<input id="upload-passphrase" type="password" name="passphrase" autocomplete="off" placeholder="only if the key has one">
-<p class="help">Doozers decrypts the key with it once and stores the key without the passphrase, because nobody is there to type it later.</p>
+<input id="upload-passphrase" type="password" name="passphrase" autocomplete="off">
+<p class="help">Leave it empty if the key has no passphrase. Doozers decrypts the key with it once and stores the key without the passphrase, because nobody is there to type it later.</p>
 </div>
 <div class="field">
 <label for="upload-label">Label</label>
-<input id="upload-label" name="label" value="{{ upload_label }}" maxlength="100" placeholder="the key's comment, or {{ default_label }}">
+<input id="upload-label" name="label" value="{{ upload_label }}" maxlength="100">
+<p class="help">Empty for the key's comment, or <code>{{ default_label }}</code> if it has none.</p>
 </div>
 </div>
 <div class="form-actions">

@@ -426,6 +426,8 @@ async fn the_advanced_settings_are_shown_from_the_file_and_saved_and_applied_at_
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!html.contains("placeholder="), "{html}");
 
     let fields = jeeves_fields(
         &version_of(&html),

@@ -1421,6 +1421,15 @@ async fn an_admin_adds_a_provider_and_an_invited_user_signs_up_with_it_and_signs
     )
     .await;
     assert!(page.contains("<h1>New identity provider</h1>"), "{page}");
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!page.contains("placeholder="), "{page}");
+    for example in [
+        "For example, <code>google</code>.",
+        r#"such as <code>Google</code> in "Sign in with Google""#,
+        "such as <code>https://accounts.google.com</code>",
+    ] {
+        assert!(page.contains(example), "{example}\n{page}");
+    }
     assert!(page.contains("/auth/oidc/&#60;id&#62;/callback"), "{page}");
     assert!(page.contains(r#"data-copy-from="redirect""#), "{page}");
     // The script fills the id into the redirect URI as the admin types.

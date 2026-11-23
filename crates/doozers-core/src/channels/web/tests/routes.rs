@@ -358,6 +358,8 @@ async fn adding_a_route_stores_it_and_the_router_uses_it_at_once() {
     ] {
         assert!(html.contains(expected), "{expected}\n{html}");
     }
+    // Examples are in the help text. A placeholder would look like a value already filled in.
+    assert!(!html.contains("placeholder="), "{html}");
     assert_eq!(picked(&list, "web", "chat-1"), None);
 
     let (status, _, location) = env

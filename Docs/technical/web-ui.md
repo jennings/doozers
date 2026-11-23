@@ -383,6 +383,11 @@ view, except the chat page's approvals. Inside a table, every action is a `butto
 - Controls are 40 px tall with 12 px side padding, radius 8 px, the control border, the inset
   surface, and the text color. Textareas resize vertically. A disabled control uses the disabled
   surface and faint text.
+- A field's example goes in its help text ("such as `google`"), not in a placeholder, because a
+  placeholder reads as a value that is already filled in. The only placeholder is the one on a
+  stored secret ("stored; leave blank to keep it"), which has no other sign that it is set.
+  Placeholders use `--text-faint`, which is 4.9:1 on the light field surface and 6.8:1 on the dark
+  one, and `opacity: 1`, because the browsers' own gray is 4.3:1 and Firefox fades it further.
 - On touch screens (`pointer: coarse`), every text field, select, and textarea uses at least 16 px
   text, monospace fields included. iOS Safari zooms the page in when it focuses a field with smaller
   text. Don't use `maximum-scale` or `user-scalable=no` instead: that stops people zooming on
@@ -396,7 +401,6 @@ view, except the chat page's approvals. Inside a table, every action is a `butto
   only while the button is shown.
 - `.field-row` puts two fields side by side (a two-column grid with a 16 px gap). It becomes one
   column on narrow screens.
-- `.control-row` puts two controls under one label, such as the authentication choice and its token.
 - `.check` is a checkbox row: an 18 px box, a 10 px gap, then the label text. `.check-grid` puts
   checkbox rows in two columns.
 - `<fieldset class="card">` groups checkboxes. Its `<legend>` is 15 px, 600.

@@ -1102,6 +1102,13 @@ textarea {
   }
 }
 
+/* Browsers draw placeholders in their own gray (#757575, 4.3:1 on the inset surface, under WCAG's
+ * 4.5:1) and Firefox fades it further. The faint text color is 4.9:1 light and 6.8:1 dark. */
+::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
 /* Every one-line control, `<select>` included, is exactly 40 px tall, so controls side by side
  * line up. Selects drop the platform's own look, which ignores `height` in some browsers, and draw
  * their chevron from the text color so it follows the theme. */
@@ -1220,17 +1227,6 @@ input.mono {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   align-items: start;
-}
-
-/* Two controls in one row with one label, such as the authentication choice and its token. */
-.control-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-
-  & > * {
-    flex: 1 1 200px;
-  }
 }
 
 /* A field with an icon button attached to its right edge, such as a public key and its copy
