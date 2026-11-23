@@ -1,10 +1,12 @@
-{#- The navigation and the signed-in user: in the sidebar, and again in the navigation dialog. #}
+{#- The navigation and the signed-in user: in the sidebar, and again in the navigation dialog.
+    So no id is shared between the two copies, each list is named for its group with `aria-label`
+    rather than `aria-labelledby`. #}
 <nav class="nav" aria-label="Main">
 {%- for group in shell.groups %}
 <p class="nav-label">{{ group.label }}</p>
-<ul class="nav-list">
+<ul class="nav-list" aria-label="{{ group.label }}">
 {%- for link in group.links %}
-<li><a href="{{ link.href }}"{% if link.current %} aria-current="page"{% endif %}>{{ link.label }}</a></li>
+<li><a href="{{ link.href }}"{% if link.current %} aria-current="page"{% endif %}>{{ link.label }}{% if let Some(hint) = link.hint %}<span class="sr-only"> ({{ hint }})</span>{% endif %}</a></li>
 {%- endfor %}
 </ul>
 {%- endfor %}

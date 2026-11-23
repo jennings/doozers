@@ -515,6 +515,10 @@ whose cells flow into lines by an `m-*` class on each cell. Give every cell one:
 - Every control has a `<label>`. A control without a visible label gets an `aria-label`.
 - A repeated button in a table names its row: `aria-label="Delete job Check CI"`.
 - The current navigation link has `aria-current="page"`, and so does the open chat in the list.
+- Each navigation group's `<ul>` has an `aria-label` with the group's name ("You", "Admin"). It's
+  not `aria-labelledby`, because `nav.html` is rendered twice (sidebar and drawer) and ids would
+  repeat. Two links with the same label get a `NavLink::hint` in an `.sr-only` span: the admin "SSH
+  keys" link reads "SSH keys (all users)".
 - Error banners are `role="alert"`, and result banners are `role="status"`.
 - Focus is always visible: a 2 px accent outline with a 2 px offset (`:focus-visible`).
 - Icons are decorative SVGs with `aria-hidden="true"` next to text, or inside a button with an
