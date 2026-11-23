@@ -258,7 +258,9 @@ Messages in a chat you open with **New chat** go to the agent your [routes](#rou
 to a particular agent instead, pick it under **Chat with** and press **Start**. That chat always
 goes to the agent you picked, and needs no route.
 
-After you send a message, the cursor stays in the message box so you can write the next one.
+Press Enter in the message box to send the message, or press Shift+Enter to add a new line. On a
+phone or tablet, Enter always adds a new line and you press **Send**. After you send a message, the
+cursor stays in the message box so you can write the next one.
 
 Replies appear as the agent writes them. Image attachments show inline, and other attachments
 download. Images from other sites aren't loaded. The model's reasoning isn't shown.

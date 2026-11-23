@@ -149,6 +149,26 @@ pub fn copy_script() -> Asset {
     }
 }
 
+const COMPOSE_KEYS_SCRIPT_BODY: &[u8] = include_bytes!("../../assets/compose-keys.js");
+
+static COMPOSE_KEYS_SCRIPT_PATH: LazyLock<String> =
+    LazyLock::new(|| hashed_path("compose-keys", COMPOSE_KEYS_SCRIPT_BODY, "js"));
+
+/// The URL path of the message box's script: `/static/compose-keys-<hash>.js`.
+pub fn compose_keys_script_path() -> &'static str {
+    COMPOSE_KEYS_SCRIPT_PATH.as_str()
+}
+
+/// The message box's script, at [`compose_keys_script_path`]: it makes Enter send the message and
+/// Shift+Enter add a new line, except on a touch screen.
+pub fn compose_keys_script() -> Asset {
+    Asset {
+        path: compose_keys_script_path(),
+        content_type: JAVASCRIPT,
+        body: COMPOSE_KEYS_SCRIPT_BODY,
+    }
+}
+
 const PASSKEY_SCRIPT_BODY: &[u8] = include_bytes!("../../assets/passkey.js");
 
 static PASSKEY_SCRIPT_PATH: LazyLock<String> =
@@ -171,7 +191,7 @@ pub fn passkey_script() -> Asset {
 }
 
 /// Every asset.
-pub fn all() -> [Asset; 8] {
+pub fn all() -> [Asset; 9] {
     [
         HTMX,
         HTMX_SSE,
@@ -180,6 +200,7 @@ pub fn all() -> [Asset; 8] {
         mcp_server_form_script(),
         oidc_provider_form_script(),
         copy_script(),
+        compose_keys_script(),
         passkey_script(),
     ]
 }

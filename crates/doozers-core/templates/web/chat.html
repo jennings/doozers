@@ -4,6 +4,10 @@
 
 {% block main_class %}chats has-chat{% endblock %}
 
+{% block head %}
+<script src="{{ crate::http::assets::compose_keys_script_path() }}"></script>
+{% endblock %}
+
 {% block pane %}
 <section class="chat-pane" aria-label="Chat" hx-headers='{"X-CSRF-Token": "{{ csrf }}"}' hx-ext="sse" sse-connect="/chats/{{ chat }}/events?after={{ cursor }}">
 <header class="chat-head">

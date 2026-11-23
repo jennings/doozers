@@ -628,6 +628,19 @@ async fn a_chat_page_shows_the_transcript_and_follows_its_events() {
         html.contains(r#"aria-label="Message">"#),
         "opening a chat doesn't focus the message box: {html}"
     );
+    assert!(
+        html.contains(&format!(
+            r#"<script src="{}"></script>"#,
+            crate::http::assets::compose_keys_script_path()
+        )),
+        "the page loads the script that makes Enter send: {html}"
+    );
+    assert!(
+        html.contains(
+            r#"<p id="compose-hint" class="help compose-hint">Enter to send, Shift+Enter for a new line</p>"#
+        ),
+        "the hint sits by the Send button: {html}"
+    );
     // Nothing inline that the Content-Security-Policy would block.
     assert_eq!(
         html.matches("<script").count(),
@@ -691,6 +704,14 @@ async fn a_posted_message_is_an_authenticated_channel_event() {
     assert!(
         form.contains(" autofocus>"),
         "focus moves to the new message box: {form}"
+    );
+    assert!(
+        form.contains("Enter to send, Shift+Enter for a new line"),
+        "the new form keeps the hint: {form}"
+    );
+    assert!(
+        form.contains(r#"<p id="compose-hint" "#),
+        "the script can describe the message box by the hint: {form}"
     );
 
     let ChannelEvent::Message { id, message } = events.next().await.unwrap().unwrap() else {
