@@ -521,13 +521,15 @@ impl Channel for WebChannel {
         };
         let id = new_id();
         let media: Vec<_> = msg.attachments.iter().collect();
+        let body = render::body(&msg.markdown, &media);
         let html = render::message(
             &format!("m-{id}"),
             render::Who::Assistant,
-            &render::body(&msg.markdown, &media),
+            &body,
             render::State::Done,
         );
-        self.hub(chat).append(html);
+        let announcement = render::announcement(&msg.markdown, &media, render::State::Done);
+        self.hub(chat).append(html + &announcement);
         Ok(MessageId::new(id).expect("a valid id"))
     }
 
@@ -600,7 +602,9 @@ impl LiveMessage {
 
     fn end(&mut self, state: render::State) {
         self.finished = true;
-        self.hub.live_end(&self.element, &self.html(state));
+        let announcement = render::announcement(&self.text, &[], state);
+        self.hub
+            .live_end(&self.element, &self.html(state), &announcement);
     }
 }
 

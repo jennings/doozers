@@ -169,7 +169,8 @@ impl Hub {
         let _ = self.feed.send(event);
     }
 
-    /// Appends a finished message (`html` from [`render::message`]).
+    /// Appends a finished message (`html` from [`render::message`], with its
+    /// [announcement](render::announcement) if it's an agent reply).
     pub(super) fn append(&self, html: String) {
         self.publish(html, |_| {});
     }
@@ -216,9 +217,11 @@ impl Hub {
         });
     }
 
-    /// Replaces live message `id` with its final `html`; it's no longer live.
-    pub(super) fn live_end(&self, id: &str, html: &str) {
-        self.publish(render::out_of_band(html), |state| {
+    /// Replaces live message `id` with its final `html`; it's no longer live. `announcement` (from
+    /// [`render::announcement`]) goes in the same event, so the reply is announced once, when it's
+    /// complete and not for each [update](Self::live_update).
+    pub(super) fn live_end(&self, id: &str, html: &str, announcement: &str) {
+        self.publish(render::out_of_band(html) + announcement, |state| {
             state.live.retain(|live| live.id != id);
         });
     }
@@ -525,7 +528,11 @@ mod tests {
             r#"<article hx-swap-oob="true" id="m-1" class="msg">ab</article>"#
         );
 
-        hub.live_end("m-1", r#"<article id="m-1" class="msg">abc</article>"#);
+        hub.live_end(
+            "m-1",
+            r#"<article id="m-1" class="msg">abc</article>"#,
+            "<div id=\"n\"></div>",
+        );
         // A button answer keeps the prompt (without buttons) until it's resolved.
         assert!(
             hub.approval_sent("4821", "Sent: yes".into(), |prompt, label| {
@@ -545,7 +552,7 @@ mod tests {
         assert!(snapshot.live.is_empty() && snapshot.approvals.is_empty());
         assert_eq!(
             sub.feed.try_recv().unwrap().html,
-            r#"<article hx-swap-oob="true" id="m-1" class="msg">abc</article>"#
+            r#"<article hx-swap-oob="true" id="m-1" class="msg">abc</article><div id="n"></div>"#
         );
         assert_eq!(
             sub.feed.try_recv().unwrap().html,
