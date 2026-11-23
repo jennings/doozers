@@ -1173,7 +1173,6 @@ async fn an_agent_edit_waits_for_the_lock_the_toolset_manager_shares() {
         tools: form.tools,
         ask: form.ask,
         environments: form.environments,
-        timezone: form.timezone,
         advanced: form.advanced,
         soul: form.soul,
         version: form.version,

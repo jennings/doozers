@@ -60,10 +60,15 @@ Settings of the core itself. Optional.
 | `http_listen`     | `"127.0.0.1:8080"` | Address of the HTTP server (web chat, admin pages, invite and recovery links)                |
 | `journal_mode`    | `"wal"`            | SQLite journal mode of `data/doozers.db`: `wal`, `delete`, `truncate`, `persist` |
 | `secret_key_file` | `"secret.key"`     | The key that unlocks the secrets Doozers stores, relative to the data root     |
+| `timezone`        | system             | Time zone of users who haven't set their own, for message times and job schedules |
 
 To reach Doozers from other machines, or from outside a container, set `http_listen` to
 `"0.0.0.0:8080"`. The web interface does not handle TLS, so read
 [The web interface](running.md#the-web-interface) before you do.
+
+Containers often run in UTC. Set `timezone` to where your users are, such as
+`"America/Los_Angeles"`. Each user can choose their own time zone on their
+[**Account** page](web.md#account).
 
 #### `journal_mode`
 
@@ -147,7 +152,7 @@ install that had them before it had users, so they are in place at its first sta
 | ------------ | ------------------------ | ----------------------------------------------------------- |
 | `identities` | required                 | Your identities, at least one, no duplicates                |
 | `default`    | the only identity        | Where jobs and other proactive messages go; required when there are several identities |
-| `timezone`   | the agent's, else system | Your time zone, for message times and job schedules         |
+| `timezone`   | `core.timezone`, else system | Your time zone, for message times and job schedules |
 
 Doozers drops and logs these messages:
 
@@ -561,7 +566,6 @@ editing `agent.toml` by hand instead. The form has every key except `[[jobs]]`.
 | `busy_mode`           | `"steer"`       | New messages during a turn: `"steer"` shows them to the model at the next tool step; `"queue"` keeps them for the next turn |
 | `memory_cap`          | `2200`          | Most characters of core memories in each scope (shared, each user, each group) |
 | `approval_timeout`    | `"10m"`         | How long an approval request waits before it is denied            |
-| `timezone`            | system          | The agent's time zone, used when your time zone is not set           |
 | `idle_reset`          | off             | Start a new session after this long without messages              |
 
 A toolset's tools are named `<instance>__<tool>`. The core tools have bare names:
@@ -613,7 +617,7 @@ Scheduled prompts. Each job's reply is sent to your default identity, unless the
 Exactly one of `prompt` and `prompt_file` is required. A `prompt_file` is a relative path inside the
 agent's directory, and must exist when Doozers starts.
 
-Schedules and `active_hours` use your time zone, else the agent's, else the system's.
+Schedules and `active_hours` use your time zone, else `core.timezone`, else the system's.
 
 - A reply of exactly `NO_REPLY` sends nothing and leaves nothing behind. Any other reply goes to
   your default identity, and is added to your DM with the agent there, so you can answer it.
@@ -646,6 +650,7 @@ The agent also uses `github`, a remote toolset added in the [web UI](web.md#addi
 # ~/.doozers/doozers.toml
 [core]
 http_listen = "127.0.0.1:8080"
+timezone = "America/Los_Angeles"
 
 # Doozers reads [owner] on the first start only.
 [owner]
@@ -697,7 +702,6 @@ ask = ["github__create_*"]
 max_iterations_jobs = 25
 memory_cap = 2200
 approval_timeout = "10m"
-timezone = "America/Los_Angeles"
 idle_reset = "12h"
 
 [[jobs]]

@@ -41,7 +41,9 @@ The steps:
    defaults to WAL ([Storage](storage.md#journal-modes)); `Runtime::start` passes it to the store.
    `core.secret_key_file` is joined onto the data root (an absolute path replaces it), defaults to
    `DataRoot::secret_key_file()`, and may not be empty. It's the
-   [secret store](secret-store.md#key-file)'s key file.
+   [secret store](secret-store.md#key-file)'s key file. `core.timezone` is looked up with
+   `parse_timezone` and is `None` unless set: `message_timezone` uses it for users who set no time
+   zone ([Identity and routing](identity-and-routing.md#stored-users)).
 3. Load `secrets.toml` ([Secrets](#secrets)).
 4. Check that instance names are unique within each kind, ignoring ASCII case (macOS file systems
    are case-insensitive by default, so `Libera` and `libera` would share a directory). A provider, a

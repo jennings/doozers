@@ -385,7 +385,7 @@ each thing you can change:
 
 - **Details**: the username, display name, and time zone. A new username applies at once, to the
   user's next password sign-in. Their chats and other data stay, because Doozers keeps them under
-  the user's id and not under the username. An empty time zone uses the agent's.
+  the user's id and not under the username. An empty time zone uses the server's default.
 - **Role**: **Member** or **Admin**. Doozers always keeps one active admin, so it refuses to demote
   the last one. You can demote yourself while another active admin remains, and you lose the admin
   pages at once.
@@ -468,8 +468,7 @@ to finish.
 ## Agents
 
 **Agents** in the sidebar lists every agent, with buttons to chat with it, edit it, or remove it. An
-agent's page shows its models, tools, and time zone, and the files in `agents/<agent>/` as plain
-text.
+agent's page shows its models and tools, and the files in `agents/<agent>/` as plain text.
 
 **New agent** opens a form that creates one:
 
@@ -490,7 +489,6 @@ text.
   separated by commas or spaces. A box that one of these already allows is ticked and greyed out.
 - **Ask first**: optional tool names or globs that need your approval before each call, separated by
   commas or spaces.
-- **Time zone**: optional, such as `Europe/London`.
 - **Advanced**: a collapsed section of settings most agents leave alone. Leave a field empty for its
   default. The section opens by itself when one of them is set.
   - **Compaction model**: the model that summarizes older messages when a chat gets long.
@@ -760,7 +758,7 @@ The display name is what Doozers shows for you, such as at the bottom of the sid
 
 The time zone sets the times agents see in your messages and when your
 [scheduled jobs](#scheduled-jobs) run. Use an IANA name, such as `America/Los_Angeles`. Leave it
-empty to use the agent's time zone, or else the server's.
+empty to use the server's default time zone.
 
 The page also shows your username, which you log in with, and your role. You can't change them here.
 

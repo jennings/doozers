@@ -188,11 +188,11 @@ reads:
   the admin's own infrastructure. It replaces the user's other `web` identities except `web:<id>`,
   the one a link sign-in acts as, in one store transaction (`user_proxy_identity_set`), so a refused
   identity (another user's, or `web:<id>` itself) leaves the one the user had. `None` clears it.
-- **Time zone and default identity.** `agent_loop::history::message_timezone(users, user, agent)` is
-  the user's time zone, else the agent's, else the system's; a config job has no user and runs as
-  `owner`. Jobs and proactive messages go to the user's default identity (`OutboxItem::to_user`); a
-  user without one gets none. The user's first identity is the default, and `set_default_identity`
-  changes it to another of theirs.
+- **Time zone and default identity.** `agent_loop::history::message_timezone(users, user, core)` is
+  the user's time zone, else `core.timezone` of `doozers.toml`, else the system's; a config job has
+  no user and runs as `owner`. Jobs and proactive messages go to the user's default identity
+  (`OutboxItem::to_user`); a user without one gets none. The user's first identity is the default,
+  and `set_default_identity` changes it to another of theirs.
 
 ### Identity in memory
 

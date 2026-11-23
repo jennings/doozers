@@ -332,7 +332,7 @@ async fn creating_an_agent_writes_files_that_load_and_makes_it_usable_at_once() 
 
     let soul = "You are Butler.\nBe brief.";
     let fields = format!(
-        "&name=The%20Butler&tools=memory_add%2C+load_skill&ask=memory_add&timezone=Europe%2FLondon\
+        "&name=The%20Butler&tools=memory_add%2C+load_skill&ask=memory_add\
          &compaction_model=fake%2Flisted-b&max_iterations=40&max_iterations_jobs=&busy_mode=queue\
          &memory_cap=3000&approval_timeout=2m&idle_reset=1d&soul={}",
         soul.replace(' ', "+").replace('\n', "%0A")
@@ -370,10 +370,6 @@ async fn creating_an_agent_writes_files_that_load_and_makes_it_usable_at_once() 
     assert_eq!(butler.models[0].to_string(), "fake/listed-a");
     assert_eq!(butler.tools, ["memory_add", "load_skill"]);
     assert_eq!(butler.ask, ["memory_add"]);
-    assert_eq!(
-        butler.timezone.as_ref().unwrap().iana_name(),
-        Some("Europe/London")
-    );
     assert_eq!(
         butler.compaction_model.as_ref().unwrap().to_string(),
         "fake/listed-b"
@@ -641,13 +637,6 @@ async fn an_invalid_form_is_shown_again_and_writes_nothing() {
             "&tools=bad%07glob",
             StatusCode::BAD_REQUEST,
             "tools[0]: invalid tool glob",
-        ),
-        (
-            "butler",
-            "fake/m",
-            "&timezone=Mars%2FOlympus",
-            StatusCode::BAD_REQUEST,
-            "timezone",
         ),
         (
             "butler",

@@ -108,8 +108,8 @@ pub struct User {
     pub role: Role,
     /// Whether the user can use Doozers now. A disabled user's messages are dropped.
     pub state: UserState,
-    /// The user's time zone, for message time prefixes and job schedules. `None`: the agent's
-    /// `timezone`, else the system time zone.
+    /// The user's time zone, for message time prefixes and job schedules. `None`:
+    /// `core.timezone`, else the system time zone.
     pub timezone: Option<TimeZone>,
     /// The identity jobs and proactive messages go to; one of `identities`. `None` if the user
     /// has no identity a channel can reach.

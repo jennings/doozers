@@ -9,10 +9,8 @@ use croner::parser::{CronParser, Seconds, Year};
 use doozers_plugin_sdk::config::HumanDuration;
 use doozers_types::AgentId;
 use jiff::civil::Time;
-use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
-use super::doozers::parse_timezone;
 use super::error::{ConfigError, KeyPath, UnknownKey};
 use super::model::ModelRef;
 use super::names::{InstanceName, invalid_name_reason, is_valid_name};
@@ -59,8 +57,6 @@ pub struct AgentConfig {
     /// How long a pending approval waits before it is denied. [`DEFAULT_APPROVAL_TIMEOUT`] unless
     /// set.
     pub approval_timeout: Duration,
-    /// The agent's time zone, used when the owner sets none.
-    pub timezone: Option<TimeZone>,
     /// Start a new session after this long without messages; off unless set.
     pub idle_reset: Option<Duration>,
     /// Config jobs (PLAN section 6.11), in file order.
@@ -216,7 +212,6 @@ struct RawAgent {
     busy_mode: BusyMode,
     memory_cap: Option<u32>,
     approval_timeout: Option<HumanDuration>,
-    timezone: Option<String>,
     idle_reset: Option<HumanDuration>,
     #[serde(default)]
     jobs: Vec<RawJob>,
@@ -338,11 +333,6 @@ pub(crate) fn parse(
     let approval_timeout =
         nonzero("approval_timeout", raw.approval_timeout)?.unwrap_or(DEFAULT_APPROVAL_TIMEOUT);
     let idle_reset = nonzero("idle_reset", raw.idle_reset)?;
-    let timezone = raw
-        .timezone
-        .as_deref()
-        .map(|name| parse_timezone(name).map_err(|r| err(root.key("timezone"), r)))
-        .transpose()?;
 
     let mut ids = BTreeSet::new();
     let mut jobs = Vec::with_capacity(raw.jobs.len());
@@ -419,7 +409,6 @@ pub(crate) fn parse(
         busy_mode: raw.busy_mode,
         memory_cap,
         approval_timeout,
-        timezone,
         idle_reset,
         jobs,
     };

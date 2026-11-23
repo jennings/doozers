@@ -5,7 +5,7 @@ use doozers_store::{Entry, History};
 use doozers_types::{Block, Message, MessageMeta, Role, Timestamp, UserId};
 use jiff::tz::TimeZone;
 
-use crate::config::AgentConfig;
+use crate::config::CoreConfig;
 use crate::identity;
 use crate::media;
 use crate::sessions::{INTERRUPTED_RESULT, TurnMessage};
@@ -17,14 +17,14 @@ const PREFIX_FORMAT: &str = "%a %Y-%m-%d %H:%M %Z";
 /// What introduces a compaction summary at the start of the history.
 pub const SUMMARY_INTRO: &str = "Summary of the earlier conversation:";
 
-/// The time zone message times are shown in: `user`'s, if they set one, else the agent's, else
+/// The time zone message times are shown in: `user`'s, if they set one, else `core.timezone`, else
 /// the system's (PLAN section 6.7). A config job has no user (`None`) and runs as the `owner`
 /// user.
-pub fn message_timezone(users: &UserList, user: Option<&UserId>, agent: &AgentConfig) -> TimeZone {
+pub fn message_timezone(users: &UserList, user: Option<&UserId>, core: &CoreConfig) -> TimeZone {
     let owner = identity::owner();
     users
         .timezone(user.unwrap_or(&owner))
-        .or_else(|| agent.timezone.clone())
+        .or_else(|| core.timezone.clone())
         .unwrap_or_else(TimeZone::system)
 }
 

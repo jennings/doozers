@@ -30,6 +30,8 @@ pub struct CoreConfig {
     /// The local secret store's key file: `<root>/secret.key` unless set, and relative to the data
     /// root if set relative.
     pub secret_key_file: PathBuf,
+    /// The time zone of users who set none. `None`: the system time zone.
+    pub timezone: Option<TimeZone>,
 }
 
 /// The secret store's key file for `core.secret_key_file = configured`: relative to the data root,
@@ -107,6 +109,7 @@ struct RawCore {
     http_listen: Option<SocketAddr>,
     journal_mode: Option<String>,
     secret_key_file: Option<PathBuf>,
+    timezone: Option<String>,
 }
 
 impl RawDoozers {
@@ -131,10 +134,21 @@ impl RawDoozers {
             }
             configured => resolve_secret_key_file(root, configured.as_deref()),
         };
+        let timezone = self
+            .core
+            .timezone
+            .as_deref()
+            .map(|name| {
+                parse_timezone(name).map_err(|reason| {
+                    ConfigError::at(file, KeyPath::root().key("core").key("timezone"), reason)
+                })
+            })
+            .transpose()?;
         Ok(CoreConfig {
             http_listen: self.core.http_listen.unwrap_or(DEFAULT_HTTP_LISTEN),
             journal_mode,
             secret_key_file,
+            timezone,
         })
     }
 }

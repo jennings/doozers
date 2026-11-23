@@ -266,7 +266,7 @@ async fn an_edit_changes_only_what_the_form_manages_and_applies_to_new_chats_at_
         "Jeeves%20II",
         "fake%2Ftest-model%2C+fake%2Fother",
         &format!(
-            "&tool%3Amemory_add=on&tool%3Amemory_search=on&ask=memory_search&timezone=Europe%2FLondon{JEEVES_ADVANCED}&soul={}",
+            "&tool%3Amemory_add=on&tool%3Amemory_search=on&ask=memory_search{JEEVES_ADVANCED}&soul={}",
             soul.replace(' ', "+").replace("\r\n", "%0D%0A")
         ),
     );
@@ -299,7 +299,6 @@ async fn an_edit_changes_only_what_the_form_manages_and_applies_to_new_chats_at_
         "{toml}"
     );
     assert!(toml.contains("ask = [\"memory_search\"]"), "{toml}");
-    assert!(toml.contains("timezone = \"Europe/London\""), "{toml}");
     assert_eq!(
         env.read_jeeves("SOUL.md"),
         "You are Jeeves II.\nBe very brief."
@@ -367,7 +366,7 @@ async fn emptied_optional_fields_remove_their_keys() {
                 &version,
                 "",
                 "fake%2Ftest-model",
-                "&tools=&ask=&timezone=&compaction_model=&max_iterations=&busy_mode=&memory_cap=\
+                "&tools=&ask=&compaction_model=&max_iterations=&busy_mode=&memory_cap=\
                  &soul=",
             ),
         )
@@ -379,7 +378,6 @@ async fn emptied_optional_fields_remove_their_keys() {
         "name",
         "tools",
         "ask",
-        "timezone",
         "compaction_model",
         "max_iterations",
         "busy_mode",
@@ -486,11 +484,6 @@ async fn an_invalid_edit_is_shown_again_with_the_input_and_leaves_the_files_alon
             "fake%2Fm",
             "&tools=bad%07glob&soul=hello",
             "tools[0]: invalid tool glob",
-        ),
-        (
-            "fake%2Fm",
-            "&timezone=Mars%2FOlympus&soul=hello",
-            "timezone",
         ),
         (
             "fake%2Fm",

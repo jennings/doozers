@@ -509,16 +509,20 @@ async fn sleep_or_forever(delay: Option<Duration>) {
 
 /// One job: sleeps until each of its times and runs it, until `stop` (shutdown, or the job was
 /// deleted) or a one-shot job has run, or its agent is no longer configured. The agent's
-/// configuration is read again for every run, so an edit (a time zone, a model, the tools) applies
-/// to the next one.
+/// configuration and the user's time zone are read again for every run, so an edit (a time zone, a
+/// model, the tools) applies to the next one.
 async fn job_task(context: Arc<Context>, job: JobDef, stop: CancellationToken) {
     let label = job.label();
     let config = context.registry.config();
-    let Some(agent) = config.agents.get(&job.agent) else {
+    if !config.agents.contains_key(&job.agent) {
         warn!(job = %label, agent = %job.agent, "job of an agent that isn't configured; skipped");
         return;
-    };
-    let mut tz = message_timezone(&context.registry.users(), job.creator.as_ref(), agent);
+    }
+    let mut tz = message_timezone(
+        &context.registry.users(),
+        job.creator.as_ref(),
+        &config.core,
+    );
     let last = match context
         .store
         .job_last_run(job.agent.clone(), job.key.clone())
@@ -549,7 +553,11 @@ async fn job_task(context: Arc<Context>, job: JobDef, stop: CancellationToken) {
             info!(job = %label, agent = %job.agent, "the job's agent was removed; the job stops");
             return;
         };
-        tz = message_timezone(&context.registry.users(), job.creator.as_ref(), agent);
+        tz = message_timezone(
+            &context.registry.users(),
+            job.creator.as_ref(),
+            &config.core,
+        );
         let now = context.clock.now();
         // A job of a user who was disabled (or removed) doesn't run: checked once the run is
         // counted, so removing the user, which disables them and then looks for runs, sees it.

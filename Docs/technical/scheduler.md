@@ -29,7 +29,7 @@ before `Sessions::closed()`.
 ## Timing
 
 Each job has a task. Its time zone is its user's (a runtime job's creator; a config job's is the
-owner), else the agent's, else the system's. At start, `first_fire(since, now)` with `since` the
+owner), else `core.timezone`, else the system's. At start, `first_fire(since, now)` with `since` the
 later of the job's `job_runs` time and `JobDef::since` (a runtime job's creation time, or its spec's
 `changed_at`, the last edit or switch back on): if a time fell between `since` and `now` (the core
 was down), the missed times are coalesced into one run now; otherwise the next match after `now`. So
@@ -59,10 +59,11 @@ start, and whenever `LiveConfig` changes, `reconcile_config_jobs` compares each 
 with the ones its tasks were started for: an agent that is gone, or whose jobs differ, has its tasks
 stopped (one token per agent, so they stop together), and one with jobs and no tasks gets them
 started. An edit that leaves `[[jobs]]` alone keeps the tasks and their place in the schedule. Each
-run reads the agent's configuration again when its time comes (the time zone, the model and tools,
-`ask`), and a task whose agent has been removed stops, so a removed agent's job can't fire, and one
-created later under the same id runs only the jobs its own `agent.toml` has. A task that started
-from `first_fire` follows the rule above, so a restarted one can run once for times it missed.
+run reads the agent's configuration and the user's time zone again when its time comes (the model
+and tools, `ask`), and a task whose agent has been removed stops, so a removed agent's job can't
+fire, and one created later under the same id runs only the jobs its own `agent.toml` has. A task
+that started from `first_fire` follows the rule above, so a restarted one can run once for times it
+missed.
 
 Runtime jobs: a task reads `jobs` at start and on every `JobChanges::notify` and change of the
 users, starting tasks for new rows and stopping the tasks of deleted ones. It keeps the spec each
@@ -150,7 +151,7 @@ Limits: a turn without a requester (a config job's run) can only list. A job run
 has `job` set) can list and cancel but not create, so no job can spawn more jobs. A user has at most
 `MAX_RUNTIME_JOBS_PER_USER` (20) runtime jobs with one agent; `create` beyond that answers "too many
 scheduled jobs (at most 20); cancel one first". Times are shown in the same zone messages use (the
-requester's, else the agent's, else the system's).
+requester's, else `core.timezone`, else the system's).
 
 ## Tests
 
