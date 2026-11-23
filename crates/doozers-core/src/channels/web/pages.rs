@@ -621,7 +621,7 @@ async fn chat_page(State(app): State<WebApp>, user: WebUser, Path(chat): Path<St
         cursor: channel.hubs.cursor(snapshot.seq),
         truncated: rows.len() >= HISTORY_LIMIT as usize,
         items,
-        compose: render::compose(chat.as_str(), &user.csrf, "", None),
+        compose: render::compose(chat.as_str(), &user.csrf, "", None, false),
     })
 }
 
@@ -633,8 +633,8 @@ struct ComposeForm {
 }
 
 /// `POST /chats/<id>/messages`: posts the text as the user, taking an archived chat out of the
-/// archive first. htmx gets a fresh form back (the message itself arrives over the event stream);
-/// a plain form post is redirected to the chat.
+/// archive first. htmx gets a fresh form back, with focus in its message box (the message itself
+/// arrives over the event stream); a plain form post is redirected to the chat.
 async fn post_message(
     State(app): State<WebApp>,
     user: WebUser,
@@ -663,6 +663,7 @@ async fn post_message(
                 &user.csrf,
                 &form.text,
                 Some(message),
+                true,
             ))
             .into_response()
         } else {
@@ -692,7 +693,7 @@ async fn post_message(
         return failed(StatusCode::SERVICE_UNAVAILABLE, &Busy.to_string());
     }
     if htmx {
-        Html(render::compose(chat.as_str(), &user.csrf, "", None)).into_response()
+        Html(render::compose(chat.as_str(), &user.csrf, "", None, true)).into_response()
     } else {
         Redirect::to(&format!("/chats/{chat}")).into_response()
     }

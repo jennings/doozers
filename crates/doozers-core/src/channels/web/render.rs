@@ -178,15 +178,25 @@ struct ComposeFragment<'a> {
     csrf: &'a str,
     text: &'a str,
     error: Option<&'a str>,
+    focus: bool,
 }
 
 /// The message form of chat `chat`, with `text` kept and an error shown after a failed post.
-pub(super) fn compose(chat: &str, csrf: &str, text: &str, error: Option<&str>) -> String {
+/// `focus` puts the cursor in the message box (htmx does it when it swaps the form in): set it for
+/// the answer to a post, not for the chat page.
+pub(super) fn compose(
+    chat: &str,
+    csrf: &str,
+    text: &str,
+    error: Option<&str>,
+    focus: bool,
+) -> String {
     fragment(&ComposeFragment {
         chat,
         csrf,
         text,
         error,
+        focus,
     })
 }
 

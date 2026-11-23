@@ -586,6 +586,10 @@ async fn a_chat_page_shows_the_transcript_and_follows_its_events() {
         "{html}"
     );
     assert!(html.contains(r#"name="csrf" value="csrf-token-for-tests""#));
+    assert!(
+        html.contains(r#"aria-label="Message">"#),
+        "opening a chat doesn't focus the message box: {html}"
+    );
     // Nothing inline that the Content-Security-Policy would block.
     assert_eq!(
         html.matches("<script").count(),
@@ -646,6 +650,10 @@ async fn a_posted_message_is_an_authenticated_channel_event() {
         form.contains("></textarea>"),
         "the form is empty again: {form}"
     );
+    assert!(
+        form.contains(" autofocus>"),
+        "focus moves to the new message box: {form}"
+    );
 
     let ChannelEvent::Message { id, message } = events.next().await.unwrap().unwrap() else {
         panic!("not a message");
@@ -668,7 +676,12 @@ async fn bad_messages_are_refused_with_the_text_kept() {
     let path = format!("/chats/{}/messages", chat());
     let response = env.htmx_post(&path, "text=+++").await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(body_text(response).await.contains("Write a message first."));
+    let form = body_text(response).await;
+    assert!(form.contains("Write a message first."));
+    assert!(
+        form.contains(" autofocus>"),
+        "focus stays in the box: {form}"
+    );
 
     let long = "x".repeat(MAX_MESSAGE_BYTES + 1);
     let response = env.htmx_post(&path, &format!("text={long}")).await;
