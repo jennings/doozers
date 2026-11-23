@@ -51,6 +51,15 @@ const ADMIN: [(Nav, &str, &str); 10] = [
     ),
 ];
 
+/// What a screen reader adds to the link's label when another link has the same label: the "SSH
+/// keys" of the "Admin" group lists everyone's keys, the one of "You" only yours.
+fn hint(nav: Nav) -> Option<&'static str> {
+    match nav {
+        Nav::AdminSshKeys => Some("all users"),
+        _ => None,
+    }
+}
+
 /// What `app.html` needs: every page that extends it has a `shell` field.
 pub(super) struct Shell {
     /// The signed-in user's display name, shown in the sidebar's footer.
@@ -72,6 +81,9 @@ pub(super) struct NavGroup {
 
 pub(super) struct NavLink {
     pub(super) label: &'static str,
+    /// Words only a screen reader hears after [`Self::label`], to tell links of the same label
+    /// apart: the two "SSH keys" links.
+    pub(super) hint: Option<&'static str>,
     pub(super) href: &'static str,
     pub(super) current: bool,
 }
@@ -85,6 +97,7 @@ impl Shell {
                 .iter()
                 .map(|&(nav, label, href)| NavLink {
                     label,
+                    hint: hint(nav),
                     href,
                     current: nav == current,
                 })

@@ -384,6 +384,27 @@ async fn the_sidebar_links_the_page_for_everyone_and_the_admin_page_for_admins()
 }
 
 #[tokio::test]
+async fn each_sidebar_group_names_its_list_and_the_two_ssh_keys_links_differ() {
+    let ssh = Ssh::new().await;
+    let guest_page = ssh.get(&guest(), "/ssh-keys").await.body;
+    assert!(
+        guest_page.contains("<ul class=\"nav-list\" aria-label=\"You\">"),
+        "{guest_page}"
+    );
+    assert!(!guest_page.contains("aria-label=\"Admin\""), "{guest_page}");
+
+    let owner_page = ssh.get(&owner(), "/ssh-keys").await.body;
+    assert!(owner_page.contains("<ul class=\"nav-list\" aria-label=\"Admin\">"));
+    // The sidebar and the navigation dialog each have the whole navigation.
+    assert_eq!(owner_page.matches("aria-label=\"You\"").count(), 2);
+    // Yours keeps its plain name, the admin one adds what only a screen reader hears.
+    assert!(owner_page.contains("href=\"/ssh-keys\" aria-current=\"page\">SSH keys</a>"));
+    assert!(owner_page.contains(
+        "href=\"/admin/ssh-keys\">SSH keys<span class=\"sr-only\"> (all users)</span></a>"
+    ));
+}
+
+#[tokio::test]
 async fn generating_a_key_of_each_type_adds_it_and_shows_the_notice() {
     let ssh = Ssh::new().await;
     for kind in KeyType::ALL {
