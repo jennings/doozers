@@ -24,9 +24,9 @@
 <td data-label="State" class="m-aside">{% if provider.enabled %}<span class="pill pill-ok">enabled</span>{% else %}<span class="pill pill-neutral">disabled</span>{% endif %}</td>
 <td data-label="Connected" class="secondary m-meta m-label">{{ provider.connected }}</td>
 <td class="row-actions">
-<a class="button button-small" href="/admin/identity-providers/{{ provider.id }}/edit">Edit</a>
+<a class="button button-small" href="/admin/identity-providers/{{ provider.id }}/edit" aria-label="Edit {{ provider.display_name }}">Edit</a>
 <form method="post" action="/admin/identity-providers/{{ provider.id }}/enabled"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="{% if provider.enabled %}false{% else %}true{% endif %}"><button type="submit" class="button-small" aria-label="{% if provider.enabled %}Disable{% else %}Enable{% endif %} {{ provider.display_name }}">{% if provider.enabled %}Disable{% else %}Enable{% endif %}</button></form>
-<a class="button button-small button-danger" href="/admin/identity-providers/{{ provider.id }}/remove">Remove</a>
+<a class="button button-small button-danger" href="/admin/identity-providers/{{ provider.id }}/remove" aria-label="Remove {{ provider.display_name }}">Remove</a>
 </td>
 </tr>
 {%- endfor %}

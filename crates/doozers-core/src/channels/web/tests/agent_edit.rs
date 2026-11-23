@@ -198,7 +198,7 @@ async fn the_form_shows_the_agent_as_its_files_have_it_and_says_the_id_is_fixed(
         .await;
     assert!(
         list.contains(
-            r#"<a class="button button-small" href="/admin/agents/jeeves/edit">Edit</a>"#
+            r#"<a class="button button-small" href="/admin/agents/jeeves/edit" aria-label="Edit Jeeves (jeeves)">Edit</a>"#
         ),
         "{list}"
     );

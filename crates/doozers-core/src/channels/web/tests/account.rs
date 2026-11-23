@@ -503,6 +503,15 @@ async fn the_page_shows_every_control_to_every_login_and_never_asks_to_confirm()
             html.contains("/account/sign-in/passkey/rename"),
             "{what}: {html}"
         );
+        // The buttons of a row name what they act on, and start with their text.
+        for expected in [
+            r#"aria-label="Rename Phone">Rename</button>"#,
+            r#"aria-label="Remove Phone">Remove</a>"#,
+            r#"aria-label="Connect another account to Idp">Connect another account</a>"#,
+            r#"aria-label="Disconnect Idp">Disconnect</a>"#,
+        ] {
+            assert!(html.contains(expected), "{what}: {expected}\n{html}");
+        }
         // A provider that is off, and has no connection, isn't offered, and nobody else's
         // passkey is shown.
         assert!(!html.contains("Off:"), "{what}: {html}");
@@ -1103,6 +1112,15 @@ async fn the_page_lists_the_users_own_logins_marks_this_one_and_shows_no_token_o
         .unwrap();
     assert!(current_row.contains(">Password"), "{current_row}");
     assert!(current_row.contains("Log out"), "{current_row}");
+    // Each row's button names the login it ends, and starts with the button's text.
+    assert!(
+        current_row.contains(r#"aria-label="Log out and end this login">Log out</button>"#),
+        "{current_row}"
+    );
+    let ends = html
+        .matches(r#"aria-label="End login: Recovery link, started "#)
+        .count();
+    assert_eq!(ends, 1, "{html}");
 
     // Never a token, or the hash of one, which would be as good as the token for anyone with a
     // copy of the database, and not the id of the session.

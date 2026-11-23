@@ -522,6 +522,10 @@ async fn a_channel_that_needs_linking_shows_its_qr_code_until_it_connects() {
     let section = html.split(r#"id="channel-whatsapp""#).nth(1).unwrap();
     assert!(section.contains("Needs linking"), "{section}");
     assert!(section.contains(r#"<svg class="qr""#), "{section}");
+    assert!(
+        section.contains(r#"aria-label="Show QR code for whatsapp">Show QR code</summary>"#),
+        "{section}"
+    );
     assert!(section.contains("2026-10-21 00:00:20 UTC"), "{section}");
     // The payload is drawn, never printed.
     assert!(!html.contains("QRPAYLOAD"), "{html}");
@@ -594,6 +598,7 @@ async fn the_plugins_page_shows_each_plugin_and_restart_buttons_for_supervised_o
         "<dd>error: nick in use",
         r#"<form method="post" action="/admin/plugins/channel/libera/restart">"#,
         &format!(r#"<input type="hidden" name="csrf" value="{CSRF}">"#),
+        r#"aria-label="Restart channel libera">Restart</button>"#,
     ] {
         assert!(libera.contains(expected), "{expected}\n{libera}");
     }
@@ -627,6 +632,7 @@ async fn the_plugins_page_shows_a_toolsets_state_and_a_restart_form() {
         "<dd>4</dd>",
         r#"<form method="post" action="/admin/plugins/toolset/files/restart">"#,
         &format!(r#"<input type="hidden" name="csrf" value="{CSRF}">"#),
+        r#"aria-label="Restart MCP server files">Restart</button>"#,
     ] {
         assert!(files.contains(expected), "{expected}\n{files}");
     }
@@ -637,6 +643,7 @@ async fn the_plugins_page_shows_a_toolsets_state_and_a_restart_form() {
         "failed (not retried until it",
         "HTTP 401 &#60;script&#62;",
         r#"<form method="post" action="/admin/plugins/toolset/broken/restart">"#,
+        r#"aria-label="Restart MCP server broken">Restart</button>"#,
     ] {
         assert!(broken.contains(expected), "{expected}\n{broken}");
     }

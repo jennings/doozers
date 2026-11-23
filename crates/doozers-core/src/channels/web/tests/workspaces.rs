@@ -331,7 +331,7 @@ async fn conversations_of_other_channels_are_not_linked_to_a_chat() {
 #[tokio::test]
 async fn an_environment_that_is_down_or_failing_shows_unknown_and_is_named() {
     let wk = Wk::new().await;
-    wk.create().await;
+    let id = wk.create().await;
 
     wk.fake.fail_lists(true);
     let page = wk.page().await;
@@ -342,9 +342,9 @@ async fn an_environment_that_is_down_or_failing_shows_unknown_and_is_named() {
         "{page}"
     );
     assert!(
-        page.contains(
-            "<summary>Details from the environment</summary>\n<p class=\"muted\">unknown</p>"
-        ),
+        page.contains(&format!(
+            "aria-label=\"Details from the environment for workspace {id}\">Details from the environment</summary>\n<p class=\"muted\">unknown</p>"
+        )),
         "{page}"
     );
     // What Doozers stored still shows.

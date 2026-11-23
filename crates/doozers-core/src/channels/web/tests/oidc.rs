@@ -1471,6 +1471,11 @@ async fn an_admin_adds_a_provider_and_an_invited_user_signs_up_with_it_and_signs
     .await;
     assert!(page.contains("Added Idp."), "{page}");
     assert!(page.contains("<strong>Idp</strong>"), "{page}");
+    // Each row's actions name the provider.
+    for action in ["Edit", "Remove", "Disable"] {
+        let label = format!(r#"aria-label="{action} Idp""#);
+        assert!(page.contains(&label), "{label}\n{page}");
+    }
     assert!(page.contains("enabled"), "{page}");
     assert!(!page.contains(&site.idp.issuer), "{page}");
     assert!(!page.contains(CLIENT_ID), "{page}");

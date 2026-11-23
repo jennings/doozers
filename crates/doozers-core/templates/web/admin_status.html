@@ -52,7 +52,7 @@
 <div class="linking">
 {%- if let Some(qr) = linking.qr %}
 <details class="qr-toggle">
-<summary>Show QR code</summary>
+<summary aria-label="Show QR code for {{ channel.instance }}">Show QR code</summary>
 {{ qr|safe }}
 </details>
 {%- endif %}

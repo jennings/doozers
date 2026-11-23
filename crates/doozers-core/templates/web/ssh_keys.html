@@ -23,7 +23,7 @@
 <article class="card" id="key-{{ key.id }}">
 <div class="card-head">
 <h2>{{ key.label }}</h2>
-<span class="actions"><a class="button button-small" href="/ssh-keys/{{ key.id }}/rename">Rename</a> <a class="button button-small button-danger" href="/ssh-keys/{{ key.id }}/delete">Delete</a></span>
+<span class="actions"><a class="button button-small" href="/ssh-keys/{{ key.id }}/rename" aria-label="Rename the {{ key.type_label }} key {{ key.label }}">Rename</a> <a class="button button-small button-danger" href="/ssh-keys/{{ key.id }}/delete" aria-label="Delete the {{ key.type_label }} key {{ key.label }}">Delete</a></span>
 </div>
 <dl class="facts">
 <dt>Type</dt>
