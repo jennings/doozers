@@ -194,13 +194,16 @@ Providers, channels, environments, and toolsets are configured as instances, one
 - `[environment.<name>]`
 - `[toolset.<name>]`
 
-**Choose instance names with care.** Sessions, history, tool names (`<instance>__<tool>`), and the
-instance's data directory are keyed by the name. To change it, use the rename command for its kind:
+An instance name is how you refer to the instance in routes, agent settings, commands, and tool
+names (`<instance>__<tool>`). To change a name, use the rename command for its kind:
 
 - [`doozers channel rename`](cli.md#doozers-channel-rename-old-new)
 - [`doozers environment rename`](cli.md#doozers-environment-rename-old-new)
 - [`doozers provider rename`](cli.md#doozers-provider-rename-old-new)
 - [`doozers toolset rename`](cli.md#rename-a-toolset)
+
+Renaming the table in `doozers.toml` alone starts a new instance with none of the old one's history
+or data.
 
 A provider, a channel, an environment, and a toolset can share a name. They are separate instances
 with their own data. Names are unique within a kind, ignoring case. `Libera` and `libera` clash.

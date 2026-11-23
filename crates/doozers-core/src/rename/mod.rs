@@ -1,5 +1,6 @@
-//! Instance names are permanent ids (PLAN section 7.2): sessions, the inbox, memory paths, and the
-//! plugin's data directory are keyed by them. This module renames one ([`rename_instance`], behind
+//! An instance name is how the config, commands, and routes refer to an instance, and it can
+//! change (PLAN section 7.2). Sessions, the inbox, memory paths, and the plugin's data directory
+//! are stored under it. This module renames one and moves all of them ([`rename_instance`], behind
 //! `doozers channel rename`, `doozers provider rename`, and `doozers toolset rename <old> <new>`).
 //!
 //! Docs/technical/instance-rename.md describes what a name keys, the order of the steps, and what

@@ -66,8 +66,8 @@ component = "discord"
 token = { secret = "discord" }
 ```
 
-The instance name (`discord` here) is up to you, but it's permanent. The plugin keeps its data under
-that name.
+The instance name (`discord` here) is up to you. It's how you refer to this channel in routes and
+commands. To change it later, use [`doozers channel rename`](cli.md#doozers-channel-rename-old-new).
 
 Start Doozers. `doozers status` should show the channel as `connected`, and the bot shows as online
 in Discord.
